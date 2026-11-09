@@ -1,0 +1,12 @@
+'use strict';
+const crypto=require('node:crypto');const {createCameraHub}=require('./camera-hub.cjs');
+function createCloud({origin,token,turnHost,turnSecret,port=8080,bind='127.0.0.1',clientURL=null}={}){
+ if(!token||token.length<48)throw Error('Defina CLOUD_TOKEN aleatório com pelo menos 48 caracteres');
+ const ice=()=>{if(!turnHost||!turnSecret)return [];const username=Math.floor(Date.now()/1000+13*3600)+':andromeda';const credential=crypto.createHmac('sha1',turnSecret).update(username).digest('base64');return [{urls:['turn:'+turnHost+':3478?transport=udp','turn:'+turnHost+':3478?transport=tcp'],username,credential}];};
+ const authorized=req=>{const got=Buffer.from(req.headers.authorization||'');const wanted=Buffer.from('Bearer '+token);return got.length===wanted.length&&crypto.timingSafeEqual(got,wanted)};
+ const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+ let hub;function api(req,res){if(req.url==='/health'){json(res,200,{ok:true});return true}if(!req.url.startsWith('/api/cam/'))return false;if(!authorized(req)){json(res,403,{error:'Não autorizado'});return true}if(req.method==='GET'&&req.url==='/api/cam/status'){json(res,200,{...hub.state(),mode:'cloud'});return true}if(req.method!=='POST'||!['/api/cam/config','/api/cam/invite','/api/cam/revoke'].includes(req.url)){json(res,404,{error:'Rota inválida'});return true}let body='';req.on('data',d=>{body+=d;if(body.length>4096)req.destroy()});req.on('end',()=>{try{const m=JSON.parse(body||'{}');if(req.url.endsWith('/config')){if(new URL(m.url).origin!==new URL(origin).origin)throw Error('Use o domínio configurado no servidor');json(res,200,hub.state())}else if(req.url.endsWith('/invite'))json(res,200,hub.invite(Number(m.slot),m.name,m.profile));else{hub.revoke(Number(m.slot));json(res,200,{ok:true})}}catch(e){json(res,400,{error:e.message})}});return true}
+ hub=createCameraHub({sessionToken:token,iceServers:ice,gatewayHandler:api,clientURL});hub.configure(origin);return {hub,listen:()=>hub.gateway.listen(port,bind),close:()=>hub.close()};
+}
+if(require.main===module){const app=createCloud({origin:process.env.CLOUD_ORIGIN,token:process.env.CLOUD_TOKEN,turnHost:process.env.TURN_HOST,turnSecret:process.env.TURN_SECRET,port:Number(process.env.PORT||8080),bind:'0.0.0.0',clientURL:process.env.CAM_PAGE_URL});app.listen();process.on('SIGTERM',()=>app.close());process.on('SIGINT',()=>app.close());console.log('Andromeda camera gateway started');}
+module.exports={createCloud};

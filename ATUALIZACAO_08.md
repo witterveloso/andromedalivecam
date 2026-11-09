@@ -1,0 +1,28 @@
+# Andromeda Live 0.8 — oito entradas Blackmagic
+
+## O que mudou
+Até oito receptores Blackmagic RTMP ativos ao mesmo tempo, atribuídos livremente aos canais CAM 1 a CAM 10. Não existe mais um canal reservado BM CAM: o antigo canal passa a ser CAM 7. Cada canal aceita uma fonte por vez: Blackmagic RTMP, Andromeda Cam WebRTC, webcam exposta ao navegador ou arquivo local. Não é detecção universal de qualquer protocolo: SRT, NDI e captura HDMI direta sem dispositivo compatível não foram adicionados.
+
+As entradas Blackmagic têm chaves, portas, vídeo, áudio PCM e controles OFF/AFV/ON independentes. PiP, GC e cortes usam a mesma seleção de fontes. As oito entradas são um limite de receptores ativos, mesmo se estiverem aguardando o celular. Pare uma entrada antes de iniciar a nona. Os outros dois canais podem ser usados com outras fontes compatíveis.
+
+## Instalar e configurar
+1. Feche o servidor antigo e extraia este ZIP em uma pasta nova. Execute INSTALAR.bat e INICIAR.bat. Atualize localhost:3180 com Ctrl+F5.
+2. Em Configurações → Câmeras, selecione dez canais se uma configuração antiga estiver mostrando apenas oito. Uma instalação nova já usa dez como padrão.
+3. No painel Blackmagic, escolha o canal de destino, por exemplo CAM 1. Selecione rede local ou Tailscale, o IP do computador e uma porta TCP livre. O padrão sugerido é 1935 para CAM 1, 1936 para CAM 2, até 1944 para CAM 10. Cada entrada precisa de uma porta diferente.
+4. Clique Ativar recepção. Copie o servidor e a chave desse canal, ou baixe seu XML. O nome do preset e o arquivo identificam o canal para evitar confundir os celulares.
+5. No Blackmagic Camera, configure/importе o destino correspondente. Não copie o mesmo servidor/porta e chave para todos os telefones. Comece em H.264, 720p30. A recepção desta versão normaliza o vídeo para 1280×720/30; o master pode ter outra resolução configurada.
+6. Repita nos demais canais desejados, até oito ativos. Exemplo: Blackmagic nos canais 1–6, 9 e 10; webcam/arquivo nos canais 7 e 8. O seletor do painel só muda qual entrada você configura; não interrompe as anteriores.
+7. Ative o mixer e escolha OFF, AFV ou ON em cada canal. Confirme o áudio de um celular por vez. A câmera escolhida no PiP continua independente do Preview.
+8. Para encerrar somente uma câmera, selecione seu canal e clique Parar recepção. As demais continuam. Importar arquivo/usar webcam no canal troca sua fonte; gerar um convite Andromeda Cam no mesmo canal também desliga o receptor RTMP correspondente. Ativar RTMP revoga o convite Andromeda daquele canal.
+
+O contador mostra receptores ativos, não confirma que todos estão recebendo imagens. Confirme movimento real e o indicador RTMP de cada fonte. Reiniciar o serviço muda as chaves: exporte os presets novamente. Os receptores não iniciam automaticamente depois de reiniciar.
+
+## Rede e recursos
+Permita o FFmpeg e as portas TCP escolhidas no firewall, limitadas à rede privada/interface autorizada. Não é necessário desligar o firewall. No 5G, mantenha o caminho Tailscale configurado nos dois lados conforme o guia 0.6; o IP privado de Wi-Fi não é acessível diretamente pela internet. Esta entrega não publica o link HTTPS da câmera nem instala uma infraestrutura pública.
+
+A mesa usa um WebSocket autenticado para multiplexar as imagens e os áudios das entradas, evitando abrir dezesseis conexões HTTP persistentes no navegador. Cada entrada ativa usa um processo receptor e um decodificador de áudio; oito entradas podem exigir bastante CPU, memória e banda. Comece com duas e aumente observando uso do computador, fluidez, áudio e temperatura dos celulares. Não há certificação de desempenho para oito aparelhos em 1080p/4K, nem garantia de sincronismo entre fontes. A integração Blackmagic RTMP entrega vídeo e áudio; não adiciona tally ou intercom dentro do aplicativo Blackmagic de terceiros.
+
+## Testes executados
+18 testes automatizados passaram, incluindo oito transmissores RTMP reais gerados por FFmpeg simultaneamente, distribuídos entre canais arbitrários até CAM 10. O teste recebeu JPEG e PCM identificados por canal pelo WebSocket, verificou chaves distintas, limite de oito entradas, rejeição de porta duplicada, XML da CAM 10 e continuidade de outra câmera após parar uma entrada. O sinal de teste foi sintético em baixa resolução; não representa oito celulares físicos ou um ensaio prolongado de produção.
+
+Testes DOM adicionais verificaram dez opções de canal nos dois tipos de câmera, vinculação independente das entradas 1/10 e sua liberação. Não houve teste físico no Windows com oito Blackmagic Camera, inspeção visual em navegador gráfico ou teste 5G com oito aparelhos. Os guias 0.6/0.7 continuam úteis para operação, mas esta versão substitui suas limitações antigas de uma entrada RTMP e reserva BM CAM.

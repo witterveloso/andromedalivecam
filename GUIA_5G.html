@@ -1,0 +1,33 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Andromeda — 5G</title><style>body{max-width:900px;margin:30px auto;padding:20px;font:16px/1.6 system-ui;background:#12121d;color:#eee}pre{white-space:pre-wrap}</style><pre># Atualização 0.4 — Blackmagic Camera pelo 5G
+
+Inclui a mesa 0.3 com guias separadas, mixer real OFF/AFV/ON por fonte, medidores e CUT por espaço.
+
+O 5G transporta o sinal pela internet. O computador e o iPhone precisam estar conectados à mesma rede privada Tailscale. A mesa não instala nem autentica o Tailscale automaticamente. Um IP 192.168.x.x só funciona na rede local. Não é preciso contratar Blackmagic Cloud para este caminho.
+
+## Instalação e primeiro teste
+1. Feche o Andromeda antigo. Extraia o ZIP em uma pasta nova. Execute INSTALAR.bat e INICIAR.bat; atualize a página com Ctrl+F5.
+2. Instale Tailscale no Windows e no iPhone a partir de https://tailscale.com/download. Entre na mesma rede Tailscale nos dois; para um teste pessoal com seus aparelhos, use a mesma conta. Em uma organização, peça ao administrador acesso do celular ao computador na porta TCP 1935. Confira as condições do plano adequado ao uso.
+3. Deixe o Tailscale conectado em ambos. Autorize a configuração VPN no iPhone quando o sistema pedir. No Windows, permita conexões de entrada pela rede Tailscale; a função de bloquear conexões recebidas deve estar desativada.
+4. Abra Configurações na mesa. No painel Blackmagic, escolha 5G / internet via Tailscale. A lista atualiza automaticamente. Selecione o IP Tailscale DO COMPUTADOR, não o IP do iPhone. A mesa identifica interfaces candidatas; compare com o IP exibido no Tailscale, pois a faixa 100.64.0.0/10 também tem outros usos.
+5. Clique Ativar recepção. A indicação de espera não significa que o celular já esteja conectado. Clique Baixar XML para iPhone e transfira o arquivo para Arquivos no iPhone.
+6. Blackmagic Camera: Configurações &gt; Live Stream &gt; Platform &gt; Import Stream Settings. Importe o novo XML, selecione Andromeda 5G VPN e confira a chave da câmera. O preset usa H.264, 720p30 e 2,5 Mbps de vídeo. Server pode aparecer como Default, sem seleção, pois há um único destino.
+7. Desligue o Wi-Fi do iPhone, mantenha dados móveis e Tailscale ligados e permita dados celulares para ambos os aplicativos. Inicie Live Stream no Blackmagic Camera.
+8. Aguarde a mesa mostrar quadros recebidos em BM CAM. Para áudio, ative o mixer e selecione AFV ou ON no canal BM CAM. Selecione Preview e pressione Espaço para colocar no AR.
+
+O computador permanece ligado, conectado à internet e com o serviço aberto. Ao reiniciar o serviço, a chave muda: exporte e importe outro XML. Apenas uma câmera RTMP é recebida por vez. Não há descoberta automática de todos os celulares na internet, nem SRT ou bonding nesta versão.
+
+## Se não chegar imagem
+- Confirme Tailscale conectado nos dois, endereço do computador, chave e porta.
+- Verifique no Tailscale se o celular consegue alcançar o computador. Se nem o teste de conexão funcionar, resolva a VPN antes do Blackmagic.
+- Se a VPN conecta mas a imagem não chega, confira o Firewall do Windows. Autorize entrada TCP na porta escolhida, limitada ao IP/interface Tailscale do computador e aos dispositivos autorizados da VPN. Não desligue o firewall e não abra a porta do roteador para a internet. Na rede da emissora, solicite a regra à TI.
+- Se conecta mas trava, reduza bitrate e verifique upload do celular. O Tailscale pode utilizar relay quando não consegue conexão direta; isso pode aumentar atraso e limitar desempenho. Não há garantia de latência ou estabilidade no 5G.
+- Compare áudio e vídeo no equipamento real antes de uma produção. A recepção usa caminhos de áudio e vídeo separados e ainda pode apresentar diferença de sincronismo.
+- A interface da mesa continua acessível somente em localhost:3180 no computador. O iPhone envia RTMP; ele não precisa abrir essa interface.
+
+Validação: testes locais de identificação de interfaces e geração de XML, recepção RTMP com e sem áudio e codificação de saída. Não foi possível validar uma sessão física de iPhone em 5G/Tailscale neste ambiente. A exportação segue o formato XML documentado, mas a importação deve ser confirmada no aplicativo instalado.
+
+Referências: https://tailscale.com/docs/how-to/quickstart e https://tailscale.com/docs/reference/connection-types
+
+---
+
+</pre></html>

@@ -1,0 +1,5 @@
+'use strict';
+function vpnCandidate(item){const p=String(item.address).split('.').map(Number);return /tailscale/i.test(item.name)||p.length===4&&p[0]===100&&p[1]>=64&&p[1]<=127;}
+function streamPreset({host,port,key,quality='mobile',slot}){if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)||host.split('.').some(x=>Number(x)>255)||host==='0.0.0.0')throw Error('IP de recepção inválido');if(!Number.isInteger(port)||port<1024||port>65535)throw Error('Porta inválida');if(!/^bmcam-[a-f0-9]+$/.test(key))throw Error('Chave inválida');const bitrate=quality==='mobile'?2500000:4000000;return `<?xml version="1.0" encoding="UTF-8"?>
+<streaming><service><name>Andromeda ${Number.isInteger(slot)?'CAM '+(slot+1)+' ':''}${quality==='mobile'?'5G VPN':'WiFi'}</name><key>${key}</key><servers><server group="Primary"><name>Mesa Andromeda</name><url>rtmp://${host}:${port}/live</url></server></servers><profiles default="720p30"><profile><name>720p30</name><config resolution="720p" fps="30" codec="H264"><bitrate>${bitrate}</bitrate></config></profile></profiles></service></streaming>\n`;}
+module.exports={vpnCandidate,streamPreset};

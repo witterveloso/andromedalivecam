@@ -1,0 +1,43 @@
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    restart: unless-stopped
+    environment:
+      CLOUD_ORIGIN: https://${CAM_DOMAIN:?Set CAM_DOMAIN}
+      CAM_PAGE_URL: ${CAM_PAGE_URL:-}
+      CLOUD_TOKEN: ${CLOUD_TOKEN:?Set CLOUD_TOKEN}
+      TURN_HOST: ${TURN_HOST:?Set TURN_HOST}
+      TURN_SECRET: ${TURN_SECRET:?Set TURN_SECRET}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [control]
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      CAM_DOMAIN: ${CAM_DOMAIN:?Set CAM_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [control]
+  turn:
+    image: coturn/coturn:4.6.3
+    user: "0:0"
+    cap_drop: [ALL]
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+networks:
+  control:
+volumes:
+  caddy_data:
+  caddy_config:

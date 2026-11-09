@@ -1,0 +1,53 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Andromeda 0.9</title><style>body{max-width:1000px;margin:40px auto;padding:24px;background:#101827;color:#dbe8ff;font:16px/1.7 system-ui}pre{white-space:pre-wrap;font:inherit}</style><h1>Andromeda Live · 0.9</h1><pre># Andromeda Live 0.9 — câmera por link + áudio no AR
+
+## Entrega e situação atual
+Esta versão contém o código e a estrutura de implantação de um gateway público dedicado à sua mesa, além do monitor de áudio PROGRAM. Não contém um servidor contratado/implantado, domínio registrado, certificado emitido, APK ou IPA. Nenhum link público foi ativado nesta entrega. O projeto mantém a mesa/corte/codificação no computador; o serviço público conecta os participantes e o TURN pode retransmitir a mídia. Não é a versão SaaS com toda a mesa e o encoder na nuvem.
+
+## Experiência do operador depois da implantação
+1. Na mesa, Configurações → Andromeda Cam: selecione CAM 1–10, nome e perfil (720p30/3 Mbps ou 1080p30/5 Mbps).
+2. Clique Gerar convite. Use Compartilhar, Copiar convite ou Enviar pelo WhatsApp. O envio da mensagem é feito pelo operador; não é automático.
+3. O cinegrafista abre o link HTTPS no Safari/Chrome atualizado, toca ATIVAR CÂMERA e concede câmera/microfone. Não precisa instalar o aplicativo nem uma VPN no modo público.
+4. O convite identifica o canal e carrega o perfil antes de abrir a câmera. A captura usa valores ideais; o aparelho/navegador pode entregar outro formato, exibido na tela como resolução/fps efetivos.
+5. A mesa recebe vídeo/áudio; o celular recebe tally e intercom. O operador da mesa escolhe áudio OFF/AFV/ON e faz o corte. Conecte fones antes de liberar o retorno.
+
+O mesmo link é usado no Wi-Fi e nos dados móveis, desde que o aparelho e a mesa tenham internet. A mídia tenta conexão direta por IP com WebRTC e usa TURN quando necessário. Trocar Wi-Fi por 5G pode interromper o sinal enquanto renegocia; não há bonding ou garantia de troca sem cortes. O modo público precisa de internet mesmo quando ambos estão na mesma rede local. O modo privado anterior continua disponível usando INICIAR.bat e gateway HTTPS local conforme o guia 0.6; HTTP com IP 192.168.x.x não basta para câmera no navegador.
+
+“Qualquer celular” não é uma garantia possível: requer navegador com WebRTC/getUserMedia, permissões, câmera disponível e recursos suficientes. Navegadores internos de mensageiros podem bloquear captura/retorno; abra no Safari/Chrome. Deixe a página em primeiro plano e a tela ligada. Bloqueio de tela, ligações e suspensão do sistema podem interromper a câmera. O link abre o app web; não instala um app nativo silenciosamente. Controles avançados de lentes/ISO/estabilização dependem das APIs expostas pelo navegador.
+
+## Implantação única — administrador
+Arquivos: cloud/compose.yaml, cloud/Dockerfile, cloud/Caddyfile, cloud/configure.py, cloud-server.cjs e cloud-client.cjs.
+
+Pré-requisitos: VPS Linux com Docker Engine e Compose, Python 3, IPv4 público atribuído diretamente à interface (modelo desta configuração), acesso SSH administrativo e dois nomes DNS apontando para esse IP. Exemplo somente ilustrativo: cam.seudominio.com e turn.seudominio.com. Substitua pelos nomes reais. Não use proxy/CDN no registro TURN. Configure banda e recursos conforme número/bitrate das câmeras; o custo de tráfego do relay deve ser acompanhado. Estes arquivos não contratam serviços nem calculam faturas.
+
+1. Transfira a pasta Andromeda_Live_YouTube para o VPS. Entre em cloud/ e execute `python3 configure.py`.
+2. Informe domínio da câmera, domínio TURN e IPv4 público. O script cria .env e turnserver.conf, além de mesa-cloud.env para o computador da mesa. Segredos são aleatórios, não são impressos e os arquivos locais têm permissões restritas. Não publique esses arquivos em repositórios e não envie mesa-cloud.env aos cinegrafistas.
+3. Configure DNS e firewall: TCP 80/443 para HTTPS; UDP e TCP 3478 para TURN; UDP 49160–49260 para relay. Preserve seu acesso administrativo SSH. Não abra as portas 3180/3185 nem 8080 para a internet. Caddy é a entrada pública HTTPS e encaminha WebSocket; o gateway não expõe a interface de corte.
+4. Execute `docker compose up -d --build` na pasta cloud/. Caddy tenta emitir o certificado após DNS/portas corretos. Consulte `docker compose logs --tail=100` e o endpoint `/health` do domínio para diagnosticar disponibilidade. Não compartilhe logs que incluam informações privadas.
+5. Transfira mesa-cloud.env de forma segura para a pasta Andromeda_Live_YouTube no Windows. Inicie com INICIAR_NUVEM.bat (Node.js 22). A mesa estabelece conexão de saída para o gateway; não precisa expor portas de entrada do computador para o modo de câmera por link.
+6. Abra http://localhost:3180. O painel Andromeda Cam deve indicar gateway público conectado e preencher o domínio. Gere o primeiro convite, teste câmera/áudio/tally/intercom e só então ensaie a transmissão.
+7. Teste um telefone no Wi-Fi e outro com Wi-Fi desligado em 4G/5G. Confirme recebimento real, ambos os sentidos do intercom e atualização do tally durante cortes. Teste também perda/reconexão de rede, revogação e expiração. Não considere apenas a abertura da página como prova de transmissão.
+
+Esta configuração coturn oferece TURN UDP/TCP na porta 3478. Redes que só permitem TLS na porta 443 podem exigir um segundo IP e TURN/TLS 443 com certificado; isso não está automatizado neste pacote. O arquivo gerado assume VPS sem NAT na interface pública. VPS atrás de NAT exige adaptar listening-ip/relay-ip/external-ip com o administrador. A imagem coturn utiliza rede do host; a receita destina-se a Linux.
+
+## Autenticação, validade e recuperação
+- Cada convite tem token aleatório e acesso a um único canal, válido por 12 horas. Compartilhe somente com o operador autorizado; qualquer pessoa com o link pode usá-lo enquanto estiver válido/livre.
+- Reemitir ou revogar o convite encerra seu acesso. Cada canal admite uma câmera conectada por vez.
+- Convites ficam em memória no gateway: reiniciar o serviço exige gerar novos convites. Configuração de infraestrutura permanece nos arquivos privados, que precisam de backup seguro.
+- O segredo de administração permanece no servidor e no arquivo do computador; não vai ao browser do cinegrafista. TURN usa credenciais temporárias derivadas por HMAC, válidas por 13 horas para cobrir a sessão. Revogar a câmera não revoga instantaneamente uma credencial TURN já emitida; quotas e expiração limitam seu uso.
+- A implantação é dedicada a uma mesa. Não implementa login multiempresa, cobrança, banco de sessões, alta disponibilidade, DDoS gerenciado ou operação SaaS multitenant. Apenas uma mesa de controle fica conectada ao gateway por vez.
+- Para trocar/rotacionar o segredo administrativo, atualize o gateway e mesa-cloud.env e reinicie os serviços. Isso desconecta as câmeras e exige novos convites.
+
+## Monitor de áudio no painel AR
+Abaixo da imagem PROGRAM existem barras L/R em dBFS, pico retido, estado de áudio e botão Ouvir em fones. O medidor lê o master pós-volume, incluindo fontes em ON/AFV e microfone adicional durante seu uso. Intercom continua separado. A interface não é desenhada no canvas que vai ao encoder.
+
+ATIVAR ÁUDIO: motor de áudio ainda não está rodando. ÁUDIO DETECTADO: amostras acima de −60 dBFS. NÍVEL BAIXO/SILÊNCIO e SEM ÁUDIO HÁ 3 s: nenhum dos dois canais superou esse limiar no período indicado. PICO/LIMITE DIGITAL: uma amostra chegou a 0 dBFS ou acima. Um canal silencioso permanece visível separadamente. O silêncio pode ser intencional; o indicador não modifica o volume.
+
+ENVIO PARADO e CODIFICADOR ENVIANDO são estados separados da presença de áudio. Este é o áudio que alimenta o encoder local; não é retorno do YouTube. Para confirmar o que o público recebe, ouça/veja a transmissão no destino. A monitoração em fones compartilha o mesmo controle do mixer e não altera o volume enviado ao master.
+
+## Validação feita nesta entrega
+20 testes de backend/composição passaram, incluindo oito entradas RTMP sintéticas simultâneas e novo teste de gateway com APIs/WS, proteção de convites, perfil técnico e geração de credenciais TURN. Testes DOM com mídia simulada verificaram medidores L/R, silêncio, clipping e isolamento da UI; o cliente web aplicou o perfil antes da captura e recusou convite inválido antes de ativar a câmera.
+
+Limites: testes locais do gateway usaram HTTP/WS; não houve implantação do Docker/Caddy/coturn, emissão real de certificado, ensaio do proxy de saída com TLS público, relay TURN real, inspeção visual no navegador, captura física iOS/Android ou teste em operadora 5G. A sintaxe Node/Python foi verificada; não há Docker neste ambiente para validar o Compose em execução. Homologue esses pontos no VPS e aparelhos antes da produção.
+
+Referências: https://webrtc.org/getting-started/turn-server ; https://caddyserver.com/docs/caddyfile/directives/reverse_proxy ; https://github.com/coturn/coturn/blob/master/README.turnserver
+</pre></html>

@@ -1,0 +1,1 @@
+window.ANDROMEDA_GATEWAY = "";

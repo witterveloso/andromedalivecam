@@ -1,0 +1,10 @@
+{$CAM_DOMAIN} {
+  header {
+    Referrer-Policy "no-referrer"
+    X-Content-Type-Options "nosniff"
+  }
+  request_body {
+    max_size 8KB
+  }
+  reverse_proxy gateway:8080
+}
