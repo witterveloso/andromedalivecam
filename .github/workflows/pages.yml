@@ -1,0 +1,41 @@
+name: Publish Andromeda Cam
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure public gateway address
+        env:
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.parse,pathlib
+          value=os.environ.get('GATEWAY_URL','').strip()
+          if value:
+              u=urllib.parse.urlsplit(value)
+              if u.scheme!='https' or not u.hostname or u.username or u.password or u.path not in ('','/') or u.query or u.fragment:
+                  raise SystemExit('GATEWAY_URL must be an HTTPS origin')
+              value=value.rstrip('/')
+          pathlib.Path('docs/config.js').write_text('window.ANDROMEDA_GATEWAY = '+json.dumps(value)+';\n')
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
