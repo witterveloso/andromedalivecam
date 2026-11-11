@@ -69,7 +69,7 @@ test('real run: two RTMP destinations (one of them down) and an MP4 recording fr
   const log=audit.export();assert(!log.includes('keyAAAA1')&&!log.includes('keyBBBB2'),'audit never stores stream keys');
   const codes=audit.since(0).map(e=>e.code);for(const code of ['inicio','enviando','destino-reconectando','fim','arquivo'])assert(codes.includes(code),code+' missing from '+codes);
   const feedLog=await(await fetch('http://localhost:'+port+'/api/audit?since=0')).json();assert(feedLog.events.length>=5&&feedLog.summary.counts.warn>=1);
- }finally{clearInterval(timer);ws?.terminate();upA.kill('SIGKILL');bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250})}
+ }finally{clearInterval(timer);ws?.terminate();upA.kill('SIGKILL');bridge.shutdown();try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch{/* Windows may still lock a file; never hide the test's own result */}}
 });
 
 test('storage and audit endpoints: token required for writes, volumes listed, folder checked',async()=>{
@@ -83,5 +83,5 @@ test('storage and audit endpoints: token required for writes, volumes listed, fo
   assert.equal((await post('/api/audit',{level:'error',code:'teste',message:'falha rtmp://x.y/app/SEGREDO',data:{streamKey:'abc',fps:12}})).status,204);
   const last=audit.since(0).at(-1);assert.equal(last.level,'error');assert.equal(last.source,'mesa');assert(!JSON.stringify(last).includes('SEGREDO')&&last.data.streamKey==='•••'&&last.data.fps===12);
   const exported=await fetch(base+'/api/audit/export');assert.match(exported.headers.get('content-disposition'),/andromeda-auditoria-.*\.jsonl/);assert((await exported.text()).trim().split('\n').every(line=>JSON.parse(line).seq>0));
- }finally{bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250})}
+ }finally{bridge.shutdown();try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch{/* Windows may still lock a file; never hide the test's own result */}}
 });
