@@ -36,5 +36,5 @@ test('this computer: licensing is off without a public key and enforced once one
    assert.equal(activated.status,200);assert.equal((await activated.json()).planName,'Teste');assert.equal(license.status().mode,'ativa');
    clock=now+40*DAY;assert.equal(license.status().mode,'vencida');assert.match(await start(),/vencida/i);
   }finally{bridge.shutdown()}
- }finally{fs.rmSync(dir,{recursive:true,force:true})}
+ }finally{fs.rmSync(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250})}
 });

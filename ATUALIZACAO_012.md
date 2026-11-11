@@ -46,6 +46,14 @@ node tools/licenca.cjs emitir --plano anual --cliente "Nome do cliente" --email 
 
 O primeiro comando cria a chave privada (fica só com o vendedor, nunca no GitHub) e a pública (vai com o programa). O segundo imprime o token que o cliente cola em Diagnóstico → Licença. Planos: teste (14 dias), mensal (31), anual (366). Aviso nos últimos 7 dias, tolerância de 3 dias após o vencimento e, depois disso, a transmissão é bloqueada.
 
+## Programa instalado e repositório
+
+- A mesa agora é um **programa para Windows** (instalador em Releases): abre em janela própria, já com o serviço local e o FFmpeg, sem Node.js nem terminal. A janela não reduz quadros quando fica atrás de outros programas, pede confirmação antes de fechar durante uma transmissão e impede que a tela do computador apague.
+- Logs, licença e `mesa-cloud.env` ficam em `%APPDATA%\Andromeda Live\`.
+- O modo navegador (`INSTALAR.bat` / `INICIAR.bat`) continua disponível.
+- O repositório `andromedalivecam` passa a ser a casa do produto: mesa, câmera, gateway, aplicativo móvel (`mobile/`) e CI.
+- Corrigido: o contêiner do gateway e `scripts/check-gateway.cjs` consultavam `/health`, que não existia; o gateway seria marcado como fora do ar.
+
 ## Validação
 
 Executado nesta revisão:

@@ -1,171 +1,61 @@
 # Andrômeda Live
 
-Mesa de corte ao vivo que roda no notebook, com câmeras de celular por link de convite (WebRTC, Wi-Fi ou 4G/5G), entradas Blackmagic por RTMP, mosaico, gravação e saída do PROGRAM para vários destinos ao mesmo tempo (YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn ou RTMP próprio).
+Mesa de produção ao vivo para Windows: até 10 câmeras de celular por link de convite (Wi-Fi ou 4G/5G), câmeras Blackmagic por RTMP, mosaico, gráficos, mixer de áudio, gravação em disco ou HD externo e transmissão do PROGRAM para até 6 destinos ao mesmo tempo (YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn ou qualquer servidor RTMP).
 
-| Parte | Onde fica | Como abre |
+Versão atual: **0.12**. O que mudou está em [ATUALIZACAO_012.md](ATUALIZACAO_012.md); as decisões de produto, em [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md).
+
+## As três partes
+
+| Parte | O que é | Onde roda |
 | --- | --- | --- |
-| Mesa | `public/` | `INSTALAR.bat`, depois `INICIAR.bat` → http://localhost:3180 |
-| Câmera (celular) | `public/cam/` e `docs/` | link de convite gerado na mesa |
-| Gateway público | `cloud/` | Docker + Caddy + TURN, ver [ATUALIZACAO_09.md](ATUALIZACAO_09.md) |
+| **Mesa** (`server.cjs`, `public/`, `desktop/`) | Corte, mosaico, gráficos, áudio, gravação e codificação | Computador da produção (Windows) |
+| **Câmera** (`docs/`, `public/cam/`) | Página que o celular abre pelo convite: imagem, tally e intercom | Navegador do celular |
+| **Gateway** (`cloud/`, `cloud-server.cjs`, `camera-hub.cjs`) | Convites, sinalização e TURN para câmeras fora da rede local | VPS Linux com Docker (opcional) |
 
-Requer Node.js 22 ou superior. Testes: `npm test`.
+Na mesma rede Wi-Fi, a mesa basta. Para câmeras em 4G/5G ou em outra rede, publique o gateway (veja [PUBLICAR.md](PUBLICAR.md)).
 
-# Atualização atual: 0.12
+## Instalar a mesa no Windows
 
-Leia [ATUALIZACAO_012.md](ATUALIZACAO_012.md): transmissão para vários destinos, gravação em disco e HD externo, mosaico, identidade Andrômeda Live, diagnóstico com auditoria e a base do licenciamento. As avaliações de produto (formato do aplicativo, referências, nuvem, câmera nativa) estão em [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md).
+**Programa instalado (recomendado).** Baixe `Andromeda-Live-Setup-0.12.0.exe` na página de versões do repositório (**Releases**, à direita na página inicial do GitHub, ou `https://github.com/witterveloso/andromedalivecam/releases/latest`) e instale. A CI publica o instalador ali a cada atualização da `main`. O instalador cria atalhos na área de trabalho e no menu Iniciar e não pede administrador. O programa já traz o serviço local e o FFmpeg: não é preciso instalar Node.js nem manter uma janela de terminal aberta.
 
-# Atualização 0.11
+O instalador ainda não tem assinatura digital, então o Windows SmartScreen mostra "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**. Para distribuir a clientes, assine com um certificado de assinatura de código (veja [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md)).
 
-Leia [ATUALIZACAO_011.md](ATUALIZACAO_011.md): correção dos monitores congelados da 0.10, nova interface da mesa e da câmera e convite com QR code.
+**Modo navegador (alternativa).** Com Node.js 22 ou superior: `INSTALAR.bat` e depois `INICIAR.bat`, que abre a mesa no navegador em `http://localhost:3180`. Mantenha a aba visível durante a transmissão.
 
-# Atualização 0.10
+**Pastas do programa instalado:** logs de auditoria, licença e configuração da nuvem ficam em `%APPDATA%\Andromeda Live\` (cole esse caminho na barra do Explorador de Arquivos).
 
-Leia [ATUALIZACAO_010_LAYOUT.md](ATUALIZACAO_010_LAYOUT.md): mesa personalizável e T-bar. A correção RTMP está em [ATUALIZACAO_091_BLACKMAGIC.md](ATUALIZACAO_091_BLACKMAGIC.md).
+- `logs\`: uma trilha por sessão, também visível na página Diagnóstico.
+- `mesa-cloud.env`: para usar o gateway na nuvem, copie aqui o arquivo gerado no VPS e reabra o programa (no modo navegador, use `INICIAR_NUVEM.bat` com o arquivo na pasta do projeto).
+- `licenca.txt`: criado ao ativar uma licença na página Diagnóstico.
 
-# Atualização 0.9
+## Antes da primeira live
 
-Leia [ATUALIZACAO_09.md](ATUALIZACAO_09.md): câmera por link com gateway público a implantar e monitor L/R no AR.
+Siga [HOMOLOGACAO.md](HOMOLOGACAO.md): live privada em cada plataforma com as chaves reais, ensaio longo no computador de produção, celulares reais em Wi-Fi e 4G/5G, gravação em HD externo. A CI comprova que o programa instala, abre e passa nos testes em Windows e Linux; ela não substitui o ensaio com o equipamento e as contas reais.
 
-# Atualização 0.8
+## Desenvolvimento
 
-Leia [ATUALIZACAO_08.md](ATUALIZACAO_08.md): até oito entradas Blackmagic em quaisquer canais de 1 a 10. Substitui a reserva BM CAM e o limite de um receptor dos guias anteriores.
+```sh
+npm ci                 # Node.js 22+
+npm test               # serviço: codificador, destinos, gravação, câmeras, licença
+npm run test:ui        # mesa em DOM emulado
+npm run test:python    # configuração do gateway
+npm run desktop        # abre a mesa no Electron
+npm run dist:win       # gera o instalador (Windows)
+```
 
-# Atualização 0.7
+A CI (`.github/workflows/ci.yml`) roda os testes em Ubuntu e Windows, constrói e inicia o contêiner do gateway, gera o instalador, abre o programa empacotado no Windows e guarda o instalador e uma captura da mesa como artefato. O workflow `pages.yml` publica `docs/` no GitHub Pages a cada push na `main`.
 
-Leia [ATUALIZACAO_07.md](ATUALIZACAO_07.md) para PiP independente, prévia interativa, medidores e DTV fixo. O guia 0.6 continua documentando instalação e conexão da câmera.
+| Pasta ou arquivo | Função |
+| --- | --- |
+| `server.cjs`, `encoder.cjs`, `receiver*.cjs` | Serviço local: mesa, codificação, destinos, entradas RTMP |
+| `storage.cjs`, `audit.cjs`, `license.cjs` | Gravação e unidades, trilha de auditoria, licença |
+| `public/` | Interface da mesa |
+| `desktop/` | Programa para Windows (Electron) e ícones |
+| `docs/`, `public/cam/` | Página da câmera (os mesmos arquivos; só `config.js` muda) |
+| `camera-hub.cjs`, `cloud-server.cjs`, `cloud-client.cjs`, `cloud/` | Convites, sinalização, gateway público e TURN |
+| `mobile/` | Projeto do aplicativo nativo da câmera (Flutter, experimental) |
+| `tools/licenca.cjs` | Gerador de chaves e tokens de ativação (uso do vendedor) |
+| `scripts/check-gateway.cjs` | Verificação de HTTPS e saúde do gateway publicado |
+| `test/` | Testes automatizados |
 
-# Atualização 0.6
-
-Leia primeiro [ATUALIZACAO_06.md](ATUALIZACAO_06.md): Andromeda Cam, GC/PiP e novo layout. O conteúdo abaixo documenta a integração Blackmagic anterior, que continua separada do Andromeda Cam.
-
-# Atualização 0.4 — Blackmagic Camera pelo 5G
-
-Inclui a mesa 0.3 com guias separadas, mixer real OFF/AFV/ON por fonte, medidores e CUT por espaço.
-
-O 5G transporta o sinal pela internet. O computador e o iPhone precisam estar conectados à mesma rede privada Tailscale. A mesa não instala nem autentica o Tailscale automaticamente. Um IP 192.168.x.x só funciona na rede local. Não é preciso contratar Blackmagic Cloud para este caminho.
-
-## Instalação e primeiro teste
-1. Feche o Andromeda antigo. Extraia o ZIP em uma pasta nova. Execute INSTALAR.bat e INICIAR.bat; atualize a página com Ctrl+F5.
-2. Instale Tailscale no Windows e no iPhone a partir de https://tailscale.com/download. Entre na mesma rede Tailscale nos dois; para um teste pessoal com seus aparelhos, use a mesma conta. Em uma organização, peça ao administrador acesso do celular ao computador na porta TCP 1935. Confira as condições do plano adequado ao uso.
-3. Deixe o Tailscale conectado em ambos. Autorize a configuração VPN no iPhone quando o sistema pedir. No Windows, permita conexões de entrada pela rede Tailscale; a função de bloquear conexões recebidas deve estar desativada.
-4. Abra Configurações na mesa. No painel Blackmagic, escolha 5G / internet via Tailscale. A lista atualiza automaticamente. Selecione o IP Tailscale DO COMPUTADOR, não o IP do iPhone. A mesa identifica interfaces candidatas; compare com o IP exibido no Tailscale, pois a faixa 100.64.0.0/10 também tem outros usos.
-5. Clique Ativar recepção. A indicação de espera não significa que o celular já esteja conectado. Clique Baixar XML para iPhone e transfira o arquivo para Arquivos no iPhone.
-6. Blackmagic Camera: Configurações > Live Stream > Platform > Import Stream Settings. Importe o novo XML, selecione Andromeda 5G VPN e confira a chave da câmera. O preset usa H.264, 720p30 e 2,5 Mbps de vídeo. Server pode aparecer como Default, sem seleção, pois há um único destino.
-7. Desligue o Wi-Fi do iPhone, mantenha dados móveis e Tailscale ligados e permita dados celulares para ambos os aplicativos. Inicie Live Stream no Blackmagic Camera.
-8. Aguarde a mesa mostrar quadros recebidos em BM CAM. Para áudio, ative o mixer e selecione AFV ou ON no canal BM CAM. Selecione Preview e pressione Espaço para colocar no AR.
-
-O computador permanece ligado, conectado à internet e com o serviço aberto. Ao reiniciar o serviço, a chave muda: exporte e importe outro XML. Apenas uma câmera RTMP é recebida por vez. Não há descoberta automática de todos os celulares na internet, nem SRT ou bonding nesta versão.
-
-## Se não chegar imagem
-- Confirme Tailscale conectado nos dois, endereço do computador, chave e porta.
-- Verifique no Tailscale se o celular consegue alcançar o computador. Se nem o teste de conexão funcionar, resolva a VPN antes do Blackmagic.
-- Se a VPN conecta mas a imagem não chega, confira o Firewall do Windows. Autorize entrada TCP na porta escolhida, limitada ao IP/interface Tailscale do computador e aos dispositivos autorizados da VPN. Não desligue o firewall e não abra a porta do roteador para a internet. Na rede da emissora, solicite a regra à TI.
-- Se conecta mas trava, reduza bitrate e verifique upload do celular. O Tailscale pode utilizar relay quando não consegue conexão direta; isso pode aumentar atraso e limitar desempenho. Não há garantia de latência ou estabilidade no 5G.
-- Compare áudio e vídeo no equipamento real antes de uma produção. A recepção usa caminhos de áudio e vídeo separados e ainda pode apresentar diferença de sincronismo.
-- A interface da mesa continua acessível somente em localhost:3180 no computador. O iPhone envia RTMP; ele não precisa abrir essa interface.
-
-Validação: testes locais de identificação de interfaces e geração de XML, recepção RTMP com e sem áudio e codificação de saída. Não foi possível validar uma sessão física de iPhone em 5G/Tailscale neste ambiente. A exportação segue o formato XML documentado, mas a importação deve ser confirmada no aplicativo instalado.
-
-Referências: https://tailscale.com/docs/how-to/quickstart e https://tailscale.com/docs/reference/connection-types
-
----
-
-# Atualização 0.3 — operação e áudio
-
-Extraia esta atualização em uma pasta nova. Feche a versão anterior, execute INSTALAR.bat e depois INICIAR.bat. Acesse http://localhost:3180 e atualize a página com Ctrl+F5.
-
-- Operação: Preview à esquerda, AR à direita, cortes, fontes e mixer.
-- Transmissão: iniciar/parar envio e configurar YouTube.
-- Configurações: fontes locais, webcam, receptor Blackmagic e configurações gerais.
-- Clique numa câmera para selecionar Preview; Espaço faz CUT mesmo com a câmera em foco. Inputs e caixas de diálogo não disparam cortes. 1–9 selecionam Preview, menos seleciona câmera 10, 0 seleciona preto, Enter faz AUTO quando o foco não está num controle.
-- Clique em Ativar áudio / medidores uma vez. Escolher um modo de áudio também ativa o mixer.
-- OFF: fonte muda. AFV: segue o AR, com transição de volume. ON: continua tocando mesmo ao cortar para outra imagem. Volume por fonte e master; medidores reais pós-volume, sem animação simulada.
-- Vídeos locais, áudio da webcam (quando autorizado) e áudio RTMP Blackmagic alimentam o mesmo master enviado ao YouTube. Reiniciar vídeo volta ao início; reprodução é em loop.
-- Para manter áudio de um vídeo enquanto mostra outra câmera, selecione ON no canal do vídeo e OFF na câmera que ficará no AR.
-- Ouvir em fones permite escutar o master localmente; começa desligado. Use fones para evitar retorno acústico.
-- O microfone adicional do Windows é capturado durante o envio ao YouTube. Não o habilite em duplicidade com uma webcam que já usa o mesmo microfone.
-- Canais começam em OFF a cada abertura: confira os modos antes de transmitir.
-
-Validação desta atualização: testes locais com FFmpeg para vídeo RTMP com e sem áudio e PCM com sinal não nulo; testes de interface em DOM com APIs de áudio substituídas para conferir roteamento OFF/AFV/ON, guias e Espaço. O navegador completo não iniciou no ambiente de validação. Não houve teste no iPhone/Windows físico nem publicação em canal real. Confira qualidade e sincronismo labial no seu computador; esta versão ainda é beta.
-
----
-
-# Andromeda Live — saída real para YouTube (beta 0.3)
-
-A mesa envia exclusivamente o vídeo PROGRAM (AR) para um codificador FFmpeg local, que publica no YouTube em H.264 + AAC por RTMP/RTMPS. Não usa OBS. O PREVIEW e os controles da interface não entram na transmissão. Não começa a enviar ao abrir o programa.
-
-## Como executar no Windows
-
-1. Extraia TODO o ZIP para uma pasta. Não execute de dentro do ZIP.
-2. Instale Node.js LTS, versão 22 ou superior: https://nodejs.org/
-3. Abra INSTALAR.bat e aguarde. É necessária internet; npm baixa ws e tenta instalar o FFmpeg correspondente ao Windows. Não é necessário executar como administrador.
-4. Abra INICIAR.bat. O serviço abrirá a mesa em http://localhost:3180. Mantenha a janela do serviço aberta.
-5. No YouTube Studio, crie uma transmissão com codificador. Para testar, use Não listado e desative o início automático se quiser confirmar a prévia antes de publicar. A primeira habilitação de lives pode demorar até 24 horas.
-6. Na mesa: Configurações → Stream de Saída → YouTube Live. Cole a URL PRINCIPAL do servidor (terminando em /live2) e a chave, em campos separados. Use exatamente os dados do Studio, sem a URL de backup com parâmetros.
-7. Selecione 720p para o primeiro teste. A saída desta versão é fixa em 30 fps. Bitrate aceito: 3–20 Mbps. Ajuste conforme a capacidade de upload; acompanhe a integridade no Studio. O padrão de 8 Mbps pode ser pesado em conexões lentas.
-8. Salve e feche as configurações. Em Áudio enviado ao YouTube, escolha silêncio ou microfone/interface padrão do Windows. Para uma interface USB, selecione-a antes como entrada padrão do Windows.
-9. Clique TRANSMITIR YOUTUBE. O status “Enviando” significa que o FFmpeg está produzindo saída para o destino; confirme a imagem no YouTube Studio. Dependendo da configuração da live, ainda será necessário clicar Transmitir ao vivo no Studio.
-10. Faça os cortes na mesa. Ao terminar, clique PARAR ENVIO e confira o encerramento no YouTube Studio.
-
-Mantenha a aba da mesa visível e o computador acordado. Abrir apenas public/index.html como arquivo não inicia a transmissão: use o serviço local.
-
-## Receber vídeo do Blackmagic Camera
-
-1. Instale e abra o pacote atualizado pelo INICIAR.bat. Conecte o celular e o PC à mesma rede local. Evite rede de convidados, que pode isolar os dispositivos.
-2. Na mesa, procure o painel “Blackmagic Camera → BM CAM”. Selecione o IP do adaptador conectado à mesma rede do celular. Não escolha 127.0.0.1: esse endereço serve apenas para testes no próprio PC.
-3. Mantenha a porta TCP 1935, ou escolha outra livre. Clique Ativar recepção. Autorize o FFmpeg no Firewall do Windows para redes privadas, se solicitado. Não é necessário abrir portas no roteador para uso na mesma rede.
-4. Copie o Servidor e a Chave da câmera exibidos. Essa chave é local e não é a chave do YouTube. Exemplo de servidor: rtmp://192.168.1.100:1935/live. O IP real deve ser o exibido no seu painel.
-5. No Blackmagic Camera, abra Live Stream / Transmissão ao vivo e selecione um destino RTMP personalizado. Caso a versão use Import Stream Settings, crie a predefinição no Blackmagic Streaming Utility com o servidor exibido, exporte e importe no aplicativo. Os nomes e opções variam por sistema e versão. O pacote não fornece um preset XML não validado.
-6. Configure o servidor e a chave em campos separados. Se o aplicativo pedir uma URL única, junte servidor/chave. Use H.264, 720p ou 1080p, 30 fps; comece com 4–6 Mbps na entrada.
-7. Inicie Live Stream no celular. Ao chegar vídeo, a mesa exibirá “Recebendo vídeo em BM CAM”. Selecione BM CAM no PREVIEW e faça CUT/AUTO para colocá-la no PROGRAM. A recepção nunca troca o programa automaticamente.
-8. Para publicar, configure os dados de saída do YouTube e clique TRANSMITIR YOUTUBE. A imagem de BM CAM só será enviada quando estiver no PROGRAM ou participando de uma transição.
-9. Para desligar a entrada, clique Parar recepção na mesa e encerre o stream no celular. O receptor fica aguardando reconexão quando o celular desconecta; não indica conexão sem quadros novos.
-
-A entrada desta versão usa RTMP, não SRT. Só uma câmera de rede é recebida de cada vez, em BM CAM. São necessários pelo menos 8 canais configurados na mesa para disponibilizar essa fonte. O vídeo é decodificado e convertido para MJPEG 720p para visualização/composição no navegador; depois o PROGRAM é recodificado para o YouTube. Isso adiciona processamento, latência e perda de qualidade. O áudio RTMP é decodificado para PCM estéreo 48 kHz e entra no canal BM CAM do mixer. O transporte de áudio e vídeo usa filas separadas: verifique sincronismo labial no equipamento real antes de uma transmissão. Não há controle remoto de foco, zoom ou tally no aplicativo.
-
-A Blackmagic documenta Live Stream e importação de configurações personalizadas para o aplicativo, mas a disponibilidade varia entre iOS/Android, versão e aparelho. Se Live Stream não aparecer no seu app, a presença deste receptor no PC não habilita o recurso no celular. Verifique a versão e as funcionalidades suportadas no aparelho. Referências: https://www.blackmagicdesign.com/pt/products/blackmagiccamera e https://www.blackmagicdesign.com/products/blackmagiccamera/techspecs
-
-O teste automatizado desta entrada utilizou um emissor FFmpeg real por RTMP local e confirmou a decodificação de quadros JPEG. Ainda não houve teste com seu aparelho Blackmagic Camera nem uma transmissão ao seu canal.
-
-## Escopo desta versão
-
-- Real: recepção de vídeo Blackmagic por RTMP na rede local; saída de vídeo PGM para YouTube; captura de webcam; fotos/vídeos locais; microfone ou interface padrão; controle de volume/mute desse microfone; conversão H.264/AAC; estado de envio e erros do codificador.
-- As fotos incorporadas são demonstrações. Arquivos de vídeo locais entram no mixer quando o operador seleciona ON ou AFV. Fotos não produzem áudio.
-- Áudio dos arquivos e câmeras ainda não é misturado. A saída contém silêncio ou o microfone selecionado no painel de transmissão.
-- Não há recepção remota de celulares via WebRTC/SRT nesta versão.
-- Instagram, Facebook, Twitch, Kick, RTMP personalizado, gravação e armazenamento em nuvem não estão integrados.
-- Os demais parâmetros de rede/câmeras/gravação permanecem como perfil ou simulação. As opções de codec desses perfis não alteram o codificador real, fixado em H.264/AAC, 30 fps e keyframe a cada 2 segundos.
-- Não há reconexão automática da publicação. Se cair, confira a causa e inicie novamente manualmente.
-- Não é uma versão validada para operação crítica. Faça uma live não listada antes de usar em produção.
-
-## Credenciais e serviço local
-
-A chave permanece na memória da sessão, não é salva no perfil do navegador nem incluída em relatórios. O serviço não registra a chave em logs. O FFmpeg recebe o destino como argumento de processo: administradores do próprio computador podem inspecioná-lo. O serviço escuta apenas em 127.0.0.1:3180, aceita apenas a origem local e usa um token de sessão para o WebSocket. Não exponha essa porta à internet.
-
-## Se houver problema
-
-- “Node não encontrado”: instale Node.js LTS e abra INSTALAR.bat novamente.
-- “FFmpeg ausente”: execute INSTALAR.bat novamente. Se o download automático não funcionar, obtenha um build Windows com libx264/AAC a partir de https://ffmpeg.org/download.html. Instale no PATH ou defina FFMPEG_PATH apontando para ffmpeg.exe antes de iniciar. Exemplo no Prompt de Comando: `set "FFMPEG_PATH=C:\ffmpeg\bin\ffmpeg.exe"` e depois `node server.cjs` dentro da pasta do projeto.
-- “Serviço indisponível”: use INICIAR.bat e abra http://localhost:3180; não abra o HTML diretamente.
-- Porta ocupada: feche a instância anterior. O servidor usa a porta 3180.
-- “Já existe transmissão”: pare a outra aba ou feche e reabra o serviço. Só uma sessão publica por vez.
-- “YouTube recusou”: copie novamente a chave e a URL principal. Feche qualquer outro encoder usando a mesma chave. Verifique se o canal está habilitado para lives.
-- Sem som: escolha microfone/interface antes de iniciar e autorize o navegador. Confira a entrada padrão do Windows e o medidor real da mesa.
-- Imagem travando: mantenha a aba visível; teste 720p, feche programas pesados e reduza o bitrate se o upload for insuficiente.
-- Abra VERIFICAR.bat para conferir Node, WebSocket e FFmpeg sem iniciar uma live.
-
-## Validação realizada
-
-Testes automatizados cobriram validação de destinos e parâmetros, mensagens sem chave, codificação real de WebM VP8/Opus para FLV H.264/AAC e comunicação HTTP/WebSocket com o FFmpeg. O destino foi redirecionado a arquivo local no teste: nenhuma live foi criada. Fluxo de início/parada e exclusão de credenciais do armazenamento também verificados com APIs de mídia simuladas. Não foi possível executar o navegador completo de teste neste ambiente. Instalação no Windows, captura do navegador e recepção no canal precisam ser verificadas no computador do operador.
-
-Para desenvolvedores: `npm ci`, `npm test`, `npm start`. O teste de integração usa a porta 3181. Dependências instaladas não estão no ZIP. FFmpeg não é redistribuído no ZIP: é baixado na instalação ou usado do sistema. Consulte as licenças dos fornecedores para distribuição comercial.
-
-## Referências
-
-- YouTube, configuração do codificador: https://support.google.com/youtube/answer/2853702?hl=pt-BR
-- YouTube, transmissão com codificador: https://support.google.com/youtube/answer/2907883?hl=pt-BR
-- FFmpeg, protocolos: https://ffmpeg.org/ffmpeg-protocols.html
-- Captura de canvas: https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/captureStream
-- MediaRecorder: https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder
-- ws: https://github.com/websockets/ws
-- ffmpeg-static: https://github.com/eugeneware/ffmpeg-static
+Nunca envie ao repositório: `.env`, `mesa-cloud.env`, `cloud/turnserver.conf`, `licenca-privada.pem`, `licenca.txt`.

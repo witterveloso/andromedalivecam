@@ -51,12 +51,12 @@ function feed(ws,bytes,seconds){const step=Math.ceil(bytes.length/(seconds*10));
 test('real run: two RTMP destinations (one of them down) and an MP4 recording from a single encode',async t=>{
  if(!exe)return t.skip('FFmpeg ausente');
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'andromeda-multi-')),recDir=path.join(dir,"gravações [teste] d'hoje"),source=path.join(dir,'source.webm'),a=path.join(dir,'a.flv');
- clip(source,8);const upA=listener(19411,'keyAAAA1',a);await new Promise(r=>setTimeout(r,700));
+ clip(source,14);const upA=listener(19411,'keyAAAA1',a);await new Promise(r=>setTimeout(r,700));
  const audit=createAudit({write:false}),port=3182,bridge=createBridge({port,ffmpeg:exe,audit});bridge.listen();await once(bridge.server,'listening');let ws,timer;
  try{
   const session=await(await fetch('http://localhost:'+port+'/api/session')).json();assert(session.encoders.includes('libx264'));assert.equal(session.platforms.kick.name,'Kick');assert.equal(session.license.required,false);
-  ws=new WebSocket('ws://localhost:'+port+'/publish','andromeda.'+session.token,{origin:'http://localhost:'+port});const seen=[];
-  const done=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out: '+JSON.stringify(seen.map(m=>m.type)))),40000);ws.on('message',raw=>{const m=JSON.parse(raw);seen.push(m);if(m.type==='ready')timer=feed(ws,fs.readFileSync(source),8);if(m.type==='sending'&&m.frames>120)ws.send(JSON.stringify({type:'stop'}));if(m.type==='stopped'){clearTimeout(timeout);resolve()}});ws.on('error',reject)});
+  ws=new WebSocket('ws://localhost:'+port+'/publish','andromeda.'+session.token,{origin:'http://localhost:'+port});const seen=[];let stopSent=false;
+  const done=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out: '+JSON.stringify(seen.map(m=>m.type)))),60000);ws.on('message',raw=>{const m=JSON.parse(raw);seen.push(m);if(m.type==='ready')timer=feed(ws,fs.readFileSync(source),14);if(m.type==='sending'&&!stopSent&&m.frames>120&&(seen.some(x=>x.type==='destination'&&x.id==='b')||m.frames>360)){stopSent=true;ws.send(JSON.stringify({type:'stop'}))}if(m.type==='stopped'){clearTimeout(timeout);resolve()}});ws.on('error',reject)});
   await once(ws,'open');
   ws.send(JSON.stringify({type:'start',...base,destinations:[{id:'a',platform:'custom',name:'Destino A',server:'rtmp://127.0.0.1:19411/live',key:'keyAAAA1'},{id:'b',platform:'custom',name:'Destino B',server:'rtmp://127.0.0.1:19412/live',key:'keyBBBB2'}],record:{dir:recDir}}));
   await done;
@@ -69,7 +69,7 @@ test('real run: two RTMP destinations (one of them down) and an MP4 recording fr
   const log=audit.export();assert(!log.includes('keyAAAA1')&&!log.includes('keyBBBB2'),'audit never stores stream keys');
   const codes=audit.since(0).map(e=>e.code);for(const code of ['inicio','enviando','destino-reconectando','fim','arquivo'])assert(codes.includes(code),code+' missing from '+codes);
   const feedLog=await(await fetch('http://localhost:'+port+'/api/audit?since=0')).json();assert(feedLog.events.length>=5&&feedLog.summary.counts.warn>=1);
- }finally{clearInterval(timer);ws?.terminate();upA.kill('SIGKILL');bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true})}
+ }finally{clearInterval(timer);ws?.terminate();upA.kill('SIGKILL');bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250})}
 });
 
 test('storage and audit endpoints: token required for writes, volumes listed, folder checked',async()=>{
@@ -83,5 +83,5 @@ test('storage and audit endpoints: token required for writes, volumes listed, fo
   assert.equal((await post('/api/audit',{level:'error',code:'teste',message:'falha rtmp://x.y/app/SEGREDO',data:{streamKey:'abc',fps:12}})).status,204);
   const last=audit.since(0).at(-1);assert.equal(last.level,'error');assert.equal(last.source,'mesa');assert(!JSON.stringify(last).includes('SEGREDO')&&last.data.streamKey==='•••'&&last.data.fps===12);
   const exported=await fetch(base+'/api/audit/export');assert.match(exported.headers.get('content-disposition'),/andromeda-auditoria-.*\.jsonl/);assert((await exported.text()).trim().split('\n').every(line=>JSON.parse(line).seq>0));
- }finally{bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true})}
+ }finally{bridge.shutdown();fs.rmSync(dir,{recursive:true,force:true,maxRetries:20,retryDelay:250})}
 });

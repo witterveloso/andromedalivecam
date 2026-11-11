@@ -31,10 +31,24 @@ function fatal(title, detail) {
   app.exit(1);
 }
 
+// Modo nuvem (câmeras por 4G/5G pelo gateway): o mesmo mesa-cloud.env gerado por cloud/configure.py,
+// copiado para a pasta de dados do programa. Só variáveis ANDROMEDA_* são aceitas.
+function loadCloudConfig(data) {
+  const file = path.join(data, 'mesa-cloud.env');
+  let text; try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(ANDROMEDA_[A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+  }
+  return file;
+}
+
 async function startService() {
   const data = app.getPath('userData');
+  fs.mkdirSync(data, { recursive: true });
   process.env.ANDROMEDA_LOG_DIR ||= path.join(data, 'logs');
   process.env.ANDROMEDA_LICENSE_FILE ||= path.join(data, 'licenca.txt');
+  loadCloudConfig(data);
   const { createBridge } = require('../server.cjs');
   const candidate = createBridge({ port: PORT, camPort: 3185 });
   const busy = message => e => { if (e.code === 'EADDRINUSE') fatal('Andrômeda Live já está aberto', message); else fatal('Não foi possível iniciar o serviço', e.message); };
@@ -109,7 +123,7 @@ async function checkPage() {
     })()`);
     const ok = result.cells === 10 && result.broadcast && result.mosaic && result.ffmpegReady && result.mediaRecorder && result.tabs.includes('Transmissão');
     try { fs.writeFileSync(smoke.replace(/\.json$/, '') + '.png', (await win.webContents.capturePage()).toPNG()); } catch { /* captura opcional */ }
-    report({ ok, ...result, ffmpeg: require('../encoder.cjs').findFFmpeg(), logDir: process.env.ANDROMEDA_LOG_DIR, platform: process.platform + '-' + process.arch, electron: process.versions.electron });
+    report({ ok, ...result, ffmpeg: require('../encoder.cjs').findFFmpeg(), cloudGateway: process.env.ANDROMEDA_CLOUD_URL || null, logDir: process.env.ANDROMEDA_LOG_DIR, platform: process.platform + '-' + process.arch, electron: process.versions.electron });
   } catch (e) { report({ ok: false, error: e.message }); }
 }
 

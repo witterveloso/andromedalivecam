@@ -60,6 +60,8 @@ jobs:
     needs: test
     runs-on: windows-latest
     timeout-minutes: 40
+    permissions:
+      contents: write   # só para publicar o instalador na página de versões (releases) a partir da main
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,3 +96,15 @@ jobs:
             dist/smoke.png
           if-no-files-found: error
           retention-days: 30
+      - name: Publicar na página de versões (somente main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $files = Get-ChildItem dist\*.exe | ForEach-Object { $_.FullName }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag @files --clobber }
+          else { gh release create $tag @files --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
