@@ -104,8 +104,9 @@ jobs:
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "v$version"
-          # Caminho relativo: o gh lê 'D:' de um caminho absoluto do Windows como outra coisa.
-          $files = Get-ChildItem dist\*.exe | ForEach-Object { 'dist/' + $_.Name }
+          if (-not (Test-Path dist\*.exe)) { throw 'Nenhum instalador em dist/' }
+          # O próprio gh expande o padrão; nada de listas do PowerShell (um item único virava letras soltas).
           gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) { gh release upload $tag @files --clobber }
-          else { gh release create $tag @files --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' --clobber }
+          else { gh release create $tag 'dist/*.exe' --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
+          if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a versão' }
