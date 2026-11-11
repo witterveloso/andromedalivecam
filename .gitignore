@@ -8,3 +8,4 @@ cloud/turnserver.conf
 logs/
 licenca.txt
 licenca-privada.pem
+dist/

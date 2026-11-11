@@ -125,7 +125,8 @@ function argsFor(c) {
 function findFFmpeg() {
   // A versão instalada com o pacote vem antes da do sistema: é a que os testes validam.
   const candidates = []; if (process.env.FFMPEG_PATH) candidates.push(process.env.FFMPEG_PATH);
-  try { const bundled = require('ffmpeg-static'); if (bundled) candidates.push(bundled); } catch { /* opcional */ }
+  // No programa instalado o binário fica fora do pacote asar (asarUnpack), na pasta app.asar.unpacked.
+  try { const bundled = require('ffmpeg-static'); if (bundled) candidates.push(bundled.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')); } catch { /* opcional */ }
   candidates.push('ffmpeg');
   for (const candidate of candidates) {
     const v = spawnSync(candidate, ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 15000, windowsHide: true });
