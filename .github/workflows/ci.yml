@@ -104,8 +104,10 @@ jobs:
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "v$version"
-          # Caminho relativo: o gh lê 'D:' de um caminho absoluto do Windows como outra coisa.
-          $files = Get-ChildItem dist\*.exe | ForEach-Object { 'dist/' + $_.Name }
+          # @(...) garante uma lista: com um único instalador o PowerShell devolveria um texto,
+          # e @files passaria esse texto ao gh letra por letra.
+          $files = @(Get-ChildItem dist\*.exe | ForEach-Object { 'dist/' + $_.Name })
+          if ($files.Count -eq 0) { throw 'Nenhum instalador em dist/' }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { gh release upload $tag @files --clobber }
           else { gh release create $tag @files --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
