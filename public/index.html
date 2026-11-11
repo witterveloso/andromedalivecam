@@ -1,8 +1,16 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090b10">
 <title>Andromeda Live — Mesa de Controle</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap">
-
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="icon" href="/brand/andromeda-icon.png" type="image/png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;600;700;800;900&family=Montserrat:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
+</head>
+<body>
 <style>
 :root {
   /* Layout: full broadcast control surface */
@@ -649,4 +657,6 @@ outputButton.onclick=()=>{if(outputWindow&&!outputWindow.closed){outputWindow.fo
 window.addEventListener('pagehide',()=>{if(outputWindow&&!outputWindow.closed)outputWindow.close()});
 log('Saída fixada no PROGRAM (AR). Preview reservado à preparação.');
 
-</script><link rel="stylesheet" href="/live.css"><script src="/live-client.js"></script><script src="/blackmagic-client.js"></script><script src="/operation.js"></script><script src="/cam-desk.js"></script><script src="/composition.js"></script><script src="/effects.js"></script><script src="/program-audio.js"></script></body></html>
+</script><link rel="stylesheet" href="/live.css"><script src="/live-client.js"></script><script src="/blackmagic-client.js"></script><script src="/operation.js"></script><script src="/cam-desk.js"></script><script src="/composition.js"></script><script src="/effects.js"></script><script src="/program-audio.js"></script><link rel="stylesheet" href="/workspace-custom.css"><script src="/workspace-custom.js"></script>
+<script src="/stage.js"></script><script src="/broadcast.js"></script><script src="/diagnostics.js"></script>
+<link rel="stylesheet" href="/andromeda-ui.css"><script src="/vendor/qrcode.js"></script><script src="/andromeda-ui.js"></script></body></html>

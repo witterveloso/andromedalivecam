@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.env
+cloud/turnserver.conf
+*.log
+.DS_Store
+
+logs/
+licenca.txt
+licenca-privada.pem

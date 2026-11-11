@@ -1,8 +1,8 @@
 {
   "name": "andromeda-live-youtube",
-  "version": "0.9.0",
+  "version": "0.12.0",
   "private": true,
-  "description": "Recepção Blackmagic RTMP e saída PGM para YouTube",
+  "description": "Mesa de corte ao vivo com câmeras por convite (WebRTC), entradas Blackmagic RTMP, mosaico, transmissão multiplataforma e gravação",
   "engines": {
     "node": ">=22"
   },
