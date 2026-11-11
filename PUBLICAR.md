@@ -1,10 +1,13 @@
 # Publicação: GitHub + servidor público
 
-## 1. Enviar ao GitHub
+## 1. Repositório
 
-Crie um repositório `andromeda-cam` na sua conta. Extraia este ZIP. Em Add file → Upload files, envie as pastas e arquivos extraídos à raiz e faça o commit na branch `main`. Inclua `.github/workflows`. Também é possível usar GitHub Desktop para publicar a pasta inteira.
+Este repositório (`witterveloso/andromedalivecam`) é o produto completo. A cada push na `main`:
 
-Não envie `node_modules` nem configurações privadas. O workflow Validate Andromeda executa os testes e verifica a construção da imagem Docker. O workflow Publish Andromeda Cam é opcional; se não usar Pages, pode desabilitá-lo na aba Actions.
+- **Andromeda Live CI** roda os testes em Ubuntu e Windows, constrói e inicia o contêiner do gateway, gera o instalador do Windows, abre o programa empacotado para conferir a mesa e publica o instalador na página de versões (Releases).
+- **Publish Andromeda Cam** publica `docs/` (a página da câmera) no GitHub Pages.
+
+Não envie `node_modules`, `dist`, nem configurações privadas (`.env`, `mesa-cloud.env`, `turnserver.conf`, `licenca-privada.pem`).
 
 ## 2. Preparar um VPS Linux
 
@@ -55,15 +58,15 @@ Esse comando verifica apenas HTTPS/saúde, não prova que a mídia atravessa o T
 
 ## 3. Conectar a mesa Windows
 
-1. Instale Node.js 22 ou superior no computador da mesa.
-2. Extraia o mesmo projeto no computador e execute `npm ci` na pasta.
-3. Transfira com segurança `cloud/mesa-cloud.env` do VPS para a raiz da pasta no computador. Esse arquivo autoriza a mesa; não o compartilhe com operadores de câmera.
-4. Abra `INICIAR_NUVEM.bat` e mantenha o processo aberto.
-5. Abra a mesa em `http://127.0.0.1:3180`.
-6. No painel Andromeda Cam, use a origem HTTPS real do gateway, selecione CAM 1–10, nome e perfil; gere o convite e compartilhe.
-7. O cinegrafista abre o link no navegador externo do celular, permite câmera/microfone e ativa a câmera. Use fone para intercom.
+1. Instale o Andrômeda Live no computador da mesa (Releases → `Andromeda-Live-Setup-<versão>.exe`).
+2. Transfira com segurança `cloud/mesa-cloud.env` do VPS para `%APPDATA%\Andromeda Live\` no computador (cole o caminho na barra do Explorador de Arquivos). Esse arquivo autoriza a mesa; não o compartilhe com operadores de câmera.
+3. Abra o Andrômeda Live. A página Configurações → Convites Andromeda Cam passa a indicar o gateway público.
+4. Selecione CAM 1–10, nome e perfil; gere o convite e envie pelo QR code, link ou WhatsApp.
+5. O cinegrafista abre o link no navegador externo do celular, permite câmera/microfone e ativa a câmera. Use fone para intercom.
 
-Os convites ficam no formato `https://cam.SEU-DOMINIO/cam/#TOKEN`. São gerados pela mesa; não monte tokens manualmente. Não precisa instalar Tailscale nem configurar IP no telefone. O computador da mesa também precisa de internet.
+No modo navegador (sem o instalador), use `INSTALAR.bat`, coloque `mesa-cloud.env` na pasta do projeto e abra `INICIAR_NUVEM.bat`; a mesa fica em `http://localhost:3180`.
+
+Os convites ficam no formato `https://cam.SEU-DOMINIO/cam/#TOKEN` (ou o endereço do GitHub Pages, se configurado). São gerados pela mesa; não monte tokens manualmente. Não precisa instalar Tailscale nem configurar IP no telefone. O computador da mesa também precisa de internet.
 
 ## 4. GitHub Pages opcional
 

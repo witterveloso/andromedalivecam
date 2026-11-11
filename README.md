@@ -1,49 +1,61 @@
-# Andromeda Live + Andromeda Cam
+# Andrômeda Live
 
-Pacote para GitHub: mesa local Windows, câmera por convite no navegador, gateway público HTTPS/WebSocket e servidor TURN. Um mesmo convite pode ser aberto usando Wi-Fi, 4G ou 5G, sem Tailscale no celular. A pessoa autoriza câmera/microfone e toca em Ativar câmera. Conexão depende do navegador e da rede; mudanças de rede podem interromper a imagem.
+Mesa de produção ao vivo para Windows: até 10 câmeras de celular por link de convite (Wi-Fi ou 4G/5G), câmeras Blackmagic por RTMP, mosaico, gráficos, mixer de áudio, gravação em disco ou HD externo e transmissão do PROGRAM para até 6 destinos ao mesmo tempo (YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn ou qualquer servidor RTMP).
 
-**Estado: pronto para subir ao repositório e implantar para homologação. Nenhum servidor público foi provisionado por este pacote.**
+Versão atual: **0.12**. O que mudou está em [ATUALIZACAO_012.md](ATUALIZACAO_012.md); as decisões de produto, em [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md).
 
-## Comece aqui
+## As três partes
 
-1. Extraia o ZIP e envie seu conteúdo à raiz do repositório `andromeda-cam`, branch `main`. Não envie apenas o ZIP. Inclua a pasta `.github`.
-2. Siga [PUBLICAR.md](PUBLICAR.md). O caminho principal hospeda câmera e gateway no mesmo VPS, com HTTPS automático. GitHub Pages é opcional.
-3. Execute o teste de aceitação em [HOMOLOGACAO.md](HOMOLOGACAO.md) antes de uma transmissão.
+| Parte | O que é | Onde roda |
+| --- | --- | --- |
+| **Mesa** (`server.cjs`, `public/`, `desktop/`) | Corte, mosaico, gráficos, áudio, gravação e codificação | Computador da produção (Windows) |
+| **Câmera** (`docs/`, `public/cam/`) | Página que o celular abre pelo convite: imagem, tally e intercom | Navegador do celular |
+| **Gateway** (`cloud/`, `cloud-server.cjs`, `camera-hub.cjs`) | Convites, sinalização e TURN para câmeras fora da rede local | VPS Linux com Docker (opcional) |
 
-## O que está incluído
+Na mesma rede Wi-Fi, a mesa basta. Para câmeras em 4G/5G ou em outra rede, publique o gateway (veja [PUBLICAR.md](PUBLICAR.md)).
 
-| Pasta/arquivo | Função |
-|---|---|
-| `public/cam/` | Câmera web, captura, tally e intercom |
-| `docs/` | Versão da câmera para GitHub Pages |
-| `camera-hub.cjs`, `cloud-server.cjs` | Convites por canal, perfil, sinalização e credenciais temporárias TURN |
-| `cloud-client.cjs` | Conexão de saída da mesa local ao gateway público |
-| `cloud/` | Docker, Caddy HTTPS, coturn, configuração e instalação |
-| `server.cjs`, `public/` | Mesa e integração de áudio/vídeo/encoder |
-| `.github/workflows/` | Testes e publicação opcional no Pages |
-| `test/` | Testes automatizados |
-| `scripts/check-gateway.cjs` | Diagnóstico público de HTTPS/saúde |
+## Instalar a mesa no Windows
 
-## Arquitetura
+**Programa instalado (recomendado).** Baixe `Andromeda-Live-Setup-0.12.0.exe` na página de versões do repositório (**Releases**, à direita na página inicial do GitHub, ou `https://github.com/witterveloso/andromedalivecam/releases/latest`) e instale. A CI publica o instalador ali a cada atualização da `main`. O instalador cria atalhos na área de trabalho e no menu Iniciar e não pede administrador. O programa já traz o serviço local e o FFmpeg: não é preciso instalar Node.js nem manter uma janela de terminal aberta.
 
-O gateway valida convites e encaminha negociação WebRTC e tally. A câmera envia vídeo e áudio para a mesa diretamente quando possível; o coturn retransmite quando necessário. O intercom usa uma conexão WebRTC separada e não deve entrar no áudio da transmissão. O corte, a composição do PROGRAM e a codificação continuam no computador da mesa. A chave do YouTube fica na operação da mesa, não no celular.
+O instalador ainda não tem assinatura digital, então o Windows SmartScreen mostra "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**. Para distribuir a clientes, assine com um certificado de assinatura de código (veja [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md)).
 
-Cada canal CAM 1–10 tem um convite individual, válido por 12 horas, revogável. Um novo convite invalida o anterior daquele canal. Reiniciar o gateway apaga convites em memória: gere novos links. Uma mesa por gateway; esta entrega não é um SaaS multiempresa.
+**Modo navegador (alternativa).** Com Node.js 22 ou superior: `INSTALAR.bat` e depois `INICIAR.bat`, que abre a mesa no navegador em `http://localhost:3180`. Mantenha a aba visível durante a transmissão.
+
+**Pastas do programa instalado:** logs de auditoria, licença e configuração da nuvem ficam em `%APPDATA%\Andromeda Live\` (cole esse caminho na barra do Explorador de Arquivos).
+
+- `logs\`: uma trilha por sessão, também visível na página Diagnóstico.
+- `mesa-cloud.env`: para usar o gateway na nuvem, copie aqui o arquivo gerado no VPS e reabra o programa (no modo navegador, use `INICIAR_NUVEM.bat` com o arquivo na pasta do projeto).
+- `licenca.txt`: criado ao ativar uma licença na página Diagnóstico.
+
+## Antes da primeira live
+
+Siga [HOMOLOGACAO.md](HOMOLOGACAO.md): live privada em cada plataforma com as chaves reais, ensaio longo no computador de produção, celulares reais em Wi-Fi e 4G/5G, gravação em HD externo. A CI comprova que o programa instala, abre e passa nos testes em Windows e Linux; ela não substitui o ensaio com o equipamento e as contas reais.
 
 ## Desenvolvimento
 
-Node.js 22+, Python 3 e FFmpeg para os testes de mídia:
-
 ```sh
-npm ci
-npm test
-python3 -m unittest discover -s test -p '*_test.py'
+npm ci                 # Node.js 22+
+npm test               # serviço: codificador, destinos, gravação, câmeras, licença
+npm run test:ui        # mesa em DOM emulado
+npm run test:python    # configuração do gateway
+npm run desktop        # abre a mesa no Electron
+npm run dist:win       # gera o instalador (Windows)
 ```
 
-`npm start` inicia a mesa local. Para a nuvem use `INICIAR_NUVEM.bat` com o arquivo privado `mesa-cloud.env` na raiz. Os guias anteriores continuam no pacote para recursos de GC, PiP, mixer e Blackmagic.
+A CI (`.github/workflows/ci.yml`) roda os testes em Ubuntu e Windows, constrói e inicia o contêiner do gateway, gera o instalador, abre o programa empacotado no Windows e guarda o instalador e uma captura da mesa como artefato. O workflow `pages.yml` publica `docs/` no GitHub Pages a cada push na `main`.
 
-## Segredos e limites
+| Pasta ou arquivo | Função |
+| --- | --- |
+| `server.cjs`, `encoder.cjs`, `receiver*.cjs` | Serviço local: mesa, codificação, destinos, entradas RTMP |
+| `storage.cjs`, `audit.cjs`, `license.cjs` | Gravação e unidades, trilha de auditoria, licença |
+| `public/` | Interface da mesa |
+| `desktop/` | Programa para Windows (Electron) e ícones |
+| `docs/`, `public/cam/` | Página da câmera (os mesmos arquivos; só `config.js` muda) |
+| `camera-hub.cjs`, `cloud-server.cjs`, `cloud-client.cjs`, `cloud/` | Convites, sinalização, gateway público e TURN |
+| `mobile/` | Projeto do aplicativo nativo da câmera (Flutter, experimental) |
+| `tools/licenca.cjs` | Gerador de chaves e tokens de ativação (uso do vendedor) |
+| `scripts/check-gateway.cjs` | Verificação de HTTPS e saúde do gateway publicado |
+| `test/` | Testes automatizados |
 
-Nunca envie `.env`, `mesa-cloud.env`, `turnserver.conf`, chaves YouTube ou convites reais ao GitHub. Os scripts geram segredos no servidor, com permissões restritas. `.gitignore` e `.dockerignore` excluem esses arquivos.
-
-A configuração TURN entregue usa UDP/TCP 3478. Redes que só permitem TLS 443 podem impedir a chamada; TURN/TLS 443 não está incluído nesta configuração. A transmissão requer manter a página ativa e o celular desbloqueado. Não há bonding de operadoras, garantia de 4K ou controle de todas as lentes físicas no navegador. A capacidade de dez canais deve ser medida no hardware e na banda reais.
+Nunca envie ao repositório: `.env`, `mesa-cloud.env`, `cloud/turnserver.conf`, `licenca-privada.pem`, `licenca.txt`.

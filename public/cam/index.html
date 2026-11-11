@@ -1,4 +1,161 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#08080e"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="/cam/manifest.json"><link rel="stylesheet" href="/cam/cam.css"><title>Andromeda Cam</title></head><body>
-<video id="view" autoplay muted playsinline></video><div class="shade"></div><header><b>ANDROMEDA <span>CAM</span></b><button id="settings">CONFIGURAR</button></header><main><div id="tally" data-state="offline" role="status">DESCONECTADO</div><p id="cameraName">Câmera de contribuição</p><p id="connection" role="status">Abra um convite gerado pela mesa.</p><div class="telemetry"><span id="qualityActual">—</span><span id="stats">0 Mbps</span><span id="battery">Bateria: indisponível</span><span>Temperatura: não exposta pelo navegador</span></div></main>
-<footer><div class="audio-row"><span>MIC</span><meter id="micLevel" min="0" max="1" value="0" aria-label="Nível do microfone"></meter><span id="elapsed">00:00</span></div><div class="lens-row"><label>Câmera <select id="lens" aria-label="Câmera disponível"></select></label><span>Sem zoom digital aplicado</span></div><div class="actions"><button id="mute">MIC ON</button><button id="start" class="start">CONECTAR</button><button id="ptt" disabled>SEGURE<br>FALAR COM DTV</button></div><p id="notice">Use fones. Ao falar no intercom, o microfone do programa fica temporariamente mudo.</p><button id="hear">Liberar retorno do DTV nos fones</button></footer>
-<dialog id="setup"><form method="dialog"><h1>ANDROMEDA CAM</h1><p>Versão web de teste. Captura real pela câmera do navegador; controles disponíveis variam por aparelho.</p><label>Convite da mesa<input id="invite" type="password" autocomplete="off" placeholder="Cole o link privado recebido"></label><label>Resolução<select id="resolution"><option value="1280x720">720p</option><option value="1920x1080">1080p</option><option value="3840x2160">4K · se disponível</option></select></label><label>Quadros por segundo<select id="fps"><option>30</option><option>24</option><option>60</option></select></label><label>Bitrate alvo (Mbps)<input id="bitrate" type="number" min="1" max="12" step="0.5" value="3"></label><label>Microfone<select id="input"><option value="">Padrão do sistema / fone externo</option></select></label><div id="manual"></div><p>As câmeras listadas são as expostas pelo navegador. Esta versão web não certifica lentes físicas nem estabilização. Para câmera nativa, use o projeto mobile incluído no pacote.</p><button value="ok">VOLTAR À CÂMERA</button></form></dialog><audio id="returnAudio" autoplay></audio><script src="/cam/cam.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#060817">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.png" type="image/png">
+<link rel="stylesheet" href="./cam.css">
+<title>Andrômeda Cam</title>
+</head>
+<body data-run="idle" data-tally="offline" data-grid="off">
+
+<video id="view" autoplay muted playsinline></video>
+<div id="grid" class="grid" aria-hidden="true"></div>
+<div class="frame" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="ident">
+    <span class="brand">ANDRÔMEDA <b>CAM</b></span>
+    <strong id="cameraName">Câmera de contribuição</strong>
+  </div>
+  <div id="tally" class="tally" data-state="offline" role="status" aria-live="assertive">DESCONECTADO</div>
+  <div class="top-actions">
+    <button id="gridToggle" class="icon" type="button" aria-pressed="false" aria-label="Grade de enquadramento">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
+    </button>
+    <button id="settings" class="icon" type="button" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+    </button>
+  </div>
+</header>
+
+<section class="hero" aria-labelledby="heroTitle">
+  <img class="hero-mark" src="./icon.png" alt="" width="64" height="64">
+  <h1 id="heroTitle">Abra o convite da mesa</h1>
+  <p id="heroText">Use o link privado enviado pelo diretor de TV ou cole o convite aqui.</p>
+  <ol class="steps">
+    <li><b>1</b>Fones conectados</li>
+    <li><b>2</b>Permita câmera e microfone</li>
+    <li><b>3</b>Celular na horizontal</li>
+  </ol>
+  <div class="hero-actions">
+    <button id="heroInvite" class="btn" type="button">Colar convite</button>
+    <button id="heroTest" class="btn ghost" type="button">Testar câmera sem mesa</button>
+  </div>
+</section>
+
+<p class="rotate-hint" aria-hidden="true">
+  <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M20.5 9a9 9 0 0 1 0 6M3.5 15a9 9 0 0 1 0-6"/></svg>
+  Gire o celular para enquadrar em 16:9
+</p>
+
+<div class="bottom">
+  <div class="hud">
+    <p id="connection" class="status" role="status" data-kind="info">Abra o link de convite enviado pela mesa.</p>
+    <div class="telemetry">
+      <span id="qualityActual">—</span>
+      <span id="stats">0 Mbps</span>
+      <span id="link" hidden></span>
+      <span id="network" hidden></span>
+      <span id="battery" hidden></span>
+    </div>
+    <button id="hear" class="chip-btn" type="button">Liberar retorno do DTV nos fones</button>
+    <p id="notice">Use fones. Ao falar no intercom, o microfone do programa fica mudo.</p>
+  </div>
+
+  <div id="lensChips" class="lenses" role="radiogroup" aria-label="Lente da câmera" hidden></div>
+
+  <footer class="dock">
+    <div class="meter-row">
+      <span class="mic-label">MIC</span>
+      <div class="vu" aria-hidden="true"><i id="micBar"></i></div>
+      <meter id="micLevel" class="sr-only" min="0" max="1" value="0" aria-label="Nível do microfone"></meter>
+      <time id="elapsed">00:00</time>
+    </div>
+    <div class="actions">
+      <button id="mute" class="pad" type="button" aria-pressed="false" aria-label="Silenciar microfone do programa">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/><path class="slash" d="M4 4l16 16"/></svg>
+        <span id="muteLabel">MIC</span>
+      </button>
+      <button id="start" class="start" type="button"><span id="startLabel">CONECTAR</span></button>
+      <button id="ptt" class="pad" type="button" disabled aria-label="Segure para falar com o diretor de TV">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M20 19c0 1.7-2 2.5-5 2.5"/></svg>
+        <span>SEGURE<br>P/ FALAR</span>
+      </button>
+    </div>
+  </footer>
+</div>
+
+<dialog id="setup" class="sheet" aria-labelledby="setupTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <h2 id="setupTitle">Ajustes</h2>
+      <button class="icon" value="close" aria-label="Fechar ajustes">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+
+    <section class="group invite">
+      <h3>Convite</h3>
+      <label>Link recebido da mesa
+        <input id="invite" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cole o link privado">
+      </label>
+      <button id="inviteApply" class="btn" type="button">Usar este convite</button>
+    </section>
+
+    <section class="group">
+      <h3>Vídeo</h3>
+      <div class="pair">
+        <label>Resolução
+          <select id="resolution">
+            <option value="1280x720">720p</option>
+            <option value="1920x1080">1080p</option>
+            <option value="3840x2160">4K · se disponível</option>
+          </select>
+        </label>
+        <label>Quadros/s
+          <select id="fps"><option>30</option><option>24</option><option>60</option></select>
+        </label>
+      </div>
+      <label>Bitrate alvo (Mbps)
+        <input id="bitrate" type="number" inputmode="decimal" min="1" max="12" step="0.5" value="3">
+      </label>
+      <p class="hint">O perfil definido pela mesa no convite substitui estes valores ao conectar.</p>
+    </section>
+
+    <section class="group">
+      <h3>Lente e imagem</h3>
+      <label>Câmera
+        <select id="lens" aria-label="Câmera disponível"></select>
+      </label>
+      <div id="manual"></div>
+      <p class="hint">Cada opção é uma lente física do aparelho. Não há zoom digital. Os controles manuais aparecem depois de ativar a câmera e variam por aparelho.</p>
+    </section>
+
+    <section class="group">
+      <h3>Áudio</h3>
+      <label>Microfone
+        <select id="input"><option value="">Padrão do sistema / fone externo</option></select>
+      </label>
+    </section>
+
+    <section class="group">
+      <h3>Aparelho</h3>
+      <label class="check"><input id="fullscreenPref" type="checkbox" checked>Tela cheia ao ativar a câmera</label>
+      <button id="localTest" class="btn ghost" type="button">Testar câmera sem mesa</button>
+      <p class="hint">Versão web: a câmera é a que o navegador expõe. Mantenha a tela ligada e o app visível durante a transmissão.</p>
+    </section>
+  </form>
+</dialog>
+
+<audio id="returnAudio" autoplay></audio>
+<script src="./config.js"></script>
+<script src="./cam.js"></script>
+</body>
+</html>

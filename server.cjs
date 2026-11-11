@@ -1,17 +1,21 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {spawn}=require('node:child_process');const {WebSocketServer,WebSocket}=require('ws');
-const {validateConfig,argsFor,findFFmpeg,safeError}=require('./encoder.cjs');
+const {validateConfig,validateBroadcast,argsFor,argsForBroadcast,detectEncoders,destinationEvents,redact,findFFmpeg,safeError,safeBroadcastError,PLATFORMS}=require('./encoder.cjs');
+const storage=require('./storage.cjs');const {createAudit}=require('./audit.cjs');const {createLicense}=require('./license.cjs');const {version}=require('./package.json');
 const {createCameraHub}=require('./camera-hub.cjs');const {createCloudClient}=require('./cloud-client.cjs');
 const {streamPreset}=require('./network.cjs');
 const {createReceiverPool}=require('./receiver-pool.cjs');
-function createBridge({port=3180,ffmpeg=findFFmpeg(),spawnProcess=spawn,camPort=null}={}){
+function createBridge({port=3180,ffmpeg=findFFmpeg(),spawnProcess=spawn,camPort=null,audit=createAudit({write:!process.env.NODE_TEST_CONTEXT}),license=createLicense()}={}){
  const token=crypto.randomBytes(32).toString('hex');let active=null;const receivers=createReceiverPool({ffmpeg});
  let iceServers=[];try{iceServers=JSON.parse(process.env.ANDROMEDA_ICE_SERVERS||'[]');if(!Array.isArray(iceServers))throw Error()}catch{throw Error('ANDROMEDA_ICE_SERVERS deve ser uma lista JSON')}
- const cameraHub=createCameraHub({sessionToken:token,iceServers});if(process.env.ANDROMEDA_CAM_URL)cameraHub.configure(process.env.ANDROMEDA_CAM_URL);
+ const cameraHub=createCameraHub({sessionToken:token,iceServers,onEvent:(level,code,message,data)=>audit.event(level,'cameras',code,message,data)});
+ audit.info('servico','ffmpeg',ffmpeg?'FFmpeg pronto':'FFmpeg ausente',{versao:version});
+ const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data))};
+ const readBody=(req,res,limit,fn)=>{let text='';req.on('data',d=>{text+=d;if(text.length>limit)req.destroy()});req.on('end',async()=>{let data;try{data=JSON.parse(text||'{}')}catch{res.writeHead(400).end();return}try{await fn(data)}catch(e){json(res,{error:e.message},400)}})};if(process.env.ANDROMEDA_CAM_URL)cameraHub.configure(process.env.ANDROMEDA_CAM_URL);
  const cloud=process.env.ANDROMEDA_CLOUD_URL?createCloudClient({url:process.env.ANDROMEDA_CLOUD_URL,token:process.env.ANDROMEDA_CLOUD_TOKEN}):null;
  const hosts=new Set(['localhost:'+port,'127.0.0.1:'+port]);const origins=new Set([...hosts].map(x=>'http://'+x));
- const files={'/':'index.html','/index.html':'index.html','/live-client.js':'live-client.js','/live.css':'live.css','/blackmagic-client.js':'blackmagic-client.js','/operation.js':'operation.js','/cam-desk.js':'cam-desk.js','/composition.js':'composition.js','/effects.js':'effects.js','/program-audio.js':'program-audio.js'};
+ const files={'/stage.js':'stage.js','/broadcast.js':'broadcast.js','/diagnostics.js':'diagnostics.js','/brand/andromeda-icon.png':'brand/andromeda-icon.png','/andromeda-ui.js':'andromeda-ui.js','/andromeda-ui.css':'andromeda-ui.css','/vendor/qrcode.js':'vendor/qrcode.js','/workspace-custom.js':'workspace-custom.js','/workspace-custom.css':'workspace-custom.css','/':'index.html','/index.html':'index.html','/live-client.js':'live-client.js','/live.css':'live.css','/blackmagic-client.js':'blackmagic-client.js','/operation.js':'operation.js','/cam-desk.js':'cam-desk.js','/composition.js':'composition.js','/effects.js':'effects.js','/program-audio.js':'program-audio.js'};
  const server=http.createServer((req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Cross-Origin-Resource-Policy','same-origin');
   if(!hosts.has(req.headers.host)||req.headers.origin&&!origins.has(req.headers.origin)){res.writeHead(403).end();return}
@@ -22,23 +26,32 @@ function createBridge({port=3180,ffmpeg=findFFmpeg(),spawnProcess=spawn,camPort=
    if(req.headers['x-andromeda-token']!==token){res.writeHead(403).end();return}
    let body='',tooLarge=false;req.on('data',d=>{body+=d;if(body.length>2048){tooLarge=true;req.destroy()}});req.on('end',async()=>{if(tooLarge)return;res.setHeader('Content-Type','application/json');try{const input=JSON.parse(body||'{}');const receiver=receivers.get(input.slot);if(req.url.endsWith('/preset')){const st=receiver.status();if(!st.enabled||!st.host)throw Error('Ative a recepção antes de exportar o XML.');res.end(JSON.stringify({xml:streamPreset({host:st.host,port:st.port,key:st.key,quality:input.quality,slot:receivers.slotOf(input.slot)})}));return;}let out;if(req.url.endsWith('/start')){if(cloud)await cloud.request('revoke',{slot:receivers.slotOf(input.slot)});out=receivers.start(input);cameraHub.revoke(receivers.slotOf(input.slot));}else out=receiver.stop();res.end(JSON.stringify(out))}catch(e){res.writeHead(400).end(JSON.stringify({error:e.message}))}});return;
   }
+  if(req.method==='POST'&&['/api/audit','/api/storage/check','/api/license'].includes(req.url)){if(req.headers['x-andromeda-token']!==token){res.writeHead(403).end();return}readBody(req,res,16384,m=>{
+   if(req.url==='/api/audit'){audit.event(m.level,'mesa',m.code||'evento',m.message||'',m.data);res.writeHead(204).end()}
+   else if(req.url==='/api/storage/check')json(res,storage.checkDir(m.dir));
+   else{const st=license.activate(m.token);audit.info('licenca','ativada','Licença ativada: plano '+st.planName,{cliente:st.customer,vence:st.expires});json(res,st)}});return}
   if(req.method!=='GET'){res.writeHead(405).end();return}
+  if(req.url.startsWith('/api/audit')){const u=new URL(req.url,'http://localhost');if(u.pathname==='/api/audit/export'){res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8','Content-Disposition':'attachment; filename="andromeda-auditoria-'+audit.session+'.jsonl"'});res.end(audit.export());return}if(u.pathname==='/api/audit'){json(res,{events:audit.since(Number(u.searchParams.get('since'))||0),summary:audit.summary()});return}}
+  if(req.url==='/api/storage'){storage.listVolumes().then(volumes=>json(res,{defaultDir:storage.defaultDir(),volumes}));return}
+  if(req.url==='/api/license'){json(res,license.status());return}
   if(req.url==='/api/input/status'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({...receivers.get(6).status(),inputs:receivers.status(),maximum:8}));return}
   const inputURL=new URL(req.url,'http://localhost');if(['/api/input/video.mjpeg','/api/input/audio.pcm'].includes(inputURL.pathname)){try{const receiver=receivers.get(inputURL.searchParams.has('slot')?inputURL.searchParams.get('slot'):undefined);if(inputURL.pathname.endsWith('.mjpeg'))receiver.subscribe(res);else receiver.subscribeAudio(res);}catch(e){res.writeHead(400).end(e.message)}return}
-  if(req.url==='/api/session'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({token,ffmpegReady:!!ffmpeg,busy:!!active,version:'0.9.0'}));return}
+  if(req.url==='/api/session'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({token,ffmpegReady:!!ffmpeg,busy:!!active,version,encoders:detectEncoders(ffmpeg),platforms:Object.fromEntries(Object.entries(PLATFORMS).map(([id,p])=>[id,{name:p.name,example:p.example}])),license:license.status()}));return}
   if(req.url==='/favicon.ico'){res.writeHead(204).end();return}
   const name=files[req.url];if(!name){res.writeHead(404).end();return}
-  res.setHeader('Content-Type',name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');fs.createReadStream(path.join(__dirname,'public',name)).pipe(res);
+  res.setHeader('Content-Type',name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css; charset=utf-8':name.endsWith('.png')?'image/png':'text/javascript; charset=utf-8');fs.createReadStream(path.join(__dirname,'public',name)).pipe(res);
  });
  const inputWss=new WebSocketServer({noServer:true,maxPayload:4096,perMessageDeflate:false});
  inputWss.on('connection',ws=>{const {EventEmitter}=require('node:events');const sinks=[];for(let slot=0;slot<10;slot++)for(const kind of [1,2]){const sink=new EventEmitter();Object.assign(sink,{destroyed:false,writableLength:0,writeHead(){},flushHeaders(){},end(){},destroy(){this.destroyed=true;this.emit('close')},write(data){if(ws.readyState!==WebSocket.OPEN||ws.bufferedAmount>2*1024*1024)return;if(kind===1){const start=data.indexOf(Buffer.from([255,216])),end=data.lastIndexOf(Buffer.from([255,217]));if(start<0||end<0)return;data=data.subarray(start,end+2);}ws.send(Buffer.concat([Buffer.from([slot,kind]),data]));}});sinks.push(sink);if(kind===1)receivers.get(slot).subscribe(sink);else receivers.get(slot).subscribeAudio(sink);}ws.on('error',()=>{});ws.on('close',()=>sinks.forEach(s=>s.destroy()));});
  const wss=new WebSocketServer({noServer:true,maxPayload:4*1024*1024,perMessageDeflate:false});
  server.on('upgrade',(req,socket,head)=>{if(req.url==='/inputs'&&hosts.has(req.headers.host)&&origins.has(req.headers.origin)&&req.headers['sec-websocket-protocol']==='andromeda.'+token){inputWss.handleUpgrade(req,socket,head,ws=>inputWss.emit('connection',ws));return}if(req.url==='/camera-signal'&&hosts.has(req.headers.host)&&origins.has(req.headers.origin)){if(cloud){if(req.headers['sec-websocket-protocol']!=='andromeda.'+token){socket.destroy();return}cloud.upgrade(req,socket,head)}else cameraHub.deskUpgrade(req,socket,head);return}if(req.url!=='/publish'||!hosts.has(req.headers.host)||!origins.has(req.headers.origin)||req.headers['sec-websocket-protocol']!=='andromeda.'+token){socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');socket.destroy();return}wss.handleUpgrade(req,socket,head,ws=>wss.emit('connection',ws,req))});
  wss.on('connection',ws=>{
-  let child=null,stopping=false,lastInput=Date.now(),lastFrame=0,lastProgress=Date.now(),stderr='',progress='',ready=false,everStarted=false,killTimer=null;
+  let child=null,stopping=false,lastInput=Date.now(),lastFrame=0,lastProgress=Date.now(),stderr='',progress='',ready=false,everStarted=false,killTimer=null,broadcast=null,startedAt=0;const troubled=new Map();
   const send=data=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(data))};
-  const stop=()=>{if(stopping)return;stopping=true;if(child){child.stdin.end();killTimer=setTimeout(()=>child?.kill('SIGKILL'),3500);killTimer.unref()}else{send({type:'stopped'});ws.close()}};
-  const fail=message=>{send({type:'error',message});stop()};
+  const stop=()=>{if(stopping)return;stopping=true;if(child){child.stdin.end();killTimer=setTimeout(()=>child?.kill('SIGKILL'),broadcast?8000:3500);killTimer.unref()}else{send({type:'stopped'});ws.close()}};
+  const fail=message=>{audit.error('transmissao','falha',message);send({type:'error',message});stop()};
+  // Depois de parar, o MKV (à prova de queda) vira MP4 sem recodificar.
+  const finalize=(record,done)=>{let size=0;try{size=fs.statSync(record.file).size}catch{}if(size<1024){done(null);return}const mp4=record.file.replace(/\.mkv$/,'.mp4');const mux=spawnProcess(ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-y','-i',record.file,'-c','copy','-movflags','+faststart',mp4],{shell:false,windowsHide:true,stdio:'ignore'});mux.on('error',()=>done({file:record.file,size}));mux.on('close',code=>{let out=0;try{out=fs.statSync(mp4).size}catch{}const drop=file=>{try{fs.rmSync(file,{force:true,maxRetries:10,retryDelay:200})}catch(e){audit.warn('gravacao','arquivo-preso','Não foi possível apagar '+path.basename(file)+': '+e.code)}};if(code===0&&out>size*.9){drop(record.file);done({file:mp4,size:out})}else{drop(mp4);done({file:record.file,size})}})};
   const watchdog=setInterval(()=>{if(!child)return;if(!stopping&&Date.now()-lastInput>10000)fail('O navegador parou de enviar o sinal. Transmissão encerrada.');else if(!stopping&&Date.now()-lastProgress>30000)fail('Sem progresso do codificador por 30 segundos. Confira a conexão e reinicie.')},1000);
   watchdog.unref();
   ws.on('message',(data,binary)=>{
@@ -47,14 +60,21 @@ function createBridge({port=3180,ffmpeg=findFFmpeg(),spawnProcess=spawn,camPort=
    if(msg.type==='stop'){stop();return}if(msg.type!=='start'){fail('Comando não suportado.');return}
    if(everStarted){fail('Abra uma nova sessão para iniciar outra transmissão.');return}everStarted=true;
    if(active){fail('Já existe uma transmissão ativa neste serviço. Encerre-a na outra aba.');return}if(!ffmpeg){fail('FFmpeg não encontrado. Execute INSTALAR.bat e depois INICIAR.bat.');return}
-   let cfg;try{cfg=validateConfig(msg)}catch(e){fail(e.message);return}
-   active=ws;lastInput=Date.now();lastProgress=Date.now();child=spawnProcess(ffmpeg,argsFor(cfg),{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe','pipe']});cfg.target='';msg.key='';
+   const multi=Array.isArray(msg.destinations)||!!msg.record;let cfg;
+   try{if(multi){const lic=license.status();if(!lic.valid)throw Error(lic.message);cfg=validateBroadcast(msg);if(cfg.record)cfg.record.space=storage.checkDir(cfg.record.dir);if(!detectEncoders(ffmpeg).includes(cfg.encoder))cfg.encoder='libx264'}else cfg=validateConfig(msg)}catch(e){fail(e.message);return}
+   active=ws;broadcast=multi?cfg:null;startedAt=Date.now();lastInput=Date.now();lastProgress=Date.now();child=spawnProcess(ffmpeg,multi?argsForBroadcast(cfg):argsFor(cfg),{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe','pipe']});if(!multi){cfg.target='';msg.key=''}
+   audit.info('transmissao','inicio',multi?'Envio iniciado: '+(cfg.destinations.map(d=>d.name).join(', ')||'somente gravação')+(cfg.record?' + gravação':''):'Envio iniciado: YouTube',{resolucao:cfg.resolution,bitrateMbps:cfg.bitrate,codificador:cfg.encoder||'libx264',destinos:multi?cfg.destinations.map(d=>d.name):['YouTube'],gravacao:cfg.record?.dir||null});
+   if(multi){for(const d of cfg.destinations)if(d.warning){send({type:'destination',id:d.id,state:'warning',reason:d.warning});audit.warn('transmissao','destino-suspeito',d.warning)}if(cfg.record)send({type:'recording',file:cfg.record.file,free:cfg.record.space.free})}
    child.on('spawn',()=>{ready=true;send({type:'ready',message:'Codificador iniciado. Aguardando sinal PGM.'})});
    child.on('error',()=>{fail('Não foi possível iniciar o FFmpeg. Execute o diagnóstico do pacote.')});
    child.stdin.on('error',()=>{if(!stopping)fail('Entrada do codificador interrompida.')});
-   child.stderr.on('data',d=>{stderr=(stderr+d.toString()).slice(-8192)});
-   child.stdio[3].on('data',d=>{progress+=d.toString();let idx;while((idx=progress.indexOf('\n'))>=0){const line=progress.slice(0,idx).trim();progress=progress.slice(idx+1);if(line.startsWith('frame=')){const frames=Number(line.slice(6));if(frames>lastFrame){lastProgress=Date.now();lastFrame=frames;if(!stopping)send({type:'sending',frames,message:'Sinal sendo enviado. Confirme a recepção no YouTube Studio.'})}}}});
-   child.on('close',code=>{clearTimeout(killTimer);child=null;if(active===ws)active=null;if(!stopping)send({type:'error',message:safeError(stderr)});stderr='';send({type:'stopped',code:code??null});ws.close();clearInterval(watchdog)});
+   child.stderr.on('data',d=>{const text=d.toString();stderr=(stderr+(broadcast?redact(text,broadcast):text)).slice(-8192);if(!broadcast||stopping)return;for(const ev of destinationEvents(text,broadcast)){const seen=troubled.get(ev.id);if(!seen)audit.warn('transmissao','destino-reconectando',ev.name+': '+ev.reason+'. Tentando reconectar.');if(!seen||Date.now()-seen.sent>4000)send({type:'destination',...ev});troubled.set(ev.id,{at:Date.now(),sent:!seen||Date.now()-seen.sent>4000?Date.now():seen.sent,name:ev.name})}});
+   child.stdio[3].on('data',d=>{progress+=d.toString();let idx;while((idx=progress.indexOf('\n'))>=0){const line=progress.slice(0,idx).trim();progress=progress.slice(idx+1);if(line.startsWith('frame=')){const frames=Number(line.slice(6));if(frames>lastFrame){if(!lastFrame)audit.info('transmissao','enviando','Codificador produzindo quadros');lastProgress=Date.now();lastFrame=frames;if(!stopping)send({type:'sending',frames,message:broadcast?'Sinal sendo enviado. Confirme a recepção em cada plataforma.':'Sinal sendo enviado. Confirme a recepção no YouTube Studio.'});for(const [id,t] of troubled)if(Date.now()-t.at>12000){troubled.delete(id);audit.info('transmissao','destino-recuperado',t.name+' voltou a receber');if(!stopping)send({type:'destination',id,state:'sending'})}}}}});
+   child.on('close',code=>{clearTimeout(killTimer);child=null;if(active===ws)active=null;const unexpected=!stopping,cfg=broadcast;
+    if(unexpected){const message=cfg?safeBroadcastError(stderr):safeError(stderr);audit.error('transmissao','codificador-encerrou',message,{codigo:code,log:stderr.slice(-1500)});send({type:'error',message})}
+    audit.info('transmissao','fim','Envio encerrado',{segundos:Math.round((Date.now()-startedAt)/1000),quadros:lastFrame,codigo:code??null});stderr='';clearInterval(watchdog);
+    const end=recording=>{if(recording){audit.info('gravacao','arquivo','Gravação salva',{arquivo:recording.file,MB:Math.round(recording.size/1e6)});send({type:'recorded',...recording})}send({type:'stopped',code:code??null});ws.close()};
+    if(cfg?.record)finalize(cfg.record,end);else end(null)});
   });
   ws.on('error',()=>stop());ws.on('close',()=>{clearInterval(watchdog);stop();if(!child&&active===ws)active=null});
  });

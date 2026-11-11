@@ -1,0 +1,110 @@
+name: Andromeda Live CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Testes (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Testes do serviço (codificador, destinos, gravação, câmeras, licença)
+        run: npm test
+      - name: Teste da mesa (DOM)
+        run: npm run test:ui
+      - name: Testes da configuração do gateway
+        if: runner.os == 'Linux'
+        run: python3 -m unittest discover -s test -p "*_test.py"
+      - name: Validar e construir o contêiner do gateway
+        if: runner.os == 'Linux'
+        env:
+          CAM_DOMAIN: cam.example.com
+          TURN_HOST: turn.example.com
+        run: |
+          # Valores descartáveis só para este teste; os reais são gerados por cloud/configure.py no VPS.
+          export CLOUD_TOKEN=$(openssl rand -hex 32) TURN_SECRET=$(openssl rand -hex 32)
+          touch cloud/turnserver.conf
+          docker compose -f cloud/compose.yaml config --quiet
+          docker build -f cloud/Dockerfile -t andromeda-gateway:ci .
+          docker run -d --name gw -e CLOUD_ORIGIN=https://cam.example.com -e CLOUD_TOKEN -e TURN_HOST -e TURN_SECRET -p 8080:8080 andromeda-gateway:ci
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/health | grep -q '"ok":true'
+          docker rm -f gw
+
+  windows-installer:
+    name: Instalador Windows
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write   # só para publicar o instalador na página de versões (releases) a partir da main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Gerar instalador
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Abrir o programa empacotado e conferir a mesa
+        shell: pwsh
+        run: |
+          $result = Join-Path $env:RUNNER_TEMP 'smoke.json'
+          $exe = Join-Path $PWD 'dist\win-unpacked\Andromeda Live.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList "--smoke-test=$result" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'O programa não terminou a conferência em 120 s' }
+          Get-Content $result
+          $data = Get-Content $result | ConvertFrom-Json
+          if (-not $data.ok) { throw 'Conferência falhou' }
+          if ($data.ffmpeg -notmatch 'app\.asar\.unpacked') { throw "FFmpeg fora do pacote: $($data.ffmpeg)" }
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'smoke.*') dist\
+      - name: Publicar o instalador como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Andromeda-Live-Windows
+          path: |
+            dist/*.exe
+            dist/smoke.json
+            dist/smoke.png
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publicar na página de versões (somente main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $files = Get-ChildItem dist\*.exe | ForEach-Object { $_.FullName }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag @files --clobber }
+          else { gh release create $tag @files --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }

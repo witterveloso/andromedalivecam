@@ -14,5 +14,11 @@ Este pacote não foi publicado em um servidor real nem testado em celulares fís
 10. Revogue o convite: a câmera deve desconectar. Reinicie o gateway: convites antigos não devem funcionar.
 11. Suba gradualmente até dez câmeras, monitorando CPU, memória, rede e queda de frames. Só use a quantidade que passou no teste do equipamento real.
 12. Faça uma live não listada, confira áudio e vídeo no player do destino e mantenha um ensaio contínuo de pelo menos 30 minutos.
+13. Multiplataforma: na página Transmissão, ative cada destino que será usado (YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn ou RTMP próprio) com as chaves reais e faça uma live privada ou não listada em todos ao mesmo tempo. Confira o player de cada plataforma. Some o bitrate de todos os destinos e confirme que o upload do local sustenta pelo menos 1,3 vez esse total.
+14. Queda de destino: durante o ensaio, encerre a live em uma das plataformas. A mesa deve mostrar RECONECTANDO só naquele destino, sem interromper os outros nem a gravação.
+15. Gravação: grave no disco interno e em um HD/SSD externo conectado por USB. Confira em Transmissão → Gravação se a unidade aparece, o espaço e as horas disponíveis. Abra o MP4 gerado e confira áudio e vídeo até o fim.
+16. Mosaico: coloque duas, três e quatro câmeras no mosaico, incluindo um celular na vertical, e confira o enquadramento no PGM, o tally das câmeras e o áudio AFV.
+17. Programa instalado: rode o ensaio longo no Andrômeda Live instalado, com a janela atrás de outros programas por alguns minutos, e confira no Diagnóstico se houve aviso de queda de quadros.
+18. Ao final, exporte a auditoria (Diagnóstico → Exportar auditoria) e guarde junto com as anotações do ensaio.
 
 Limites atuais: uma mesa por gateway; convites em memória por 12 horas; sem TURN/TLS 443, sem bonding e sem garantia de captura em segundo plano. Para SaaS comercial multiempresa, ainda são necessários isolamento de clientes, contas, armazenamento de sessões e operação/monitoramento contínuo.

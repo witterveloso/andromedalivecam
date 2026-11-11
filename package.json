@@ -1,20 +1,85 @@
 {
-  "name": "andromeda-live-youtube",
-  "version": "0.9.0",
+  "name": "andromeda-live",
+  "version": "0.12.0",
   "private": true,
-  "description": "Recepção Blackmagic RTMP e saída PGM para YouTube",
+  "description": "Mesa de corte ao vivo com câmeras por convite (WebRTC), entradas Blackmagic RTMP, mosaico, transmissão multiplataforma e gravação",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "start": "node server.cjs",
+    "desktop": "electron .",
     "check": "node check.cjs",
-    "test": "node --test --test-concurrency=1 test/*.test.cjs"
+    "test": "node --test --test-concurrency=1 test/*.test.cjs",
+    "test:ui": "node test/workspace-ui.cjs",
+    "test:python": "python3 -m unittest discover -s test -p \"*_test.py\"",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:dir": "electron-builder --dir --publish never"
   },
   "dependencies": {
     "ws": "8.22.1"
   },
   "optionalDependencies": {
     "ffmpeg-static": "5.3.0"
+  },
+  "productName": "Andromeda Live",
+  "author": "Andrômeda Live",
+  "main": "desktop/main.cjs",
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.18.0",
+    "jsdom": "30.1.3"
+  },
+  "build": {
+    "appId": "live.andromeda.desk",
+    "productName": "Andromeda Live",
+    "copyright": "Andrômeda Live",
+    "directories": {
+      "output": "dist",
+      "buildResources": "desktop/build"
+    },
+    "files": [
+      "*.cjs",
+      "package.json",
+      "public/**/*",
+      "desktop/main.cjs",
+      "desktop/build/icon.png",
+      "license-public.pem",
+      "!check.cjs",
+      "!cloud-server.cjs"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "desktop/build/icon.ico",
+      "artifactName": "Andromeda-Live-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Andromeda Live",
+      "uninstallDisplayName": "Andromeda Live",
+      "installerIcon": "desktop/build/icon.ico",
+      "uninstallerIcon": "desktop/build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "desktop/build/icon.png",
+      "category": "AudioVideo"
+    }
   }
 }
