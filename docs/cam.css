@@ -352,3 +352,35 @@ body[data-mode="test"] .group.invite { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- zoom, balanço de branco e exposição (optics.js) ---------- */
+
+/* Imagem processada (zoom/cor/brilho digitais) por cima da câmera, no mesmo lugar e enquadramento. */
+#viewProc { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; pointer-events: none; }
+body[data-run="idle"] #viewProc, body[data-run="starting"] #viewProc { opacity: 0; }
+body[data-run="live"] #view, body[data-run="test"] #view, body[data-run="live"] #viewProc, body[data-run="test"] #viewProc { touch-action: none; }
+
+.zoom { display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.zoom button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 999px; background: none; color: var(--text); font: 800 15px var(--mono); }
+.zoom .zoom-value { min-width: 64px; color: #ffd60a; }
+.zoom[data-kind="digital"] .zoom-value::after { content: " dig"; font-size: 10px; color: var(--muted); }
+.zoom button:disabled { opacity: .35; }
+@media (orientation: landscape) { .zoom { flex-direction: column; } }
+
+.optics { display: grid; gap: 14px; }
+.optic { display: grid; gap: 10px; }
+.optic h4 { display: flex; align-items: baseline; gap: 8px; margin: 0; color: var(--text); font-size: 14px; }
+.optic .source { color: var(--amber); font-size: 11px; font-weight: 700; }
+.slider-head { display: flex; justify-content: space-between; gap: 8px; }
+.slider-head output { color: var(--text); font: 700 13px var(--mono); }
+.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; }
+.segmented button { min-height: 40px; border: 0; border-radius: 9px; background: none; color: var(--muted); font-weight: 700; }
+.segmented button[aria-checked="true"] { background: var(--amber); color: #00121f; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--text); font-size: 12px; font-weight: 600; }
+.presets button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+.optics-badge { color: #ffd60a; font-weight: 700; }
+
+.home-steps { display: grid; gap: 10px; margin: 0; padding-left: 20px; color: var(--text); font-size: 15px; line-height: 1.45; }
+#fullToggle[aria-pressed="true"] { background: var(--amber); border-color: transparent; color: #00121f; }
+@media (orientation: landscape) { #viewProc { inset: 0 auto 0 0; width: calc(100% - var(--rail)); } }

@@ -29,6 +29,9 @@
     <button id="gridToggle" class="icon" type="button" aria-pressed="false" aria-label="Grade de enquadramento">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
     </button>
+    <button id="fullToggle" class="icon" type="button" aria-pressed="false" aria-label="Tela cheia">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
     <button id="settings" class="icon" type="button" aria-label="Ajustes">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
     </button>
@@ -124,9 +127,9 @@
         </label>
       </div>
       <label>Bitrate alvo (Mbps)
-        <input id="bitrate" type="number" inputmode="decimal" min="1" max="12" step="0.5" value="3">
+        <input id="bitrate" type="number" inputmode="decimal" min="1" max="25" step="0.5" value="3">
       </label>
-      <p class="hint">O perfil definido pela mesa no convite substitui estes valores ao conectar.</p>
+      <p class="hint">Os ajustes valem na hora, com a câmera ligada. Ao conectar, o perfil do convite da mesa é o ponto de partida. Referência: 1080p30 · 5 Mbps; 1080p60 · 8 Mbps; 4K30 · 16 Mbps. Se a rede apertar, o envio mantém os quadros por segundo e reduz a nitidez, para o movimento continuar fluido.</p>
     </section>
 
     <section class="group">
@@ -135,7 +138,7 @@
         <select id="lens" aria-label="Câmera disponível"></select>
       </label>
       <div id="manual"></div>
-      <p class="hint">Cada opção é uma lente física do aparelho. Não há zoom digital. Os controles manuais aparecem depois de ativar a câmera e variam por aparelho.</p>
+      <p class="hint">As lentes aparecem com o nome do aparelho: 0,5× Ultra, 1× Principal, Tele e as automáticas do iPhone, que trocam de lente pelo zoom. Zoom, balanço de branco e exposição usam o controle do aparelho quando o navegador oferece; quando não oferece, são aplicados na imagem antes do envio (indicado como "digital"). Pinça com dois dedos na imagem também dá zoom.</p>
     </section>
 
     <section class="group">
@@ -147,9 +150,30 @@
 
     <section class="group">
       <h3>Aparelho</h3>
-      <label class="check"><input id="fullscreenPref" type="checkbox" checked>Tela cheia ao ativar a câmera</label>
+      <label class="check"><input id="fullscreenPref" type="checkbox" checked>Tela cheia ao ativar a câmera (Android e computador)</label>
+      <button id="fullHelp" class="btn ghost" type="button">Tela cheia no iPhone</button>
       <button id="localTest" class="btn ghost" type="button">Testar câmera sem mesa</button>
       <p class="hint">Versão web: a câmera é a que o navegador expõe. Mantenha a tela ligada e o app visível durante a transmissão.</p>
+    </section>
+  </form>
+</dialog>
+
+<dialog id="homeSheet" class="sheet" aria-labelledby="homeTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <h2 id="homeTitle">Tela cheia no iPhone</h2>
+      <button class="icon" value="close" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <section class="group">
+      <p class="hint">O Safari não deixa uma página ocupar a tela inteira. Instalado na Tela de Início, o app abre sem barras do navegador. Faça agora, com este aviso aberto: o convite vai junto no ícone.</p>
+      <ol class="home-steps">
+        <li>Toque em <b>Compartilhar</b> (quadrado com seta para cima) na barra do Safari.</li>
+        <li>Escolha <b>Adicionar à Tela de Início</b> e confirme.</li>
+        <li>Feche o Safari e abra o <b>Andrômeda Cam</b> pelo ícone novo.</li>
+      </ol>
+      <p class="hint">Convite novo da mesa? Abra o link novo no Safari e repita, ou cole o convite em Ajustes dentro do app.</p>
     </section>
   </form>
 </dialog>
@@ -158,5 +182,6 @@
 <script src="./config.js"></script>
 <script src="./relay.js"></script>
 <script src="./cam.js"></script>
+<script src="./optics.js"></script>
 </body>
 </html>
