@@ -1,3 +1,42 @@
+# Andrômeda Live 0.14.1 — monitores no tamanho que você escolher, layouts salvos e escolha entre transmitir e gravar
+
+## Monitores (correção)
+
+- **Bug corrigido:** Preview e PGM encolhiam sozinhos durante a operação até ficarem minúsculos.
+  - Causa: a cada novo cálculo de tamanho (uma câmera entrando, a janela mudando), a área de áudio do PGM ocupava o espaço livre, e o cálculo seguinte diminuía a imagem um pouco mais.
+  - Agora a imagem ocupa o espaço que o painel dá, sempre inteira em 16:9, sem cálculo repetido. Medido em navegador: 30 recálculos seguidos e o tamanho não muda.
+- **Tamanho programado pelo operador:** em **Personalizar**, cada monitor mostra **− 100% +** no título.
+  - Vai de 25% a 100%, de 5 em 5.
+  - Também pode ser ajustado em Configurações → Personalizar a mesa, na coluna "Ordem · imagem".
+  - O ajuste fica salvo.
+- Aumentar ou diminuir o painel pelo canto muda a imagem junto.
+- Preview e PGM lado a lado, com a mesma altura, ficam do mesmo tamanho.
+
+## Gravar a personalização da Operação
+
+- Em **Personalizar**, escreva um nome (por exemplo "Culto domingo" ou "Entrevista") e toque em **Salvar layout**.
+- O layout aparece em **Modelo → Meus layouts**, junto com os modelos prontos. Escolher um volta a mesa exatamente para aquela arrumação: posições, tamanhos, página de cada painel e tamanho das imagens.
+- Salvar com o mesmo nome atualiza o layout. **Excluir** apaga o layout escolhido.
+- Qualquer ajuste depois disso aparece como "Personalizado (não salvo)".
+- Cabem até 20 layouts neste computador. Para levar a outro computador, use Exportar/Importar layout.
+- O mesmo vale em Configurações → Personalizar a mesa.
+
+## Transmitir e gravar, só transmitir ou só gravar
+
+Ao lado do botão principal, na página **Transmissão**, escolha o modo. O botão muda conforme a escolha.
+
+| Modo | Botão | O que acontece |
+| --- | --- | --- |
+| **Transmitir e gravar** | ▶ TRANSMITIR + GRAVAR | O mesmo PROGRAM vai para os destinos e para o arquivo MP4. |
+| **Só transmitir** | ▶ TRANSMITIR | Vai só para os destinos; nada é gravado. |
+| **Só gravar** | ● GRAVAR | Grava o MP4 neste computador; nenhuma plataforma recebe nada. |
+
+- **Bug corrigido:** com destinos ligados mas sem chave (por exemplo YouTube e Instagram ainda não configurados), a gravação sem transmitir era recusada com "falta servidor ou chave". Agora **Só gravar** ignora os destinos, completos ou não.
+- Ensaio no navegador nessa mesma situação: arquivo MP4 de 5 MB gravado e finalizado.
+- Os modos que transmitem continuam exigindo pelo menos um destino pronto.
+
+---
+
 # Andrômeda Live 0.14 — mesa na nuvem: retorno do PGM e controle remoto
 
 Agora dá para ver o PGM e operar a mesa de outro lugar, pelo celular ou por outro computador, em Wi-Fi, 4G ou 5G. Não é preciso instalar nada nem usar Tailscale: a mesa gera um link e você envia.
