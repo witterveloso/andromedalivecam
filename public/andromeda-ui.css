@@ -564,3 +564,74 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
   .dock-bottom > .dock-panel[data-tool="cut"] { position: static; }
   .media-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
+
+/* Convites: como os celulares se conectam */
+.link-modes { display: grid; gap: 6px; }
+/* Mais específico que ".step label" e ".step input", que fariam o rádio ocupar a largura toda. */
+.step label.link-mode { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--d-line-2); border-radius: var(--d-r-sm); cursor: pointer; }
+.step .link-mode input { flex: none; width: 16px; height: 16px; min-height: 0; margin: 2px 0 0; padding: 0; accent-color: var(--brand-blue); }
+.link-mode span { display: grid; gap: 2px; }
+.link-mode strong { color: var(--d-text); font: 700 12.5px var(--d-display); }
+.link-mode small { color: var(--d-faint); font-size: 11.5px; line-height: 1.4; }
+.link-mode:has(input:checked) { border-color: var(--brand-blue); background: rgba(0, 163, 255, .1); }
+.link-detail { display: grid; gap: 10px; }
+.link-detail > [hidden] { display: none !important; }
+.link-lan, .link-gateway { display: grid; gap: 8px; }
+.link-note { margin: 0; color: var(--d-muted); font-size: 11.5px; line-height: 1.5; }
+.link-note[data-tone="ok"] { color: var(--d-pvw-text); }
+.link-note[data-tone="warn"] { color: var(--d-amber); }
+
+/* Medidores: número com largura fixa para a barra não "tremer" quando os dígitos mudam. */
+#masterDb, .vu-number { display: inline-block; min-width: 10ch; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vu-lit, .vu-peak { will-change: clip-path, left; }
+
+/* ---------- mesa livre (layout v3): cada painel com tamanho e lugar próprios ---------- */
+.custom-workspace.free-workspace.main { display: block; }
+/* Sem espaço entre linhas: a margem de baixo de cada painel faz o respiro, e 48 linhas cabem em qualquer altura de tela. */
+.free-grid { position: relative; display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); grid-auto-rows: var(--free-row, 20px); gap: 0 8px; }
+.free-grid > .dock-panel { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0 0 8px; overflow: auto; scrollbar-width: thin; }
+.free-grid > .dock-panel > .dock-handle { position: sticky; top: 0; z-index: 4; flex: none; background: var(--d-panel); }
+.free-grid > .dock-panel > :not(.dock-handle):not(.free-resize) { flex: none; }
+.free-grid > .dock-panel[data-tool="program"] > .program-card { flex: 1 0 auto; }
+.free-size, .free-resize { display: none; }
+.layout-editing .free-grid {
+  background-image: linear-gradient(90deg, rgba(0, 163, 255, .08) 1px, transparent 1px), linear-gradient(rgba(0, 163, 255, .08) 1px, transparent 1px);
+  background-size: calc((100% + 8px) / 48) var(--free-row, 20px); outline: 1px dashed var(--d-line-2); outline-offset: 4px;
+}
+.layout-editing .free-grid > .dock-panel > .dock-handle { cursor: move; touch-action: none; }
+.layout-editing .free-grid > .dock-panel > .dock-handle:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: -2px; }
+.layout-editing .free-grid > .dock-panel .free-size { display: inline; margin-left: auto; color: var(--brand-blue); font: 600 10px var(--d-mono); letter-spacing: .04em; }
+.layout-editing .free-grid > .dock-panel > .free-resize {
+  display: block; position: absolute; right: 0; bottom: 0; z-index: 6; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 48%, var(--brand-blue) 48% 56%, transparent 56% 68%, var(--brand-blue) 68% 76%, transparent 76%);
+}
+/* Editando, o conteúdo não recebe cliques: ajustar a mesa nunca corta nem muda o AR. */
+.layout-editing .free-grid > .dock-panel > :not(.dock-handle):not(.free-resize) { pointer-events: none; opacity: .85; }
+.layout-editing .free-grid > .dock-panel { box-shadow: 0 0 0 1px rgba(0, 163, 255, .35); }
+.free-grid > .dock-panel.free-active { z-index: 20; box-shadow: 0 0 0 2px var(--brand-blue), 0 14px 40px rgba(0, 0, 0, .6); }
+.free-editbar {
+  position: fixed; left: 50%; bottom: 48px; z-index: 60; transform: translateX(-50%); width: min(980px, calc(100% - 32px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px;
+  background: #0e1640; border: 1px solid var(--brand-blue); border-radius: var(--d-r); box-shadow: 0 12px 36px rgba(0, 0, 0, .6);
+}
+.free-editbar strong { color: #fff; font: 700 12px var(--d-display); letter-spacing: .12em; text-transform: uppercase; }
+.free-editbar span { flex: 1 1 280px; color: var(--d-muted); font-size: 12px; }
+.free-editbar label { display: flex; align-items: center; gap: 6px; color: var(--d-muted); font-size: 12px; }
+.free-editbar button, .free-editbar select { min-height: 32px; font-size: 12px; }
+.free-done { background: var(--brand-blue); border-color: transparent; color: #00142a; font-weight: 800; }
+#layoutNavButton[aria-pressed="true"] { background: var(--brand-blue); color: #00142a; }
+.layout-head, .layout-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(130px, 1fr) 150px 150px 74px; gap: 8px; align-items: center; }
+.layout-head { padding: 4px 0; color: var(--d-faint); font: 600 10px var(--d-mono); letter-spacing: .08em; text-transform: uppercase; }
+.layout-pair { display: flex; gap: 6px; align-items: center; }
+.layout-pair input { width: 64px; min-height: 30px; }
+.layout-pair small { color: var(--d-faint); }
+@media (max-width: 900px) {
+  .free-grid { display: flex; flex-direction: column; }
+  .free-grid > .dock-panel { overflow: visible; }
+  .free-editbar { bottom: 12px; }
+  .layout-head { display: none; }
+  .layout-row { grid-template-columns: 1fr 1fr; }
+}
+.layout-editing .free-grid, .layout-editing .free-editbar { -webkit-user-select: none; user-select: none; }
+.free-editbar { width: auto; max-width: calc(100% - 32px); }
+.free-editbar span { flex: 0 1 auto; }

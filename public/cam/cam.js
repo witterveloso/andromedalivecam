@@ -7,11 +7,15 @@
 const localTest = new URLSearchParams(location.search).get('teste') === '1';
 const gateway = String(window.ANDROMEDA_GATEWAY || '').replace(/\/+$/, '');
 const KEY = /^[a-f0-9]{48}$/;
+// Convite pela internet: #r=CHAVE (ponto de encontro + WebRTC direto). Convite por gateway ou rede local: #CHAVE.
+const parseHash = hash => { const h = String(hash || '').replace(/^#/, ''); if (h.startsWith('r=') && KEY.test(h.slice(2))) return { key: h.slice(2), relay: true }; return KEY.test(h) ? { key: h, relay: false } : null; };
+const firstInvite = parseHash(location.hash);
+const relayBrokers = Array.isArray(window.ANDROMEDA_RELAY) && window.ANDROMEDA_RELAY.length ? window.ANDROMEDA_RELAY : window.AndromedaRelay?.DEFAULT_BROKERS || [];
 const q = s => document.querySelector(s);
 const root = q('body');
 const cam = {
   stream: null, ws: null, pcs: new Map(), ice: [],
-  key: KEY.test(location.hash.slice(1)) ? location.hash.slice(1) : '',
+  key: firstInvite?.key || '', relay: !!firstInvite?.relay, channel: null,
   running: false, muted: false, talking: false,
   lastTally: 0, shownTally: '', started: 0, generation: 0, retry: null,
   ac: null, meter: null, intercomTrack: null, wake: null, lastBytes: 0, lastStatsAt: 0,
@@ -48,17 +52,16 @@ function tally(state) {
 
 function describeHero() {
   const set = (title, text) => { q('#heroTitle').textContent = title; q('#heroText').textContent = text; };
-  q('#heroInvite').hidden = localTest || !gateway || !!cam.key;
+  q('#heroInvite').hidden = localTest || !!cam.key;
   q('#heroTest').hidden = localTest;
   if (localTest) set('Teste local da câmera', 'Câmera e microfone ligam apenas neste aparelho. Nenhum sinal é enviado à mesa.');
-  else if (!gateway) set('Página ainda sem mesa', 'O endereço do gateway não foi configurado pelo administrador. O teste local funciona normalmente.');
   else if (cam.key) set('Convite recebido', 'Conecte os fones, toque em ATIVAR CÂMERA e permita câmera e microfone.');
   else set('Abra o convite da mesa', 'Use o link privado enviado pelo diretor de TV ou cole o convite aqui.');
 }
 
 /* ---------- sinalização ---------- */
 
-function send(message) { if (cam.ws?.readyState === WebSocket.OPEN) cam.ws.send(JSON.stringify(message)); }
+function send(message) { if (cam.ws?.readyState === 1) cam.ws.send(JSON.stringify(message)); }
 function cleanPeers() {
   for (const p of cam.pcs.values()) p.pc.close();
   cam.pcs.clear(); cam.intercomTrack?.stop(); cam.intercomTrack = null; ptt(false);
@@ -247,10 +250,53 @@ async function message(m) {
   }
 }
 
+/* ---------- ponto de encontro pela internet ---------- */
+
+function relayChannel() {
+  if (!window.AndromedaRelay) throw Object.assign(Error('Página incompleta: recarregue o link do convite.'), { name: 'InviteError' });
+  if (!cam.channel || cam.channel.inviteKey !== cam.key) {
+    cam.channel?.close();
+    cam.channel = new AndromedaRelay.Channel({ inviteKey: cam.key, role: 'cam', brokers: relayBrokers });
+    cam.channel.inviteKey = cam.key;
+  }
+  return cam.channel;
+}
+// Pergunta à mesa, pelo ponto de encontro, o nome e o perfil deste convite.
+async function relaySession() {
+  const channel = relayChannel(), invite = message => Object.assign(Error(message), { name: 'InviteError' });
+  if (!(await channel.whenConnected(12000))) throw invite('Sem internet ou ponto de encontro indisponível. Confira o Wi-Fi ou os dados móveis e tente de novo.');
+  const sid = AndromedaRelay.randomHex(8);
+  return new Promise((resolve, reject) => {
+    let tries = 0;
+    const off = channel.on(env => { if (env.sid !== sid || env.msg?.type !== 'session') return; clearInterval(timer); off(); if (env.msg.ok) resolve(env.msg); else reject(invite(env.msg.error || 'Convite recusado pela mesa.')); });
+    const ask = () => { if (++tries > 6) { clearInterval(timer); off(); reject(invite('A mesa não respondeu. Confira se o Andrômeda Live está aberto no computador e conectado à internet.')); return; } channel.send({ sid, msg: { type: 'session' } }); };
+    const timer = setInterval(ask, 2000); ask();
+  });
+}
+// Mesma interface de um WebSocket (send, close, onopen, onmessage, onclose) sobre o ponto de encontro.
+function relaySocket() {
+  const channel = relayChannel(), sid = AndromedaRelay.randomHex(8);
+  const sock = { readyState: 0, send(text) { if (sock.readyState === 1) channel.send({ sid, msg: JSON.parse(text) }); }, close(code = 1000) { if (sock.readyState > 1) return; sock.readyState = 3; channel.send({ sid, msg: { type: 'leave' } }); finish(code); } };
+  let off = null, ping = null, quiet = null;
+  const finish = code => { off?.(); clearInterval(ping); clearTimeout(quiet); sock.readyState = 3; sock.onclose?.({ code }); };
+  const alive = () => { clearTimeout(quiet); quiet = setTimeout(() => { if (sock.readyState === 1) { sock.readyState = 3; channel.send({ sid, msg: { type: 'leave' } }); finish(1006); } }, 9000); };
+  off = channel.on(env => {
+    if (env.sid !== sid || !env.msg) return; alive();
+    if (env.msg.type === 'closed') { if (sock.readyState < 2) finish(env.msg.code || 1000); return; }
+    sock.onmessage?.({ data: JSON.stringify(env.msg) });
+  });
+  channel.whenConnected(12000).then(ok => {
+    if (sock.readyState !== 0) return;
+    if (!ok) { finish(1006); return; }
+    sock.readyState = 1; alive(); ping = setInterval(() => channel.send({ sid, msg: { type: 'ping' } }), 4000); sock.onopen?.();
+  });
+  return sock;
+}
+
 function signal() {
   if (!cam.running) return;
   const generation = ++cam.generation; cleanPeers();
-  const ws = new WebSocket(gateway.replace(/^http/, 'ws') + '/signal'); cam.ws = ws;
+  const ws = cam.relay ? relaySocket() : new WebSocket(gateway.replace(/^http/, 'ws') + '/signal'); cam.ws = ws;
   ws.onopen = () => send({ type: 'join', key: cam.key });
   let chain = Promise.resolve();
   ws.onmessage = e => { if (generation !== cam.generation) return; chain = chain.then(() => message(JSON.parse(e.data))).catch(err => say('Conexão: ' + err.message, 'error')); };
@@ -259,6 +305,7 @@ function signal() {
     if (generation !== cam.generation) return;
     cleanPeers(); tally('offline'); q('#ptt').disabled = true;
     if ([4001, 4002, 4003].includes(e.code)) { stop(); say('Convite inválido, ocupado, revogado ou expirado. Peça outro à mesa.', 'error'); return; }
+    if (cam.relay && e.code === 1006 && !navigator.onLine) say('Sem internet. Reconectando quando o sinal voltar…', 'warn'); else
     say('Reconectando à mesa…', 'warn');
     if (cam.running) { clearTimeout(cam.retry); cam.retry = setTimeout(signal, 2500); }
   };
@@ -268,15 +315,17 @@ function signal() {
 
 function readInvite(text) {
   text = String(text || '').trim();
-  if (KEY.test(text)) return { key: text };
+  if (KEY.test(text)) return { key: text, relay: !gateway };
   let url; try { url = new URL(text); } catch { return { error: 'Convite inválido. Cole o link completo recebido da mesa.' }; }
-  if (url.origin !== location.origin) return { error: 'Abra o convite no endereço indicado pela mesa.' };
-  return KEY.test(url.hash.slice(1)) ? { key: url.hash.slice(1) } : { error: 'Convite inválido. Cole o link completo recebido da mesa.' };
+  const parsed = parseHash(url.hash);
+  if (!parsed) return { error: 'Convite inválido. Cole o link completo recebido da mesa.' };
+  if (url.origin !== location.origin) { location.href = url.href; return { error: 'Abrindo o convite no endereço da mesa…' }; }
+  return parsed;
 }
 function useInvite() {
   const result = readInvite(q('#invite').value);
   if (result.error) { say(result.error, 'error'); return false; }
-  cam.key = result.key; q('#invite').value = '';
+  cam.key = result.key; cam.relay = result.relay; q('#invite').value = '';
   return true;
 }
 q('#inviteApply').onclick = () => {
@@ -298,14 +347,18 @@ function captureError(e) {
 }
 
 async function start() {
-  if (!localTest && !gateway) { say('Página publicada. O serviço da mesa ainda precisa ser configurado pelo administrador.', 'warn'); return; }
-  if (!isSecureContext) { say('Abra o endereço HTTPS do gateway. A câmera não funciona por HTTP de IP local.', 'error'); return; }
   if (!localTest && q('#invite').value && !useInvite()) return;
   if (!localTest && !KEY.test(cam.key)) { q('#setup').showModal(); say('Cole um convite válido gerado na mesa.', 'warn'); return; }
+  if (!localTest && !cam.relay && !gateway) { say('Este convite precisa do endereço da mesa. Abra o link recebido no celular.', 'warn'); return; }
+  if (!isSecureContext) { say('Abra o link com https://. O celular não libera a câmera em endereço sem segurança.', 'error'); return; }
   q('#start').disabled = true; setRun('starting');
   if (prefs.get('fullscreen', '1') === '1') document.documentElement?.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
   try {
-    if (!localTest) {
+    if (!localTest && cam.relay) {
+      const info = await relaySession();
+      q('#cameraName').textContent = info.name;
+      if (info.profile) { q('#resolution').value = info.profile.width + 'x' + info.profile.height; q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
+    } else if (!localTest) {
       const invite = message => Object.assign(Error(message), { name: 'InviteError' });
       const response = await fetch(gateway + '/cam/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: cam.key }) })
         .catch(() => { throw invite('Sem resposta da mesa. Confira a internet e tente de novo.'); });
@@ -463,10 +516,7 @@ if (localTest) {
     } catch (e) { a.srcObject = null; say('Escuta indisponível: ' + e.message, 'error'); }
   };
   say('Toque em ATIVAR TESTE e permita câmera e microfone. Não é necessário convite.', 'info');
-} else if (!gateway) {
-  q('#start').disabled = true; setStartLabel('SEM MESA');
-  say('Gateway não configurado. Esta página ainda não está conectada à mesa.', 'warn');
-} else if (cam.key) {
+} else if (cam.key && (cam.relay || gateway)) {
   setStartLabel('ATIVAR CÂMERA');
   say('Convite recebido. Toque em ATIVAR CÂMERA e permita câmera e microfone.', 'ok');
 } else {
