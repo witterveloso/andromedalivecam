@@ -1,6 +1,6 @@
 {
   "name": "andromeda-live",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "description": "Mesa de corte ao vivo com câmeras por convite (WebRTC), entradas Blackmagic RTMP, mosaico, transmissão multiplataforma e gravação",
   "engines": {
@@ -17,6 +17,7 @@
     "dist:dir": "electron-builder --dir --publish never"
   },
   "dependencies": {
+    "selfsigned": "^5.5.0",
     "ws": "8.22.1"
   },
   "optionalDependencies": {

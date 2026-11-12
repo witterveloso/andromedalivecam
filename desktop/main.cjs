@@ -48,6 +48,7 @@ async function startService() {
   fs.mkdirSync(data, { recursive: true });
   process.env.ANDROMEDA_LOG_DIR ||= path.join(data, 'logs');
   process.env.ANDROMEDA_LICENSE_FILE ||= path.join(data, 'licenca.txt');
+  process.env.ANDROMEDA_DATA_DIR ||= data;
   loadCloudConfig(data);
   const { createBridge } = require('../server.cjs');
   const candidate = createBridge({ port: PORT, camPort: 3185 });
@@ -58,7 +59,7 @@ async function startService() {
     candidate.server.once('error', reject);
     candidate.listen();
   }).catch(busy('A porta 3180 está em uso. Feche a outra janela do Andrômeda Live ou o INICIAR.bat e abra de novo.'));
-  if (started) bridge = candidate;
+  if (started) { bridge = candidate; await candidate.ready(); }
 }
 
 function allowMedia() {
