@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#060817">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' wss: ws:; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="./icon.png" type="image/png">
+<link rel="stylesheet" href="./remoto.css">
+<title>Andrômeda Live · Mesa remota</title>
+</head>
+<body data-mode="none" data-status="idle">
+
+<header class="bar">
+  <span class="brand">ANDRÔMEDA <b>LIVE</b></span>
+  <strong id="title">Mesa remota</strong>
+  <span id="status" class="status" role="status">Preparando…</span>
+</header>
+
+<section id="gate" class="gate">
+  <h1 id="gateTitle">Mesa remota</h1>
+  <p id="gateText">Abra o link que o operador da mesa enviou.</p>
+  <form id="nameForm" hidden>
+    <label>Seu nome (aparece para o operador aprovar)<input id="name" maxlength="40" autocomplete="nickname" required></label>
+    <button type="submit">Pedir acesso à mesa</button>
+  </form>
+  <button id="retry" hidden>Tentar de novo</button>
+</section>
+
+<main id="screens" hidden>
+  <div class="monitors">
+    <figure class="mon prv" id="prvBox"><figcaption><b>PREVIEW</b><span id="prvName"></span></figcaption><video id="prv" autoplay muted playsinline></video></figure>
+    <figure class="mon pgm" id="pgmBox"><figcaption><b id="pgmTag">PGM</b><span id="pgmName"></span></figcaption><video id="pgm" autoplay muted playsinline></video></figure>
+  </div>
+  <div class="viewer-actions">
+    <button id="sound" aria-pressed="false">Ativar som</button>
+    <button id="full">Tela cheia</button>
+  </div>
+  <section id="controls" class="controls" hidden aria-label="Controles da mesa">
+    <div class="row"><span class="lbl prv">PRV</span><div id="busPrv" class="bus"></div></div>
+    <details class="hot"><summary>Corte direto no PGM</summary><div class="row"><span class="lbl pgm">PGM</span><div id="busPgm" class="bus"></div></div></details>
+    <div class="row take"><button id="cut" class="cut">CUT</button><button id="auto" class="auto">AUTO</button><div id="types" class="types" role="group" aria-label="Tipo de transição"></div></div>
+    <div class="row"><span class="lbl">AR</span><div id="layers" class="bus"></div></div>
+    <p id="notice" class="notice" role="status" hidden></p>
+  </section>
+</main>
+
+<script src="./config.js"></script>
+<script src="./relay.js"></script>
+<script src="./remoto.js"></script>
+</body>
+</html>

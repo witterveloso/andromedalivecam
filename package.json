@@ -1,6 +1,6 @@
 {
   "name": "andromeda-live",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "description": "Mesa de corte ao vivo com câmeras por convite (WebRTC), entradas Blackmagic RTMP, mosaico, transmissão multiplataforma e gravação",
   "engines": {

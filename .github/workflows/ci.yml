@@ -115,5 +115,10 @@ jobs:
           # O próprio gh expande o padrão; nada de listas do PowerShell (um item único virava letras soltas).
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' 'dist/*.zip' --clobber }
-          else { gh release create $tag 'dist/*.exe' 'dist/*.zip' --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
+          else {
+            # Notas da própria versão: 0.14.x -> ATUALIZACAO_014.md (sem o arquivo, o README).
+            $parts = $version.Split('.'); $notes = 'ATUALIZACAO_{0}{1:D2}.md' -f $parts[0], [int]$parts[1]
+            if (-not (Test-Path $notes)) { $notes = 'README.md' }
+            gh release create $tag 'dist/*.exe' 'dist/*.zip' --title "Andrômeda Live $version" --notes-file $notes --target $env:GITHUB_SHA
+          }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a versão' }

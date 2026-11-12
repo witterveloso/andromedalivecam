@@ -2,7 +2,7 @@
 
 Mesa de produção ao vivo para Windows: até 10 câmeras de celular por link de convite (Wi-Fi ou 4G/5G), câmeras Blackmagic por RTMP, mosaico, gráficos, mixer de áudio, gravação em disco ou HD externo e transmissão do PROGRAM para até 6 destinos ao mesmo tempo (YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn ou qualquer servidor RTMP).
 
-Versão atual: **0.13**. O que mudou está em [ATUALIZACAO_013.md](ATUALIZACAO_013.md); as decisões de produto, em [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md).
+Versão atual: **0.14**. O que mudou está em [ATUALIZACAO_014.md](ATUALIZACAO_014.md) (mesa na nuvem) e [ATUALIZACAO_013.md](ATUALIZACAO_013.md); as decisões de produto, em [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md).
 
 ## As três partes
 
@@ -24,17 +24,21 @@ Em **Configurações → Convites**, passo 1, escolha o modo. Nenhum deles usa T
 
 Em todos os modos a imagem vai direto do celular para o computador (WebRTC). Detalhes, limites e como testar estão em [ATUALIZACAO_013.md](ATUALIZACAO_013.md).
 
+## Mesa na nuvem
+
+Em **Configurações → Mesa na nuvem**, gere um link de **Retorno do PGM** (assistir, até 6 aparelhos) ou de **Controle remoto** (Preview, PGM e botões da mesa, com aprovação de cada aparelho na mesa). Funciona em Wi-Fi, 4G ou 5G, sem instalar nada. Detalhes em [ATUALIZACAO_014.md](ATUALIZACAO_014.md).
+
 ## Personalizar a mesa
 
 Toque em **Personalizar** no topo da Operação: arraste cada painel pelo título para mover e pelo canto para mudar o tamanho. Há modelos prontos, e a tabela completa fica em Configurações → Personalizar a mesa.
 
 ## Instalar a mesa no Windows
 
-**Programa instalado (recomendado).** Baixe `Andromeda-Live-Setup-0.13.0.exe` na página de versões do repositório (**Releases**, à direita na página inicial do GitHub, ou `https://github.com/witterveloso/andromedalivecam/releases/latest`) e instale. A CI publica o instalador ali a cada atualização da `main`. O instalador cria atalhos na área de trabalho e no menu Iniciar e não pede administrador. O programa já traz o serviço local e o FFmpeg: não é preciso instalar Node.js nem manter uma janela de terminal aberta.
+**Programa instalado (recomendado).** Baixe `Andromeda-Live-Setup-0.14.0.exe` na página de versões do repositório (**Releases**, à direita na página inicial do GitHub, ou `https://github.com/witterveloso/andromedalivecam/releases/latest`) e instale. A CI publica o instalador ali a cada atualização da `main`. O instalador cria atalhos na área de trabalho e no menu Iniciar e não pede administrador. O programa já traz o serviço local e o FFmpeg: não é preciso instalar Node.js nem manter uma janela de terminal aberta.
 
 O instalador ainda não tem assinatura digital, então o Windows SmartScreen mostra "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**. Para distribuir a clientes, assine com um certificado de assinatura de código (veja [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md)).
 
-**Versão portátil (sem instalar).** Na mesma página de versões, baixe `Andromeda-Live-0.13.0-portatil-windows.zip`, clique com o botão direito → **Extrair tudo**, abra a pasta extraída e dê dois cliques em **Andromeda Live**. O navegador costuma baixar `.zip` sem a retenção que aplica a programas `.exe`.
+**Versão portátil (sem instalar).** Na mesma página de versões, baixe `Andromeda-Live-0.14.0-portatil-windows.zip`, clique com o botão direito → **Extrair tudo**, abra a pasta extraída e dê dois cliques em **Andromeda Live**. O navegador costuma baixar `.zip` sem a retenção que aplica a programas `.exe`.
 
 **Modo navegador (alternativa).** Com Node.js 22 ou superior: `INSTALAR.bat` e depois `INICIAR.bat`, que abre a mesa no navegador em `http://localhost:3180`. Mantenha a aba visível durante a transmissão.
 
@@ -71,6 +75,7 @@ A CI (`.github/workflows/ci.yml`) roda os testes em Ubuntu e Windows, constrói 
 | `camera-hub.cjs`, `cloud-server.cjs`, `cloud-client.cjs`, `cloud/` | Convites, sinalização, gateway público e TURN |
 | `relay.cjs`, `public/cam/relay.js` | Modo Internet: encontro cifrado da mesa com o celular por MQTT/WSS |
 | `lan.cjs` | Modo Rede local: HTTPS no IP do computador com certificado próprio |
+| `public/remote-desk.js`, `docs/remoto.*` | Mesa na nuvem: retorno do PGM e controle remoto |
 | `mobile/` | Projeto do aplicativo nativo da câmera (Flutter, experimental) |
 | `tools/licenca.cjs` | Gerador de chaves e tokens de ativação (uso do vendedor) |
 | `scripts/check-gateway.cjs` | Verificação de HTTPS e saúde do gateway publicado |
