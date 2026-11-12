@@ -15,7 +15,7 @@
 </head>
 <body data-run="idle" data-tally="offline" data-grid="off">
 
-<video id="view" autoplay muted playsinline></video>
+<video id="view" autoplay muted playsinline autopictureinpicture></video>
 <div id="grid" class="grid" aria-hidden="true"></div>
 <div class="frame" aria-hidden="true"></div>
 
@@ -25,6 +25,7 @@
     <strong id="cameraName">Câmera de contribuição</strong>
   </div>
   <div id="tally" class="tally" data-state="offline" role="status" aria-live="assertive">DESCONECTADO</div>
+  <nav id="params" class="params" aria-label="Ajustes da câmera"></nav>
   <div class="top-actions">
     <button id="gridToggle" class="icon" type="button" aria-pressed="false" aria-label="Grade de enquadramento">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>
@@ -134,11 +135,12 @@
 
     <section class="group">
       <h3>Lente e imagem</h3>
-      <label>Câmera
+      <p class="hint">Lente, formato, zoom, balanço de branco, exposição e estabilização ficam na barra sobre a imagem: toque no parâmetro e ajuste vendo o resultado.</p>
+      <label class="sr-only">Câmera
         <select id="lens" aria-label="Câmera disponível"></select>
       </label>
-      <div id="manual"></div>
-      <p class="hint">As lentes aparecem com o nome do aparelho: 0,5× Ultra, 1× Principal, Tele e as automáticas do iPhone, que trocam de lente pelo zoom. Zoom, balanço de branco e exposição usam o controle do aparelho quando o navegador oferece; quando não oferece, são aplicados na imagem antes do envio (indicado como "digital"). Pinça com dois dedos na imagem também dá zoom.</p>
+      <div id="manual" hidden></div>
+
     </section>
 
     <section class="group">

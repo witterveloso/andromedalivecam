@@ -2,24 +2,37 @@ const { test } = require('node:test'), assert = require('node:assert/strict'), f
 const { createCameraHub } = require('../camera-hub.cjs');
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
-test('lenses get the names people know, on iPhone (pt-BR and English) and Android', () => {
+test('only the physical lenses become buttons, with short names, on iPhone (pt-BR and English) and Android', () => {
   const src = read('docs/cam.js'), start = src.indexOf('function lensInfo('), end = src.indexOf('function lensName(');
   const ctx = {}; vm.runInNewContext(src.slice(start, end) + ';this.lensInfo = lensInfo;', ctx);
-  const name = (l, i = 0) => ctx.lensInfo(l, i).name;
-  assert.equal(name('Câmera Traseira'), '1× Principal', 'the main back camera is no longer "Lente 4"');
-  assert.equal(name('Câmera Ultra-angular Traseira'), '0,5× Ultra');
+  const name = (l, i = 0) => ctx.lensInfo(l, i).name, virtual = l => !!ctx.lensInfo(l, 0).virtual;
+  assert.equal(name('Câmera Traseira'), '1×', 'the main back camera is no longer "Lente 4"');
+  assert.equal(name('Câmera Ultra-angular Traseira'), '0,5×');
   assert.equal(name('Câmera Teleobjetiva Traseira'), 'Tele');
-  assert.equal(name('Câmera Tripla Traseira'), 'Auto · 3 lentes');
-  assert.equal(name('Câmera Grande-Angular Dupla Traseira'), 'Auto · 0,5–1×');
-  assert.equal(name('Câmera Dupla Traseira'), 'Auto · 1×–Tele');
   assert.equal(name('Câmera Frontal'), 'Frontal');
-  assert.equal(name('Back Ultra Wide Camera'), '0,5× Ultra');
-  assert.equal(name('Back Telephoto Camera'), 'Tele');
-  assert.equal(name('camera2 0, facing back'), '1× Principal');
-  assert.equal(name('camera2 1, facing front'), 'Frontal');
-  assert.equal(name('', 3), 'Câmera 4');
-  const order = ['Câmera Frontal', 'Câmera Tripla Traseira', 'Câmera Teleobjetiva Traseira', 'Câmera Traseira', 'Câmera Ultra-angular Traseira'].sort((a, b) => ctx.lensInfo(a, 0).rank - ctx.lensInfo(b, 0).rank).map(l => name(l));
-  assert.deepEqual(order, ['0,5× Ultra', '1× Principal', 'Tele', 'Auto · 3 lentes', 'Frontal']);
+  assert.equal(name('Back Ultra Wide Camera'), '0,5×'); assert.equal(name('Back Telephoto Camera'), 'Tele');
+  assert.equal(name('camera2 0, facing back'), '1×'); assert.equal(name('camera2 1, facing front'), 'Frontal');
+  assert.equal(name('', 3), 'Câm 4');
+  for (const v of ['Câmera Tripla Traseira', 'Câmera Grande-Angular Dupla Traseira', 'Câmera Dupla Traseira', 'Back Triple Camera', 'Back Dual Wide Camera']) assert(virtual(v), v + ' is a virtual camera, not a lens');
+  for (const p of ['Câmera Traseira', 'Câmera Ultra-angular Traseira', 'Câmera Teleobjetiva Traseira', 'Câmera Frontal']) assert(!virtual(p), p);
+  const order = ['Câmera Frontal', 'Câmera Teleobjetiva Traseira', 'Câmera Traseira', 'Câmera Ultra-angular Traseira'].sort((a, b) => ctx.lensInfo(a, 0).rank - ctx.lensInfo(b, 0).rank).map(l => name(l));
+  assert.deepEqual(order, ['0,5×', '1×', 'Tele', 'Frontal']);
+  assert.match(src, /filter\(x => !x\.info\.virtual\)/, 'virtual cameras are left out of the lens buttons');
+});
+
+test('camera controls: parameter bar over the image, slider zoom with programmed moves, stabilization, background resume', () => {
+  const optics = read('docs/optics.js'), cam = read('docs/cam.js'), html = read('docs/index.html'), hub = read('camera-hub.cjs');
+  for (const p of ['lens', 'format', 'zoom', 'wb', 'exp', 'stab']) assert.match(optics, new RegExp("param\\('" + p + "'"), 'parameter ' + p);
+  assert.match(html, /<nav id="params" class="params"/);
+  assert.doesNotMatch(optics, /zoom-step|'−'\), zValue/, 'no more +/− zoom buttons');
+  assert.match(optics, /zoomLive = slider\(r, st\.zoom/, 'zoom is a sliding bar');
+  assert.match(optics, /points: Array\.isArray\(saved\.points\) && saved\.points\.length === 4/, 'four programmable points');
+  assert.match(optics, /const ease = t =>/, 'smooth programmed zoom curve');
+  assert.match(optics, /Math\.log\(from\)/, 'zoom moves at constant apparent speed');
+  assert.match(optics, /nativeStabKey/, 'uses the device stabilization when the browser exposes it');
+  assert.match(optics, /function makeStabilizer\(\)/, 'own stabilization otherwise');
+  assert.match(cam, /send\(\{ type: 'presence', state: 'background' \}\)/); assert.match(cam, /async function resumeCamera\(\)/);
+  assert.match(hub, /m\.type==='presence'/, 'the hub tells the desk');
 });
 
 test('the camera keeps motion fluid and applies settings live', () => {

@@ -711,3 +711,6 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .dest[data-aspect="9:16"] .dest-badge { box-shadow: inset 0 0 0 2px var(--brand-blue); }
 .rec-formats { display: grid; gap: 4px; max-width: 280px; }
 @media (max-width: 640px) { .vertical-body { grid-template-columns: minmax(0, 1fr); } .vertical-preview { width: 150px; } }
+
+/* Câmera de celular em segundo plano: o sistema do aparelho suspende a imagem. */
+.mv-cell[data-presence="background"]::after { content: "CÂMERA EM SEGUNDO PLANO"; position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: 8px; background: rgba(6, 8, 23, .72); color: #ffd60a; font: 700 11px var(--d-mono); letter-spacing: .08em; text-align: center; pointer-events: none; }
