@@ -74,7 +74,7 @@ let quiet = null;
 function say(text, kind = 'info') {
   const el = q('#connection'); el.textContent = text; el.dataset.kind = kind; el.dataset.quiet = 'off';
   clearTimeout(quiet);
-  if (kind === 'info' || kind === 'ok') quiet = setTimeout(() => { el.dataset.quiet = 'on'; }, 7000);
+  if (kind !== 'error') quiet = setTimeout(() => { el.dataset.quiet = 'on'; }, kind === 'warn' ? 9000 : 6000);
 }
 function setRun(state) { root.dataset.run = state; }
 function setStartLabel(text) { q('#startLabel').textContent = text; }
@@ -137,23 +137,22 @@ q('#hear').onclick = () => q('#returnAudio').play()
 /* ---------- lentes e dispositivos ---------- */
 
 // Nomes que o sistema dá às câmeras: iPhone ("Câmera Ultra-angular Traseira", "Back Telephoto Camera"…),
-// Android ("camera2 0, facing back"). As câmeras "Dupla"/"Tripla" do iPhone trocam de lente sozinhas pelo zoom.
+// Android ("camera2 0, facing back"). As câmeras "Dupla"/"Tripla" do iPhone não são lentes: são combinações
+// virtuais que trocam de lente sozinhas. Elas ficam fora dos botões; só aparecem as lentes físicas.
 function lensInfo(label, index) {
   const l = String(label || '').toLowerCase();
+  if (/triple|tripla|dual|dupla/.test(l)) return { name: 'Auto', rank: 7, virtual: true };
   if (/front|frontal|user|selfie|truedepth/.test(l)) return { name: 'Frontal', rank: 9 };
-  if (/ultra/.test(l)) return { name: '0,5× Ultra', rank: 1 };
+  if (/ultra/.test(l)) return { name: '0,5×', rank: 1 };
   if (/tele/.test(l)) return { name: 'Tele', rank: 3 };
-  if (/triple|tripla/.test(l)) return { name: 'Auto · 3 lentes', rank: 4 };
-  if (/dual wide|grande-angular dupla|dupla grande|ultra.*dupla/.test(l)) return { name: 'Auto · 0,5–1×', rank: 5 };
-  if (/dual|dupla/.test(l)) return { name: 'Auto · 1×–Tele', rank: 6 };
-  if (/back|rear|traseira|environment|facing back|principal|main/.test(l)) return { name: '1× Principal', rank: 2 };
-  return { name: 'Câmera ' + (index + 1), rank: 8 };
+  if (/back|rear|traseira|environment|facing back|principal|main/.test(l)) return { name: '1×', rank: 2 };
+  return { name: 'Câm ' + (index + 1), rank: 8 };
 }
 function lensName(label, index) { return lensInfo(label, index).name; }
 function renderLenses() {
   const select = q('#lens'), box = q('#lensChips');
   // Ultra, principal, tele, automáticas e frontal por último; nomes repetidos ganham número.
-  const options = [...select.options].map((o, i) => ({ o, i, info: lensInfo(o.text, i) })).sort((a, b) => a.info.rank - b.info.rank || a.i - b.i);
+  const options = [...select.options].map((o, i) => ({ o, i, info: lensInfo(o.text, i) })).filter(x => !x.info.virtual).sort((a, b) => a.info.rank - b.info.rank || a.i - b.i);
   const seen = {};
   box.replaceChildren(); box.hidden = options.length < 2;
   options.forEach(({ o: option, info }) => {
@@ -168,6 +167,16 @@ function renderLenses() {
     box.append(chip);
   });
   if (cam.stream) window.AndromedaOptics?.lensBar(box);
+}
+// O navegador às vezes abre uma câmera virtual (Dupla/Tripla) ao pedir "traseira": troca uma vez pela 1× física.
+let leftVirtual = false;
+async function preferPhysicalLens() {
+  if (leftVirtual || !cam.stream) return;
+  const select = q('#lens'), current = [...select.options].find(o => o.value === select.value);
+  if (!current || !lensInfo(current.text, 0).virtual) return;
+  const main = [...select.options].find(o => lensInfo(o.text, 0).name === '1×') || [...select.options].find(o => !lensInfo(o.text, 0).virtual && lensInfo(o.text, 0).name !== 'Frontal');
+  leftVirtual = true;
+  if (main) { select.value = main.value; await reopenVideo(main.value); renderLenses(); }
 }
 async function enumerate() {
   const devices = await navigator.mediaDevices.enumerateDevices(), current = q('#lens').value;
@@ -457,7 +466,7 @@ async function start() {
       audio: { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
     });
     q('#view').srcObject = cam.stream; await q('#view').play();
-    await enumerate(); showCapabilities();
+    await enumerate(); showCapabilities(); await preferPhysicalLens();
     cam.ac = new AudioContext(); await cam.ac.resume();
     cam.meter = cam.ac.createAnalyser(); cam.ac.createMediaStreamSource(cam.stream).connect(cam.meter);
     cam.running = true; cam.started = Date.now(); cam.lastTally = 0; cam.lastBytes = 0; cam.lastStatsAt = 0;
@@ -467,6 +476,28 @@ async function start() {
     await keepAwake();
   } catch (e) { stop(); say(captureError(e), 'error'); }
   finally { q('#start').disabled = false; }
+}
+
+// Segundo plano: o sistema do celular suspende a câmera de qualquer página fora da tela (proteção de privacidade;
+// não há como contornar no navegador). A conexão com a mesa continua; a mesa mostra "CÂMERA EM SEGUNDO PLANO" e,
+// ao voltar, a câmera religa sozinha, sem reconectar nem pedir permissão de novo.
+let backgroundSince = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!cam.running) return;
+  if (document.hidden) { backgroundSince = Date.now(); send({ type: 'presence', state: 'background' }); return; }
+  send({ type: 'presence', state: 'foreground' });
+  keepAwake();
+  resumeCamera().catch(e => say('A câmera não voltou: ' + e.message, 'error'));
+});
+async function resumeCamera() {
+  const video = cam.stream?.getVideoTracks()[0], audio = cam.stream?.getAudioTracks()[0];
+  const away = backgroundSince ? Math.round((Date.now() - backgroundSince) / 1000) : 0; backgroundSince = 0;
+  if (video && video.readyState === 'live' && !video.muted) { if (away > 2) say('De volta: câmera ativa.', 'ok'); q('#view').play().catch(() => {}); return; }
+  say('Religando a câmera…', 'info');
+  if (!video || video.readyState !== 'live' || video.muted) await reopenVideo(q('#lens').value);
+  if (!audio || audio.readyState !== 'live') await applyMic();
+  q('#view').play().catch(() => {});
+  say('Câmera religada' + (away ? ' depois de ' + away + ' s em segundo plano' : '') + '.', 'ok');
 }
 
 async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request('screen'); } catch { /* o sistema pode negar */ } }
