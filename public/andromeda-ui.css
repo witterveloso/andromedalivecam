@@ -591,8 +591,19 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .free-grid { position: relative; display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); grid-auto-rows: var(--free-row, 20px); gap: 0 8px; }
 .free-grid > .dock-panel { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0 0 8px; overflow: auto; scrollbar-width: thin; }
 .free-grid > .dock-panel > .dock-handle { position: sticky; top: 0; z-index: 4; flex: none; background: var(--d-panel); }
-.free-grid > .dock-panel > :not(.dock-handle):not(.free-resize) { flex: none; }
-.free-grid > .dock-panel[data-tool="program"] > .program-card { flex: 1 0 auto; }
+.free-grid > .dock-panel > :not(.dock-handle):not(.free-resize):not(.mon-fit):not(.program-card) { flex: none; }
+.free-grid > .dock-panel[data-tool="program"] > .program-card { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+/* Monitores na mesa livre: a caixa de encaixe ocupa o que sobra do painel e a imagem 16:9 cabe inteira nela,
+   vezes a escala do operador (− 100% + no título, em Personalizar). Sem medir em JavaScript: nada encolhe sozinho. */
+.mon-fit { display: contents; }
+.free-grid .mon-fit { flex: 1 1 0; min-height: 60px; display: grid; place-items: center; overflow: hidden; container-type: size; }
+.free-grid .mon-fit > .monitor { width: min(calc(min(100cqw, 100cqh * 16 / 9) * var(--mon-scale, 1)), var(--mon-max, 100000px)) !important; max-width: 100%; margin: 0 !important; }
+.free-grid .program-card > .pgm-audio-monitor, .free-grid > .dock-panel > .preview-strip { flex: none; }
+.mon-scale { display: none; align-items: center; gap: 4px; margin-left: auto; letter-spacing: 0; text-transform: none; }
+.mon-scale button { min-height: 22px; width: 24px; padding: 0; border-radius: 6px; font: 700 13px var(--d-mono); }
+.mon-scale output { min-width: 4ch; color: var(--d-text); font: 600 10.5px var(--d-mono); text-align: center; }
+.layout-editing .free-grid > .dock-panel .mon-scale { display: inline-flex; pointer-events: auto; }
+.layout-editing .free-grid > .dock-panel .mon-scale + .free-size { margin-left: 8px; }
 .free-size, .free-resize { display: none; }
 .layout-editing .free-grid {
   background-image: linear-gradient(90deg, rgba(0, 163, 255, .08) 1px, transparent 1px), linear-gradient(rgba(0, 163, 255, .08) 1px, transparent 1px);
@@ -620,7 +631,7 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .free-editbar button, .free-editbar select { min-height: 32px; font-size: 12px; }
 .free-done { background: var(--brand-blue); border-color: transparent; color: #00142a; font-weight: 800; }
 #layoutNavButton[aria-pressed="true"] { background: var(--brand-blue); color: #00142a; }
-.layout-head, .layout-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(130px, 1fr) 150px 150px 74px; gap: 8px; align-items: center; }
+.layout-head, .layout-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(130px, 1fr) 150px 150px 128px; gap: 8px; align-items: center; }
 .layout-head { padding: 4px 0; color: var(--d-faint); font: 600 10px var(--d-mono); letter-spacing: .08em; text-transform: uppercase; }
 .layout-pair { display: flex; gap: 6px; align-items: center; }
 .layout-pair input { width: 64px; min-height: 30px; }
@@ -667,3 +678,11 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .remote-ask button { min-height: 34px; }
 .remote-chip { align-self: center; margin-right: 12px; padding: 3px 9px; border: 1px solid var(--brand-blue); border-radius: 999px; color: var(--brand-blue); font: 700 10px var(--d-mono); letter-spacing: .08em; white-space: nowrap; }
 @media (max-width: 600px) { .remote-card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "text" "qr" "url" "actions" "extra" "list"; } }
+
+/* ---------- transmissão: transmitir e gravar / só transmitir / só gravar ---------- */
+.tx-mode { display: inline-flex; flex-wrap: wrap; gap: 0; padding: 3px; background: var(--d-inset); border: 1px solid var(--d-line-2); border-radius: var(--d-r-sm); }
+.tx-mode button { min-height: 32px; padding: 0 12px; background: none; border: 0; border-radius: 6px; color: var(--d-muted); font-size: 12px; font-weight: 600; }
+.tx-mode button[aria-checked="true"] { background: var(--brand-blue); color: #00142a; font-weight: 800; }
+.tx-mode button[data-mode="record"][aria-checked="true"] { background: var(--d-pgm); color: #fff; }
+.tx-mode button:disabled:not([aria-checked="true"]) { opacity: .4; }
+#transmitYouTube[data-mode="record"]:not([data-live="true"]) { background: #7a0c22; border-color: #ff5c7c; }

@@ -26,6 +26,11 @@
     const saved = JSON.parse(localStorage.getItem(STORE));
     if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false })) });
   } catch { /* primeiro uso */ }
+  // Modo de saída escolhido pelo operador: transmitir e gravar, só transmitir ou só gravar.
+  const MODES = { both: 'Transmitir e gravar', stream: 'Só transmitir', record: 'Só gravar' };
+  if (!MODES[model.mode]) model.mode = model.record ? 'both' : 'stream';
+  model.record = model.mode !== 'stream';
+  const streaming = () => model.mode !== 'record';
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '' })) })); } catch { /* sem armazenamento */ } };
   const live = { states: new Map(), recording: null, recorded: null, storage: null, checked: null };
   window.andromedaBroadcast = { model, live };
@@ -119,7 +124,7 @@
   panel.append(rec);
   const recEnable = $('#recEnable'), recDir = $('#recDir'), recStatus = $('#recStatus');
   recEnable.checked = model.record; recDir.value = model.dir;
-  recEnable.onchange = () => { model.record = recEnable.checked; save(); summary(); if (model.record && !model.dir && live.storage) { recDir.value = model.dir = live.storage.defaultDir; save(); checkDir(); } };
+  recEnable.onchange = () => setMode(recEnable.checked ? (model.mode === 'stream' ? 'both' : model.mode) : 'stream');
   recDir.onchange = () => { model.dir = recDir.value.trim(); live.checked = null; save(); summary(); };
   async function api(path, body) {
     const session = liveTx.session || await checkBridge(); if (!session) throw Error('Serviço local indisponível.');
@@ -151,13 +156,24 @@
   /* ---------- resumo e botões ---------- */
 
   const startButton = $('#transmitYouTube'), armButton = $$('.page-toolbar .btn-rec')[0] || $('.btn-rec');
+  const modeBox = make('div', 'tx-mode'); modeBox.setAttribute('role', 'radiogroup'); modeBox.setAttribute('aria-label', 'O que fazer com o PROGRAM');
+  const modeButtons = Object.entries(MODES).map(([id, label]) => { const b = make('button', '', label); b.type = 'button'; b.dataset.mode = id; b.setAttribute('role', 'radio'); b.onclick = () => setMode(id); modeBox.append(b); return b; });
+  startButton.after(modeBox);
+  function setMode(mode) {
+    if (busyTx() || !MODES[mode]) return;
+    model.mode = mode; model.record = mode !== 'stream'; recEnable.checked = model.record; save();
+    if (model.record && !model.dir && live.storage) { recDir.value = model.dir = live.storage.defaultDir; save(); checkDir(); }
+    txStatus(mode === 'record' ? 'Só gravar: nenhuma plataforma recebe o sinal; os destinos ficam como estão.' : mode === 'stream' ? 'Só transmitir: nada é gravado neste computador.' : 'Transmitir e gravar: o mesmo PROGRAM vai para os destinos e para o arquivo.');
+    summary();
+  }
   $$('button').filter(b => b.textContent === 'Configurar YouTube').forEach(b => b.remove());
   armButton.disabled = false; armButton.id = 'recArm';
-  armButton.onclick = () => { if (busyTx()) return; recEnable.checked = !recEnable.checked; recEnable.onchange(); };
+  armButton.hidden = true; // substituído pela escolha de modo ao lado do botão principal
+  recEnable.closest('label').hidden = true;
 
   function summary() {
-    const on = active().length, total = model.bitrate * on;
-    upload.textContent = on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino pronto: informe servidor e chave.';
+    const on = streaming() ? active().length : 0, total = model.bitrate * on;
+    upload.textContent = !streaming() ? 'Só gravar: nada é enviado às plataformas.' : on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino pronto: informe servidor e chave.';
     if (model.record) {
       const perHour = (model.bitrate * 1000 + 128) * 3600 / 8 / 1e6, free = live.checked?.free;
       recStatus.dataset.tone = '';
@@ -166,8 +182,10 @@
     paintButtons();
   }
   function paintButtons() {
-    const on = active().length, busy = busyTx();
-    startButton.textContent = liveTx.phase === 'stopping' ? 'ENCERRANDO…' : busy ? '■ PARAR' : on ? '▶ TRANSMITIR · ' + on + (on === 1 ? ' DESTINO' : ' DESTINOS') + (model.record ? ' + GRAVAR' : '') : model.record ? '● GRAVAR (SEM TRANSMITIR)' : '▶ TRANSMITIR';
+    const on = streaming() ? active().length : 0, busy = busyTx(), dests = on ? ' · ' + on + (on === 1 ? ' DESTINO' : ' DESTINOS') : '';
+    startButton.textContent = liveTx.phase === 'stopping' ? 'ENCERRANDO…' : busy ? '■ PARAR' : model.mode === 'record' ? '● GRAVAR' : model.mode === 'both' ? '▶ TRANSMITIR + GRAVAR' + dests : '▶ TRANSMITIR' + dests;
+    startButton.dataset.mode = model.mode;
+    for (const b of modeButtons) { const sel = b.dataset.mode === model.mode; b.setAttribute('aria-checked', String(sel)); b.setAttribute('aria-pressed', String(sel)); b.disabled = busy; }
     startButton.dataset.live = String(busy);
     armButton.textContent = busy && live.recording ? '● GRAVANDO' : model.record ? '● Gravação armada' : '○ Gravação desligada';
     armButton.setAttribute('aria-pressed', String(model.record)); armButton.disabled = busy; armButton.dataset.live = String(busy && !!live.recording);
@@ -184,8 +202,9 @@
 
   async function startBroadcast() {
     if (busyTx()) return;
-    const targets = active(), missing = pending();
-    if (!targets.length && !model.record) { openWorkspace('transmission'); txStatus('Informe servidor e chave de pelo menos um destino, ou ligue a gravação.'); return; }
+    // Só gravar ignora os destinos (completos ou não); os outros modos exigem pelo menos um destino pronto.
+    const targets = streaming() ? active() : [], missing = streaming() ? pending() : [];
+    if (streaming() && !targets.length) { openWorkspace('transmission'); txStatus('Informe servidor e chave de pelo menos um destino' + (model.mode === 'both' ? ', ou escolha Só gravar.' : '.')); return; }
     if (missing.length) { openWorkspace('transmission'); txStatus(missing.map(d => d.name).join(', ') + ': falta servidor ou chave. Complete ou desligue o destino.'); return; }
     if (!window.MediaRecorder || !programOutput.captureStream) { txStatus('Use Chrome ou Edge atualizado para transmitir.'); return; }
     const mime = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus'].find(t => MediaRecorder.isTypeSupported(t));
@@ -244,7 +263,7 @@
           }
           liveTx.phase = 'sending'; state.live = true; liveTx.frames = msg.frames; sync();
           const trouble = [...live.states.values()].filter(s => s.state === 'retrying').length;
-          txStatus((targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + '. Confirme a prévia em cada plataforma.');
+          txStatus((targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
         }
         else if (msg.type === 'error') finishTransport(msg.message);
         else if (msg.type === 'stopped') finishTransport();
@@ -258,7 +277,7 @@
 
   // Saída e taxa no cabeçalho; espaço em disco durante a gravação.
   setInterval(() => {
-    const sending = liveTx.phase === 'sending', on = active().length, rate = sending ? (model.bitrate * Math.max(1, on)).toFixed(0) + ' Mbps' + (on > 1 ? ' (' + on + '×' + model.bitrate + ')' : '') : '0 Mbps';
+    const sending = liveTx.phase === 'sending', on = streaming() ? active().length : 0, rate = sending ? (model.bitrate * Math.max(1, on)).toFixed(0) + ' Mbps' + (on > 1 ? ' (' + on + '×' + model.bitrate + ')' : '') : '0 Mbps';
     const out = $$('.tb-stat')[3]; if (out) out.querySelector('.tb-val').textContent = rate;
     const total = $('.bd-val'); if (total) total.textContent = rate;
     if (!busyTx() && live.states.size) { live.states.clear(); paintStatus(); }

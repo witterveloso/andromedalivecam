@@ -23,5 +23,23 @@ const remote=vm.runInContext('window.andromedaRemote',ctx);assert.equal(q('[data
 assert.equal(remote.apply({cmd:'prv',i:2}),true);assert.equal(vm.runInContext('state.prv',ctx),2,'remote PRV selection');assert.equal(remote.state().prvName,q('.bus-src').children[2].textContent.trim());
 assert.equal(remote.apply({cmd:'eval',i:1}),false,'unknown command refused');assert.equal(remote.apply({cmd:'prv',i:'3'}),false,'malformed index refused');assert.equal(vm.runInContext('state.prv',ctx),2);
 remote.apply({cmd:'cut'});assert.equal(vm.runInContext('state.pgm',ctx),2,'remote CUT puts the preview on air');
+// Monitores: a imagem fica numa caixa de encaixe e a escala do operador é salva.
+assert(q('[data-tool=preview] .mon-fit #monPreview')&&q('[data-tool=program] .mon-fit #monProgram'),'monitors fit their panel');assert.equal(q('#monPreview').style.width,'','no measured width left behind');
+q('#layoutNavButton').click();q('[data-tool=preview] .mon-scale button').click();assert.equal(q('[data-tool=preview] .mon-scale output').textContent,'95%');assert.equal(q('[data-tool=preview]').style.getPropertyValue('--mon-scale'),'0.95');
+assert.equal(JSON.parse(w.localStorage.getItem('andromeda.workspace.v3')).items.find(i=>i.id==='preview').scale,95,'operator scale saved');q('#freeDone').click();
+// Layouts gravados com nome.
+const layoutRow=t=>[...q('#layoutRows').children].find(r=>r.querySelector('strong').textContent===t);
+q('#freeName').value='Entrevista';q('#freeSave').click();const savedList=JSON.parse(w.localStorage.getItem('andromeda.layouts.v1'));assert.equal(savedList.length,1);assert.equal(savedList[0].name,'Entrevista');
+assert.equal(q('#freePreset').value,'meu:0');const camW=()=>q('[data-tool=cameras]').style.gridArea;const before=camW();
+const wIn2=layoutRow('Câmeras').querySelectorAll('.layout-pair')[1].querySelector('input');wIn2.value='20';wIn2.dispatchEvent(new w.Event('change'));assert.notEqual(camW(),before);assert.equal(q('#freePreset').value,'','manual change leaves the saved model');
+q('#freePreset').value='meu:0';q('#freePreset').dispatchEvent(new w.Event('change'));assert.equal(camW(),before,'saved layout restored');
+q('#freeDelete').click();assert.equal(JSON.parse(w.localStorage.getItem('andromeda.layouts.v1')).length,0);
+console.log('PASS: monitor fit and operator scale; named layouts saved, restored and deleted');
+// Transmitir e gravar / só transmitir / só gravar.
+const modes=[...q('.tx-mode').children];assert.deepEqual(modes.map(b=>b.textContent),['Transmitir e gravar','Só transmitir','Só gravar']);
+const start=q('#transmitYouTube');modes[2].click();assert.equal(start.textContent,'● GRAVAR');modes[1].click();assert.match(start.textContent,/^▶ TRANSMITIR/);modes[0].click();assert.match(start.textContent,/^▶ TRANSMITIR \+ GRAVAR/);
+modes[2].click();start.click();assert.doesNotMatch(q('#txStatus').textContent,/falta servidor ou chave/,'record only ignores incomplete destinations');
+modes[1].click();start.click();assert.match(q('#txStatus').textContent,/destino/,'stream needs a ready destination');
+console.log('PASS: output mode: transmit and record, transmit only, record only');
 console.log('PASS: remote control applies PRV/CUT through the desk buttons and refuses anything else');
 console.log('PASS: all application scripts load; Preview left / PGM right; audio attached; 15 tool panels; partial transition; both T-bar directions; AUTO lock; free layout: size, position, page, no overlap, edit mode');dom.window.close();
