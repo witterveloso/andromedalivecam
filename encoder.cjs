@@ -1,7 +1,9 @@
 'use strict';
 /*
- * Codificação do PROGRAM: uma única codificação H.264 + AAC alimenta todos os
- * destinos RTMP e, se pedido, o arquivo de gravação (muxer tee do FFmpeg).
+ * Codificação do PROGRAM por formato de tela: um grupo 16:9 (YouTube, Facebook,
+ * Twitch, Kick, LinkedIn…) e um grupo 9:16 (Instagram, TikTok…). Cada grupo é uma
+ * codificação H.264 + AAC que alimenta os destinos daquele formato e, se pedido,
+ * o arquivo de gravação do formato (muxer tee do FFmpeg).
  * Cada destino passa por uma fila própria (muxer fifo) que reconecta sozinha,
  * então a queda de uma plataforma não interrompe as outras nem a gravação.
  */
@@ -11,14 +13,17 @@ const path = require('node:path');
 const PLATFORMS = {
   youtube:   { name: 'YouTube',      example: 'rtmps://a.rtmps.youtube.com:443/live2',      hosts: /^[ab]\.rtmps?\.youtube\.com$/, strict: true },
   facebook:  { name: 'Facebook',     example: 'rtmps://live-api-s.facebook.com:443/rtmp/',   hosts: /(^|\.)(facebook\.com|fbcdn\.net)$/ },
-  instagram: { name: 'Instagram',    example: 'rtmps://live-upload.instagram.com:443/rtmp/', hosts: /(^|\.)(instagram\.com|fbcdn\.net)$/ },
+  instagram: { name: 'Instagram',    example: 'rtmps://live-upload.instagram.com:443/rtmp/', hosts: /(^|\.)(instagram\.com|fbcdn\.net)$/, aspect: '9:16' },
   twitch:    { name: 'Twitch',       example: 'rtmps://live.twitch.tv/app',                  hosts: /(^|\.)(twitch\.tv|live-video\.net)$/ },
   kick:      { name: 'Kick',         example: 'rtmps://…global-contribute.live-video.net/app', hosts: /(^|\.)(kick\.com|live-video\.net)$/ },
-  tiktok:    { name: 'TikTok',       example: 'rtmp://push-rtmp-….tiktokcdn.com/…',          hosts: /tiktok/ },
+  tiktok:    { name: 'TikTok',       example: 'rtmp://push-rtmp-….tiktokcdn.com/…',          hosts: /tiktok/, aspect: '9:16' },
   linkedin:  { name: 'LinkedIn',     example: 'rtmps://….linkedin.com:443/live',             hosts: /(^|\.)(linkedin\.com|licdn\.com|live-video\.net|azure\.net|media\.azure\.net)$/ },
   custom:    { name: 'RTMP próprio', example: 'rtmp://servidor/app',                         hosts: null },
 };
 const MAX_DESTINATIONS = 6;
+// Formato de exibição de cada plataforma: Instagram e TikTok ao vivo são verticais; as demais, horizontais.
+const ASPECTS = ['16:9', '9:16'];
+const aspectOf = platform => PLATFORMS[platform]?.aspect || '16:9';
 const KEY = /^[A-Za-z0-9_\-.~?=&%+]{4,512}$/;
 
 function fail(message) { throw Error(message); }
@@ -34,7 +39,8 @@ function validateDestination(input, index) {
   const key = String(input?.key || '').trim();
   if (!KEY.test(key)) fail('Destino ' + label + ': informe apenas a chave de transmissão, sem espaços nem a URL.');
   const warning = rule.hosts && !rule.hosts.test(u.hostname) ? 'O servidor de ' + label + ' não parece ser de ' + rule.name + '. Confira a URL copiada da plataforma.' : null;
-  return { id: String(input?.id ?? index).slice(0, 40), platform, name: label, target: u.toString().replace(/\/$/, '') + '/' + key, warning };
+  const aspect = ASPECTS.includes(input?.aspect) ? input.aspect : aspectOf(platform);
+  return { id: String(input?.id ?? index).slice(0, 40), platform, name: label, aspect, target: u.toString().replace(/\/$/, '') + '/' + key, warning };
 }
 
 function validateBroadcast(input) {
@@ -44,21 +50,36 @@ function validateBroadcast(input) {
   const destinations = list.map(validateDestination);
   if (new Set(destinations.map(d => d.target)).size !== destinations.length) fail('Há dois destinos com o mesmo servidor e a mesma chave.');
   const record = input.record ? validateRecording(input.record) : null;
+  // Saída vertical (9:16): 720×1280 é o padrão do Instagram ao vivo; 1080×1920 quando a plataforma aceita.
+  const v = input.vertical || {}, vres = ['720p', '1080p'].includes(v.resolution) ? v.resolution : '720p';
+  const vbit = Number(v.bitrate ?? (vres === '1080p' ? 6 : 4));
+  if (!Number.isFinite(vbit) || vbit < 2 || vbit > 12) fail('Bitrate da saída vertical deve ficar entre 2 e 12 Mbps.');
   if (!destinations.length && !record) fail('Ative pelo menos um destino ou a gravação.');
   const resolution = input.resolution; if (!['720p', '1080p'].includes(resolution)) fail('Esta versão transmite em 720p ou 1080p.');
   const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < 3 || bitrate > 20) fail('Bitrate deve ficar entre 3 e 20 Mbps.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
-  return { destinations, record, resolution, bitrate, fps: 30, encoder };
+  return { destinations, record, resolution, bitrate, fps: 30, encoder, vertical: { resolution: vres, bitrate: vbit } };
+}
+
+// Grupos de codificação: cada formato com seus destinos e sua gravação. Só existe o grupo que tiver uso.
+function groupsFor(cfg) {
+  const h = cfg.destinations.filter(d => d.aspect !== '9:16'), v = cfg.destinations.filter(d => d.aspect === '9:16');
+  const formats = cfg.record?.formats || '16:9', recH = !!cfg.record && formats !== '9:16', recV = !!cfg.record && formats !== '16:9';
+  const groups = [];
+  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? cfg.record : null });
+  if (v.length || recV) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '-vertical.mkv') } : null });
+  return groups;
 }
 
 function validateRecording(input) {
   const dir = String(input.dir || '').trim();
   if (!dir || !path.isAbsolute(dir)) fail('Escolha a pasta de gravação.');
   if (/[|\r\n]/.test(dir)) fail('A pasta de gravação contém caracteres não aceitos.');
+  const formats = ['16:9', '9:16', 'both'].includes(input.formats) ? input.formats : '16:9';
   // Nome com a data e a hora locais do computador, que é como o operador procura o arquivo.
   const now = new Date(), two = n => String(n).padStart(2, '0');
   const stamp = now.getFullYear() + '-' + two(now.getMonth() + 1) + '-' + two(now.getDate()) + '-' + two(now.getHours()) + '-' + two(now.getMinutes()) + '-' + two(now.getSeconds());
-  return { dir, file: path.join(dir, 'Andromeda_' + stamp + '.mkv') };
+  return { dir, formats, file: path.join(dir, 'Andromeda_' + stamp + '.mkv') };
 }
 
 /* Compatibilidade: destino único do YouTube (formato da 0.3 em diante). */
@@ -99,20 +120,23 @@ function detectEncoders(ffmpeg) {
 const teeEscape = value => value.replace(/\\/g, '/').replace(/(['\[\]])/g, '\\$1');
 const FIFO = 'f=fifo:fifo_format=flv:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
 
-function outputArgs(cfg) {
-  const outputs = cfg.destinations.map(d => '[' + FIFO + ']' + d.target);
-  if (cfg.record) outputs.push('[f=matroska:onfail=ignore]' + teeEscape(cfg.record.file));
+function outputArgs(group) {
+  const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
+  if (group.record) outputs.push('[f=matroska:onfail=ignore]' + teeEscape(group.record.file));
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
 }
 
-function argsForBroadcast(cfg) {
-  const size = cfg.resolution === '720p' ? '1280:720' : '1920:1080', kb = Math.round(cfg.bitrate * 1000);
+// Uma codificação por grupo (formato). Cada grupo roda num FFmpeg próprio: a queda de um não derruba o outro.
+function argsForGroup(cfg, group) {
+  const size = group.size, kb = Math.round(group.bitrate * 1000);
   return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', '-thread_queue_size', '128', '-probesize', '1000000', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0',
     '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${size}:flags=bilinear,setsar=1`, '-r', '30',
     ...ENCODERS[cfg.encoder || 'libx264'](kb), '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1',
-    ...outputArgs(cfg)];
+    ...outputArgs(group)];
 }
+// Compatibilidade: o grupo principal (16:9, ou o único que houver).
+function argsForBroadcast(cfg) { return argsForGroup(cfg, groupsFor(cfg)[0]); }
 
 /* Compatibilidade: um destino, saída FLV direta (falha de conexão encerra o processo). */
 function argsFor(c) {
@@ -169,4 +193,4 @@ function safeBroadcastError(stderr) {
   return 'O codificador foi interrompido. Confira a conexão e os destinos e inicie novamente.';
 }
 
-module.exports = { PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents };
+module.exports = { PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents };

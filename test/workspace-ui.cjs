@@ -41,5 +41,15 @@ const start=q('#transmitYouTube');modes[2].click();assert.equal(start.textConten
 modes[2].click();start.click();assert.doesNotMatch(q('#txStatus').textContent,/falta servidor ou chave/,'record only ignores incomplete destinations');
 modes[1].click();start.click();assert.match(q('#txStatus').textContent,/destino/,'stream needs a ready destination');
 console.log('PASS: output mode: transmit and record, transmit only, record only');
+// Formato por plataforma: Instagram e TikTok entram em 9:16, os demais em 16:9; saída vertical com enquadramento.
+const choose=[...w.document.querySelectorAll('.stream-panel select')].find(x=>[...x.options].some(o=>o.value==='instagram'));
+for(const pf of ['instagram','tiktok','facebook']){choose.value=pf;choose.dispatchEvent(new w.Event('change'));[...w.document.querySelectorAll('.stream-panel button')].find(b=>b.textContent==='Adicionar destino').click()}
+const aspects=[...w.document.querySelectorAll('.dest')].map(c=>c.dataset.platform+' '+c.dataset.aspect);
+assert(aspects.includes('youtube 16:9')&&aspects.includes('instagram 9:16')&&aspects.includes('tiktok 9:16')&&aspects.includes('facebook 16:9'),aspects.join(','));
+assert(q('.vertical-panel')&&q('#programVertical'),'vertical output card');assert.equal(vm.runInContext('andromedaVertical.size().join("x")',ctx),'720x1280','Instagram live default 720x1280');
+assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.vertical-uses').textContent,/TikTok/);
+[...q('.vertical-modes').children][1].click();assert.equal(vm.runInContext('andromedaVertical.settings.mode',ctx),'blur');
+assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['16:9','9:16','both']);
+console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing');
 console.log('PASS: remote control applies PRV/CUT through the desk buttons and refuses anything else');
 console.log('PASS: all application scripts load; Preview left / PGM right; audio attached; 15 tool panels; partial transition; both T-bar directions; AUTO lock; free layout: size, position, page, no overlap, edit mode');dom.window.close();

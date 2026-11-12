@@ -9,10 +9,10 @@
   const PRESETS = {
     youtube:   { name: 'YouTube',      server: 'rtmps://a.rtmps.youtube.com:443/live2',      help: 'YouTube Studio → Criar → Transmitir ao vivo → Transmissão → Chave de transmissão.' },
     facebook:  { name: 'Facebook',     server: 'rtmps://live-api-s.facebook.com:443/rtmp/',   help: 'Facebook → Vídeo ao vivo → Software de streaming → Chave de stream.' },
-    instagram: { name: 'Instagram',    server: 'rtmps://live-upload.instagram.com:443/rtmp/', help: 'Instagram no computador → Criar → Vídeo ao vivo. Copie a URL e a chave (conta profissional). A exibição é vertical: o quadro 16:9 aparece com faixas.' },
+    instagram: { name: 'Instagram',    server: 'rtmps://live-upload.instagram.com:443/rtmp/', help: 'Instagram no computador → Criar → Vídeo ao vivo. Copie a URL e a chave (conta profissional). Recebe a saída vertical 9:16, enquadrada abaixo.', aspect: '9:16' },
     twitch:    { name: 'Twitch',       server: 'rtmp://live.twitch.tv/app',                   help: 'Painel do criador → Configurações → Stream → Chave de transmissão principal.' },
     kick:      { name: 'Kick',         server: '',                                            help: 'Dashboard → Settings → Stream URL & Key. Copie a URL e a chave.' },
-    tiktok:    { name: 'TikTok',       server: '',                                            help: 'Disponível para contas com transmissão por software liberada. Copie a URL do servidor e a chave. A exibição é vertical.' },
+    tiktok:    { name: 'TikTok',       server: '',                                            help: 'Disponível para contas com transmissão por software liberada. Copie a URL do servidor e a chave. Recebe a saída vertical 9:16.', aspect: '9:16' },
     linkedin:  { name: 'LinkedIn',     server: '',                                            help: 'Evento ao vivo → transmitir com software (RTMP personalizado). Copie a URL e a chave.' },
     custom:    { name: 'RTMP próprio', server: '',                                            help: 'Qualquer servidor RTMP/RTMPS: informe a URL do servidor e a chave (nome do stream).' },
   };
@@ -21,10 +21,10 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const gb = bytes => bytes == null ? '—' : bytes >= 1e12 ? (bytes / 1e12).toFixed(2) + ' TB' : bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(bytes / 1e6)) + ' MB';
 
-  const model = { destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
+  const model = { recordFormats: '16:9', destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE));
-    if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false })) });
+    if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false, aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' })) });
   } catch { /* primeiro uso */ }
   // Modo de saída escolhido pelo operador: transmitir e gravar, só transmitir ou só gravar.
   const MODES = { both: 'Transmitir e gravar', stream: 'Só transmitir', record: 'Só gravar' };
@@ -52,14 +52,14 @@
   adder.append(choose, add, remember);
   add.onclick = () => {
     if (model.destinations.length >= 6) { log('Limite de 6 destinos simultâneos'); return; }
-    const p = PRESETS[choose.value]; model.destinations.push({ id: uid(), platform: choose.value, name: p.name, server: p.server, key: '', enabled: true });
+    const p = PRESETS[choose.value]; model.destinations.push({ id: uid(), platform: choose.value, name: p.name, server: p.server, key: '', enabled: true, aspect: p.aspect || '16:9' });
     save(); render();
   };
   rememberBox.onchange = () => { model.remember = rememberBox.checked; save(); };
 
   function statusOf(d) {
     const state = live.states.get(d.id);
-    if (busyTx() && d.enabled && state) return state.state === 'retrying' ? ['RECONECTANDO', 'bad', state.reason] : state.state === 'sending' ? ['ENVIANDO', 'on', ''] : ['CONECTANDO', 'wait', ''];
+    if (busyTx() && d.enabled && state) return state.state === 'error' ? ['SAÍDA PAROU', 'bad', state.reason] : state.state === 'retrying' ? ['RECONECTANDO', 'bad', state.reason] : state.state === 'sending' ? ['ENVIANDO', 'on', ''] : ['CONECTANDO', 'wait', ''];
     if (!d.enabled) return ['DESLIGADO', 'off', ''];
     if (!d.server.trim() || !d.key.trim()) return ['FALTA ' + (!d.server.trim() ? 'SERVIDOR' : 'CHAVE'), 'wait', ''];
     return ['PRONTO', 'ready', state?.state === 'warning' ? state.reason : ''];
@@ -87,7 +87,12 @@
       keyInput.type = 'password'; keyInput.value = d.key; keyInput.autocomplete = 'off'; keyInput.spellcheck = false; keyInput.placeholder = 'Cole a chave da plataforma'; show.type = 'button';
       show.onclick = () => { const reveal = keyInput.type === 'password'; keyInput.type = reveal ? 'text' : 'password'; show.textContent = reveal ? 'Ocultar' : 'Mostrar'; };
       keyRow.append(keyInput, show); key.append(keyRow);
-      const fields = make('div', 'dest-fields'); fields.append(server, key);
+      const aspect = make('label', 'dest-aspect', 'Formato'), aspectSelect = make('select');
+      aspectSelect.add(new Option('16:9 · horizontal', '16:9')); aspectSelect.add(new Option('9:16 · vertical', '9:16')); aspectSelect.value = d.aspect || '16:9';
+      aspectSelect.setAttribute('aria-label', 'Formato de tela de ' + d.name); aspect.append(aspectSelect);
+      aspectSelect.onchange = () => { d.aspect = aspectSelect.value; card.dataset.aspect = d.aspect; save(); summary(); };
+      card.dataset.aspect = d.aspect || '16:9';
+      const fields = make('div', 'dest-fields'); fields.append(server, key, aspect);
       card.append(head, fields, make('p', 'dest-help', p.help), make('p', 'dest-detail'));
       title.oninput = () => { d.name = title.value; save(); };
       serverInput.oninput = () => { d.server = serverInput.value; live.states.delete(d.id); save(); paintStatus(); summary(); };
@@ -121,8 +126,16 @@
 
   const rec = make('section', 'record-panel');
   rec.innerHTML = '<header><strong>Gravação</strong><label class="stage-check"><input id="recEnable" type="checkbox">Gravar junto com a transmissão</label></header><div class="rec-body"><label>Pasta de gravação<span class="dest-key"><input id="recDir" type="text" spellcheck="false" autocomplete="off" placeholder="Escolha uma unidade abaixo ou digite o caminho completo"><button id="recCheck" type="button">Verificar pasta</button></span></label><div id="recVolumes" class="volumes" aria-label="Unidades detectadas"></div><p id="recStatus" class="quality-note" role="status"></p></div>';
+  // Saída vertical 9:16: prévia e enquadramento (public/vertical.js).
+  const verticalCard = window.andromedaVertical?.mount(panel, { onChange: () => summary() });
   panel.append(rec);
   const recEnable = $('#recEnable'), recDir = $('#recDir'), recStatus = $('#recStatus');
+  const recFormats = make('select'); recFormats.id = 'recFormats';
+  for (const [v, t] of [['16:9', '16:9 · horizontal'], ['9:16', '9:16 · vertical'], ['both', 'Os dois (dois arquivos)']]) recFormats.add(new Option(t, v));
+  recFormats.value = ['16:9', '9:16', 'both'].includes(model.recordFormats) ? model.recordFormats : '16:9';
+  const recFormatsLabel = make('label', 'rec-formats', 'Formato da gravação'); recFormatsLabel.append(recFormats);
+  rec.querySelector('.rec-body').prepend(recFormatsLabel);
+  recFormats.onchange = () => { model.recordFormats = recFormats.value; save(); summary(); };
   recEnable.checked = model.record; recDir.value = model.dir;
   recEnable.onchange = () => setMode(recEnable.checked ? (model.mode === 'stream' ? 'both' : model.mode) : 'stream');
   recDir.onchange = () => { model.dir = recDir.value.trim(); live.checked = null; save(); summary(); };
@@ -172,7 +185,9 @@
   recEnable.closest('label').hidden = true;
 
   function summary() {
-    const on = streaming() ? active().length : 0, total = model.bitrate * on;
+    const on = streaming() ? active().length : 0, vert = streaming() ? active().filter(d => d.aspect === '9:16') : [], vbit = window.andromedaVertical?.settings.bitrate || 4;
+    const total = model.bitrate * (on - vert.length) + vbit * vert.length;
+    window.andromedaVertical?.setUses(model.destinations.filter(d => streaming() && d.enabled && d.aspect === '9:16').map(d => d.name).concat(model.record && model.recordFormats !== '16:9' ? ['gravação'] : []));
     upload.textContent = !streaming() ? 'Só gravar: nada é enviado às plataformas.' : on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino pronto: informe servidor e chave.';
     if (model.record) {
       const perHour = (model.bitrate * 1000 + 128) * 3600 / 8 / 1e6, free = live.checked?.free;
@@ -189,7 +204,7 @@
     startButton.dataset.live = String(busy);
     armButton.textContent = busy && live.recording ? '● GRAVANDO' : model.record ? '● Gravação armada' : '○ Gravação desligada';
     armButton.setAttribute('aria-pressed', String(model.record)); armButton.disabled = busy; armButton.dataset.live = String(busy && !!live.recording);
-    recEnable.disabled = recDir.disabled = $('#recCheck').disabled = busy;
+    recEnable.disabled = recDir.disabled = $('#recCheck').disabled = recFormats.disabled = busy;
     $$('.volume').forEach(b => { b.disabled = busy; });
     const stats = $$('.tb-stat');
     if (stats[1]) { stats[1].querySelector('.tb-label').textContent = busy && live.recording ? 'REC' : 'REC OFF'; stats[1].querySelector('.tb-dot').style.opacity = busy && live.recording ? 1 : .2; stats[1].querySelector('.tb-val').textContent = busy && live.recording ? format(state.liveSecs) : '00:00:00'; }
@@ -228,25 +243,43 @@
       const [width, height] = model.resolution === '1080p' ? [1920, 1080] : [1280, 720];
       for (const canvas of [$('#monProgram canvas'), overlay, programOutput]) { canvas.width = width; canvas.height = height; }
       routeProgramOutput();
+      // Formatos desta transmissão: 16:9 para YouTube/Facebook…, 9:16 para Instagram/TikTok, e os da gravação.
+      const vTargets = targets.filter(d => d.aspect === '9:16'), hTargets = targets.filter(d => d.aspect !== '9:16');
+      const recordH = model.record && model.recordFormats !== '9:16', recordV = model.record && model.recordFormats !== '16:9';
+      const needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
+      if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
       const video = programOutput.captureStream(30); liveTx.videoStream = video;
       const stream = new MediaStream([...video.getVideoTracks(), ...destination.stream.getAudioTracks()]);
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
       const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.min(24, model.bitrate * 1.6) * 1e6, audioBitsPerSecond: 160000 }); liveTx.recorder = recorder;
+      let recorderV = null;
+      if (needV) {
+        window.andromedaVertical.setLive(true);
+        const vVideo = window.andromedaVertical.canvas.captureStream(30); liveTx.verticalStream = vVideo;
+        recorderV = new MediaRecorder(new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]), { mimeType: mime, videoBitsPerSecond: Math.min(16, window.andromedaVertical.settings.bitrate * 1.6) * 1e6, audioBitsPerSecond: 160000 });
+        liveTx.recorderV = recorderV;
+      }
+      const dual = needV;
       const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.phase = 'connecting';
       for (const d of targets) live.states.set(d.id, { state: 'connecting' });
       sync(); txStatus('Conectando o codificador…');
       liveTx.stopTimer = setTimeout(() => { if (epoch === liveTx.epoch && liveTx.phase !== 'sending') finishTransport('O codificador não iniciou o envio. Confira a conexão e tente de novo.'); }, 35000);
-      recorder.ondataavailable = e => {
-        if (epoch !== liveTx.epoch || !e.data.size) return;
-        if (socket.readyState !== WebSocket.OPEN) { finishTransport('A conexão com o serviço local foi perdida.'); return; }
-        if (liveTx.pending + e.data.size > 8 * 1024 * 1024 || socket.bufferedAmount > 6 * 1024 * 1024) { finishTransport('Acúmulo de vídeo: o computador não está acompanhando. Reduza para 720p ou o bitrate e feche aplicações pesadas.'); return; }
-        liveTx.pending += e.data.size; socket.send(e.data);
+      // Com dois formatos, cada pedaço leva 1 byte de canal: 0 = 16:9, 1 = 9:16.
+      const pipe = (rec, channel) => {
+        rec.ondataavailable = e => {
+          if (epoch !== liveTx.epoch || !e.data.size) return;
+          if (socket.readyState !== WebSocket.OPEN) { finishTransport('A conexão com o serviço local foi perdida.'); return; }
+          if (liveTx.pending + e.data.size > (dual ? 12 : 8) * 1024 * 1024 || socket.bufferedAmount > (dual ? 10 : 6) * 1024 * 1024) { finishTransport('Acúmulo de vídeo: o computador não está acompanhando. Reduza para 720p ou o bitrate e feche aplicações pesadas.'); return; }
+          const chunk = dual ? new Blob([new Uint8Array([channel]), e.data]) : e.data;
+          liveTx.pending += chunk.size; socket.send(chunk);
+        };
+        rec.onerror = () => finishTransport('O navegador interrompeu a captura de vídeo. Reinicie o envio.');
       };
-      recorder.onerror = () => finishTransport('O navegador interrompeu a captura de vídeo. Reinicie o envio.');
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim() })), record: model.record ? { dir: model.dir } : null })); };
+      pipe(recorder, 0); if (recorderV) pipe(recorderV, 1);
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1 })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === 'ready') { recorder.start(250); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
+        if (msg.type === 'ready') { const groups = msg.groups || ['h']; if (groups.includes('h') || !dual) recorder.start(250); else liveTx.recorder = null; if (recorderV && groups.includes('v')) recorderV.start(250); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
         else if (msg.type === 'recording') { live.recording = msg; paintButtons(); }
         else if (msg.type === 'recorded') { live.recorded = msg; log('Gravação salva: ' + msg.file); summary(); }
@@ -265,6 +298,7 @@
           const trouble = [...live.states.values()].filter(s => s.state === 'retrying').length;
           txStatus((targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
         }
+        else if (msg.type === 'notice') { log(msg.message); txStatus(msg.message); }
         else if (msg.type === 'error') finishTransport(msg.message);
         else if (msg.type === 'stopped') finishTransport();
       };
