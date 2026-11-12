@@ -24,6 +24,10 @@ Em **Configurações → Convites**, passo 1, escolha o modo. Nenhum deles usa T
 
 Em todos os modos a imagem vai direto do celular para o computador (WebRTC). Detalhes, limites e como testar estão em [ATUALIZACAO_013.md](ATUALIZACAO_013.md).
 
+## Personalizar a mesa
+
+Toque em **Personalizar** no topo da Operação: arraste cada painel pelo título para mover e pelo canto para mudar o tamanho. Há modelos prontos, e a tabela completa fica em Configurações → Personalizar a mesa.
+
 ## Instalar a mesa no Windows
 
 **Programa instalado (recomendado).** Baixe `Andromeda-Live-Setup-0.13.0.exe` na página de versões do repositório (**Releases**, à direita na página inicial do GitHub, ou `https://github.com/witterveloso/andromedalivecam/releases/latest`) e instale. A CI publica o instalador ali a cada atualização da `main`. O instalador cria atalhos na área de trabalho e no menu Iniciar e não pede administrador. O programa já traz o serviço local e o FFmpeg: não é preciso instalar Node.js nem manter uma janela de terminal aberta.

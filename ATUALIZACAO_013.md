@@ -1,4 +1,4 @@
-# Andrômeda Live 0.13 — câmeras por Internet (Wi-Fi, 4G, 5G) e por Rede local (IP), sem Tailscale
+# Andrômeda Live 0.13 — câmeras sem Tailscale, Blackmagic sem piscar e mesa do seu jeito
 
 Até a 0.12, o celular só chegava à mesa por um endereço HTTPS que o operador precisava montar: Tailscale ou gateway num VPS. Nesta versão a mesa conecta os celulares sozinha, de dois jeitos novos. Escolha em **Configurações → Convites → 1. Como os celulares se conectam**.
 
@@ -51,6 +51,47 @@ Limites:
 - Roteadores com "isolamento de clientes" (comum em Wi-Fi de convidados) impedem o celular de enxergar o computador. Use a rede principal ou o modo Internet.
 - No iPhone, o comportamento do Safari com certificado próprio ainda precisa ser confirmado em aparelho real.
 
+## Mesa do seu jeito: tamanho e lugar de cada painel
+
+Na página **Operação**, cada painel (Preview, PGM, Câmeras, Corte e transições, Seleção de fontes, Camadas, Áudio, Intercom) tem tamanho e posição livres.
+
+1. Toque em **Personalizar** no topo. A grade aparece e cada painel mostra o tamanho (por exemplo `16 × 22`).
+2. **Mover:** arraste o painel pelo título.
+3. **Tamanho:** arraste o canto inferior direito (◢).
+4. **Teclado:** com o título selecionado (Tab), as setas movem e Shift + setas mudam o tamanho.
+5. Toque em **Concluir** (ou Esc).
+
+Como funciona:
+
+- A grade tem 48 colunas e 48 linhas por tela, e acompanha o tamanho da janela.
+- Um painel solto sobre outro empurra o outro para baixo, sem sobrepor.
+- **Juntar painéis** sobe tudo e tira os espaços vazios.
+- **Modelos prontos:**
+  - **Padrão · monitores menores** (o novo padrão);
+  - **Câmeras em destaque**;
+  - **Monitores grandes** (parecido com a 0.12).
+- Preview e PGM sempre mostram a imagem inteira em 16:9 no espaço que você deu. Lado a lado e com a mesma altura, os dois ficam do mesmo tamanho.
+- As miniaturas das câmeras se reorganizam em colunas para caber no painel.
+- Durante a edição, os botões dos painéis não respondem: ajustar a mesa nunca corta nem muda o AR.
+- Em **Configurações → Personalizar a mesa** há a tabela completa:
+  - página de cada painel (dá para levar um painel da Operação para outra página e voltar);
+  - coluna, linha, largura e altura em números;
+  - exportar e importar o layout.
+- O layout fica salvo neste computador. Layouts da 0.12 não são reaproveitados: a mesa abre no padrão novo, com Preview e PGM menores e todas as câmeras visíveis numa tela Full HD.
+
+Em telas de 1366 × 768 a grade não encolhe abaixo de 18 px por linha: a página rola um pouco em vez de deixar os monitores minúsculos.
+
+## Correções
+
+- **Blackmagic piscando.** A imagem da entrada RTMP sumia por um ou dois quadros várias vezes por segundo no PGM, no Preview e na miniatura, e portanto também na transmissão.
+  - Causa: cada quadro novo era carregado na mesma imagem que a mesa estava desenhando, e enquanto o JPEG decodificava a imagem ficava vazia.
+  - Correção: agora o quadro é decodificado numa imagem de reserva e só entra quando está pronto.
+  - Medição com um sinal RTMP de teste no PGM: antes, 44 de 300 quadros saíam vazios (15%); agora, nenhum.
+- **Medidor de áudio tremendo.** As barras pulavam a cada 50 ms para o pico instantâneo, e o número em dBFS mudava de largura e empurrava a barra.
+  - Agora o medidor sobe na hora e desce suave (20 dB por segundo, como um PPM).
+  - O número mostra o maior pico de cada 250 ms, com largura fixa.
+  - A marca de pico continua retida por 1 segundo.
+
 ## Modo Endereço próprio
 
 É o modo antigo: gateway publicado num VPS ou Tailscale, se você já usa. Nada mudou nele. Com `mesa-cloud.env` instalado, a mesa usa o gateway público e o seletor de modos fica oculto.
@@ -65,6 +106,8 @@ Limites:
   - servidor HTTPS da rede local: página, sinalização e certificado com o IP;
   - reaproveitamento e renovação do certificado;
   - troca de modo pela API, com a escolha lembrada após reiniciar.
+- Blackmagic: sinal RTMP de teste (FFmpeg) na entrada da CAM 1, contagem de quadros vazios no PGM antes e depois da correção (44/300 → 0/300).
+- Mesa livre: arrastar, redimensionar, empurrar sem sobrepor, salvar e reabrir, nas larguras 1920 e 1366.
 - Ensaio de ponta a ponta em navegador com câmera simulada, nos dois modos ao mesmo tempo: o vídeo chegou ao monitor da mesa, e o tally foi de PREVIEW a NO AR no CUT.
 - **Ainda não testado:**
   - celulares reais;
