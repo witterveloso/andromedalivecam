@@ -53,11 +53,11 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     clearInterval(watchdog);
     if (shared.active === ws) shared.active = null;
     if (startedAt) audit.info('transmissao', 'fim', 'Envio encerrado', { segundos: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0, quadros: Math.max(0, ...[...runners.values()].map(r => r.lastFrame)), formatos: [...runners.keys()] });
-    const records = [...runners.values()].map(r => r.group?.record).filter(Boolean);
+    const records = [...runners.values()].filter(r => r.group?.record).map(r => ({ ...r.group.record, aspect: r.group.aspect }));
     const next = () => {
       const record = records.shift();
       if (!record) { send({ type: 'stopped' }); ws.close(); return; }
-      finalize(record, saved => { if (saved) { audit.info('gravacao', 'arquivo', 'Gravação salva', { arquivo: saved.file, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', ...saved }); } next(); });
+      finalize(record, saved => { if (saved) { audit.info('gravacao', 'arquivo', 'Gravação ' + record.aspect + ' salva', { arquivo: saved.file, formato: record.aspect, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', format: record.aspect, ...saved }); } else { audit.error('gravacao', 'arquivo-vazio', 'A gravação ' + record.aspect + ' não gerou arquivo.'); send({ type: 'notice', message: 'Atenção: a gravação ' + record.aspect + ' não gerou arquivo.' }); } next(); });
     };
     next();
   }
@@ -81,8 +81,21 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     r.killTimer = setTimeout(() => r.child?.kill('SIGKILL'), 3000); r.killTimer.unref?.();
   }
 
+  // Quadros repetidos pelo codificador = quadros que o navegador não entregou (computador sobrecarregado).
+  // Se faltarem mais de 40% dos quadros por 5 s seguidos, a mesa avisa: a imagem gravada e transmitida fica travando.
+  function starving(r, dups) {
+    if (!Number.isFinite(dups) || !r.lastFrame) return;
+    const fresh = dups - r.dups; r.dups = dups;
+    r.starved = fresh > 12 ? r.starved + 1 : 0;
+    if (r.starved < 5 || stopping || Date.now() - r.warnedAt < 60000) return;
+    r.warnedAt = Date.now();
+    const message = 'Atenção: o computador está entregando poucos quadros para a saída ' + r.group.aspect + ' (a imagem fica travando na gravação e na transmissão). Feche programas pesados ou use 720p.';
+    audit.warn('transmissao', 'quadros-faltando', message, { formato: r.group.aspect, repetidosPorSegundo: fresh });
+    send({ type: 'notice', message });
+  }
+
   function launch(group, args) {
-    const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null };
+    const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dups: 0, starved: 0, warnedAt: 0 };
     runners.set(group.id, r);
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
     child.on('spawn', () => { r.ready = true; if ([...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
@@ -103,6 +116,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       r.progress += d.toString(); let idx;
       while ((idx = r.progress.indexOf('\n')) >= 0) {
         const line = r.progress.slice(0, idx).trim(); r.progress = r.progress.slice(idx + 1);
+        if (line.startsWith('dup_frames=')) { starving(r, Number(line.slice(11))); continue; }
         if (!line.startsWith('frame=')) continue;
         const frames = Number(line.slice(6)); if (!(frames > r.lastFrame)) continue;
         if (!r.lastFrame) audit.info('transmissao', 'enviando', 'Codificador ' + group.aspect + ' produzindo quadros');

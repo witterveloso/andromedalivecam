@@ -49,7 +49,7 @@ assert(aspects.includes('youtube 16:9')&&aspects.includes('instagram 9:16')&&asp
 assert(q('.vertical-panel')&&q('#programVertical'),'vertical output card');assert.equal(vm.runInContext('andromedaVertical.size().join("x")',ctx),'720x1280','Instagram live default 720x1280');
 assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.vertical-uses').textContent,/TikTok/);
 [...q('.vertical-modes').children][1].click();assert.equal(vm.runInContext('andromedaVertical.settings.mode',ctx),'blur');
-assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['16:9','9:16','both']);
+assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['both','16:9','9:16']);assert.equal(q('#recFormats').value,'both','recording delivers 16:9 and 9:16 by default');assert.match(q('#recFormats').selectedOptions[0].textContent,/16:9 e 9:16/);
 console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing');
 console.log('PASS: remote control applies PRV/CUT through the desk buttons and refuses anything else');
 console.log('PASS: all application scripts load; Preview left / PGM right; audio attached; 15 tool panels; partial transition; both T-bar directions; AUTO lock; free layout: size, position, page, no overlap, edit mode');dom.window.close();
