@@ -25,6 +25,45 @@ const prefs = {
   set(name, value) { try { localStorage.setItem('andromeda.cam.' + name, value); } catch { /* armazenamento indisponível */ } },
 };
 
+/* ---------- tela cheia ---------- */
+
+// iPhone: o Safari não deixa uma página ocupar a tela toda. Aberto pelo ícone na Tela de Início, o app ocupa a tela
+// inteira, sem barras do navegador. Android e computador: tela cheia do próprio navegador.
+const iOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const standalone = () => navigator.standalone === true || !!window.matchMedia?.('(display-mode: standalone), (display-mode: fullscreen)').matches;
+const canFullscreen = () => !/iP(hone|od)/.test(navigator.userAgent) && !!(document.documentElement?.requestFullscreen || document.documentElement?.webkitRequestFullscreen);
+const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function enterFullscreen() {
+  const el = document.documentElement; if (!el) return;
+  try { Promise.resolve(el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen?.()).catch(() => {}); } catch { /* negado */ }
+}
+function exitFullscreen() { try { Promise.resolve((document.exitFullscreen || document.webkitExitFullscreen)?.call(document)).catch(() => {}); } catch { /* já saiu */ } }
+function inviteHash() { return cam.key ? '#' + (cam.relay ? 'r=' : '') + cam.key : ''; }
+function toggleFullscreen() {
+  if (standalone()) { say('Já está em tela cheia: o app foi aberto pela Tela de Início.', 'ok'); return; }
+  if (canFullscreen()) { if (isFullscreen()) exitFullscreen(); else enterFullscreen(); return; }
+  if (iOS) {
+    // O ícone guarda o endereço da página: o convite volta para a barra para ir junto. Sem o manifesto,
+    // o iPhone usa este endereço em vez do inicial.
+    if (cam.key) history.replaceState(null, '', location.pathname + inviteHash());
+    document.querySelector('link[rel="manifest"]')?.remove();
+    q('#homeSheet').showModal(); return;
+  }
+  say('Este navegador não oferece tela cheia. Use o Chrome ou o Safari atualizados.', 'warn');
+}
+function paintFullscreen() {
+  const b = q('#fullToggle'); if (!b) return;
+  b.hidden = standalone();
+  b.setAttribute('aria-pressed', String(isFullscreen()));
+  b.setAttribute('aria-label', isFullscreen() ? 'Sair da tela cheia' : 'Tela cheia');
+}
+document.addEventListener('fullscreenchange', paintFullscreen);
+document.addEventListener('webkitfullscreenchange', paintFullscreen);
+
+if (standalone() && !localTest) {
+  if (firstInvite) prefs.set('invite', (firstInvite.relay ? 'r=' : '') + firstInvite.key);
+  else { const last = parseHash(prefs.get('invite', '')); if (last) { cam.key = last.key; cam.relay = last.relay; } }
+}
 // A chave do convite sai da barra de endereço assim que é lida.
 history.replaceState(null, '', location.pathname + (localTest ? '?teste=1' : ''));
 
@@ -97,27 +136,38 @@ q('#hear').onclick = () => q('#returnAudio').play()
 
 /* ---------- lentes e dispositivos ---------- */
 
-function lensName(label, index) {
+// Nomes que o sistema dá às câmeras: iPhone ("Câmera Ultra-angular Traseira", "Back Telephoto Camera"…),
+// Android ("camera2 0, facing back"). As câmeras "Dupla"/"Tripla" do iPhone trocam de lente sozinhas pelo zoom.
+function lensInfo(label, index) {
   const l = String(label || '').toLowerCase();
-  if (/front|frontal|user|selfie/.test(l)) return 'Frontal';
-  if (/ultra/.test(l)) return 'Ultra-wide';
-  if (/tele/.test(l)) return 'Tele';
-  if (/dual|triple|dupla|tripla/.test(l)) return 'Auto';
-  return index ? 'Lente ' + (index + 1) : 'Principal';
+  if (/front|frontal|user|selfie|truedepth/.test(l)) return { name: 'Frontal', rank: 9 };
+  if (/ultra/.test(l)) return { name: '0,5× Ultra', rank: 1 };
+  if (/tele/.test(l)) return { name: 'Tele', rank: 3 };
+  if (/triple|tripla/.test(l)) return { name: 'Auto · 3 lentes', rank: 4 };
+  if (/dual wide|grande-angular dupla|dupla grande|ultra.*dupla/.test(l)) return { name: 'Auto · 0,5–1×', rank: 5 };
+  if (/dual|dupla/.test(l)) return { name: 'Auto · 1×–Tele', rank: 6 };
+  if (/back|rear|traseira|environment|facing back|principal|main/.test(l)) return { name: '1× Principal', rank: 2 };
+  return { name: 'Câmera ' + (index + 1), rank: 8 };
 }
+function lensName(label, index) { return lensInfo(label, index).name; }
 function renderLenses() {
-  const select = q('#lens'), box = q('#lensChips'), options = [...select.options];
+  const select = q('#lens'), box = q('#lensChips');
+  // Ultra, principal, tele, automáticas e frontal por último; nomes repetidos ganham número.
+  const options = [...select.options].map((o, i) => ({ o, i, info: lensInfo(o.text, i) })).sort((a, b) => a.info.rank - b.info.rank || a.i - b.i);
+  const seen = {};
   box.replaceChildren(); box.hidden = options.length < 2;
-  options.forEach((option, index) => {
+  options.forEach(({ o: option, info }) => {
+    seen[info.name] = (seen[info.name] || 0) + 1;
     const chip = document.createElement('button');
     chip.type = 'button'; chip.className = 'lens';
-    chip.textContent = lensName(option.text, index);
+    chip.textContent = info.name + (seen[info.name] > 1 ? ' ' + seen[info.name] : '');
     chip.setAttribute('role', 'radio');
     chip.setAttribute('aria-checked', String(option.value === select.value));
-    chip.setAttribute('title', option.text || 'Câmera ' + (index + 1));
+    chip.setAttribute('title', option.text || info.name);
     chip.onclick = () => { if (select.value === option.value) return; select.value = option.value; select.onchange(); };
     box.append(chip);
   });
+  if (cam.stream) window.AndromedaOptics?.lensBar(box);
 }
 async function enumerate() {
   const devices = await navigator.mediaDevices.enumerateDevices(), current = q('#lens').value;
@@ -143,67 +193,96 @@ function videoConstraints(deviceId = q('#lens').value) {
 }
 
 function showCapabilities() {
-  const track = cam.stream.getVideoTracks()[0], c = track.getCapabilities?.() || {}, s = track.getSettings();
-  q('#qualityActual').textContent = s.width + '×' + s.height + ' · ' + Math.round(s.frameRate || 0) + ' fps';
-  const box = q('#manual'); box.replaceChildren();
-  const apply = (name, value) => track.applyConstraints({ advanced: [{ [name]: value }] }).catch(e => say(e.message, 'warn'));
-  for (const [name, label] of [['focusMode', 'Foco'], ['exposureMode', 'Exposição'], ['whiteBalanceMode', 'Balanço de branco']]) {
-    const row = document.createElement('label'), select = document.createElement('select');
-    row.textContent = label;
-    for (const v of c[name] || []) select.add(new Option(v, v));
-    select.disabled = !c[name]?.length;
-    if (select.disabled) select.add(new Option('Não exposto neste aparelho', ''));
-    select.value = s[name] || select.value;
-    select.onchange = () => apply(name, select.value);
-    row.append(select); box.append(row);
-  }
-  for (const [name, label] of [['exposureCompensation', 'Compensação de exposição'], ['focusDistance', 'Distância de foco'], ['iso', 'ISO']]) {
-    if (!c[name]) continue;
-    const row = document.createElement('label'), input = document.createElement('input');
-    row.textContent = label;
-    Object.assign(input, { type: 'range', min: c[name].min, max: c[name].max, step: c[name].step || .1, value: s[name] || c[name].min });
-    input.onchange = () => apply(name, Number(input.value));
-    row.append(input); box.append(row);
-  }
-  if (c.torch) {
-    const row = document.createElement('label'), input = document.createElement('input');
-    row.className = 'check'; input.type = 'checkbox';
-    input.onchange = () => apply('torch', input.checked);
-    row.append(input, 'Lanterna'); box.append(row);
-  }
-  layoutGrid();
+  const track = cam.stream.getVideoTracks()[0], st = track.getSettings();
+  q('#qualityActual').textContent = st.width + '×' + st.height + ' · ' + Math.round(st.frameRate || 0) + ' fps';
+  try { track.contentHint = 'motion'; } catch { /* navegador sem dica de conteúdo */ }
+  window.AndromedaOptics?.attach(track);
+  renderLenses(); layoutGrid();
 }
 
+// Fluidez acima de tudo: se a rede ou o processador apertarem, o envio reduz a nitidez e mantém os quadros por
+// segundo (maintain-framerate), em vez de travar o movimento. Vale para 720p, 1080p e 4K.
 async function bitrate() {
   const p = cam.pcs.get('media'); if (!p) return;
   const sender = p.pc.getSenders().find(s => s.track?.kind === 'video'); if (!sender) return;
   const params = sender.getParameters(); if (!params.encodings?.length) return;
-  params.encodings[0].maxBitrate = Math.max(1, Math.min(12, Number(q('#bitrate').value) || 3)) * 1000000;
-  await sender.setParameters(params);
+  const e = params.encodings[0], fps = Number(q('#fps').value) || 30;
+  e.maxBitrate = Math.max(1, Math.min(MAX_MBPS, Number(q('#bitrate').value) || 3)) * 1000000;
+  e.maxFramerate = fps; e.priority = 'high'; e.networkPriority = 'high';
+  params.degradationPreference = 'maintain-framerate';
+  await sender.setParameters(params).catch(() => { delete e.priority; delete e.networkPriority; delete params.degradationPreference; return sender.setParameters(params); });
+}
+const MAX_MBPS = 25;
+// Codificador de hardware: os celulares codificam H.264 no chip (iPhone sempre, Android quase sempre).
+// Em 1080p60 e 4K o codificador por software não acompanha e o vídeo engasga.
+function preferHardwareCodec(pc) {
+  const caps = window.RTCRtpSender?.getCapabilities?.('video'); if (!caps?.codecs?.length) return;
+  const rank = c => /h264/i.test(c.mimeType) ? (/packetization-mode=1/.test(c.sdpFmtpLine || '') ? 0 : 1) : /vp8/i.test(c.mimeType) ? 2 : /vp9/i.test(c.mimeType) ? 3 : 4;
+  const codecs = [...caps.codecs].sort((a, b) => rank(a) - rank(b));
+  for (const t of pc.getTransceivers()) if (t.sender.track?.kind === 'video' && t.setCodecPreferences) { try { t.setCodecPreferences(codecs); } catch { /* o navegador escolhe */ } }
 }
 q('#bitrate').onchange = () => bitrate().catch(e => say(e.message, 'warn'));
 
-// Troca de lente física: a câmera atual precisa ser liberada antes de abrir a próxima.
-q('#lens').onchange = async () => {
-  if (!cam.stream) { renderLenses(); return; }
+// Reabre a câmera (troca de lente ou formato que o aparelho não muda ao vivo). A atual é liberada antes.
+async function reopenVideo(deviceId) {
   const old = cam.stream.getVideoTracks()[0], previous = old.getSettings().deviceId;
-  const open = async deviceId => (await navigator.mediaDevices.getUserMedia({ video: videoConstraints(deviceId), audio: false })).getVideoTracks()[0];
+  const open = async id => (await navigator.mediaDevices.getUserMedia({ video: videoConstraints(id), audio: false })).getVideoTracks()[0];
   old.stop();
   let track;
-  try { track = await open(q('#lens').value); }
+  try { track = await open(deviceId); }
   catch (e) {
-    say('Troca de lente falhou: ' + e.message, 'error');
-    try { track = await open(previous); q('#lens').value = previous; } catch { /* a lente anterior também não abriu */ }
+    say('A câmera não abriu com este ajuste: ' + captureMessage(e), 'error');
+    try { track = await open(previous); q('#lens').value = previous; } catch { /* a anterior também não abriu */ }
   }
-  if (track) {
-    cam.stream.removeTrack(old); cam.stream.addTrack(track); q('#view').srcObject = cam.stream;
-    const sender = cam.pcs.get('media')?.pc.getSenders().find(s => s.track?.kind === 'video');
-    if (sender) await sender.replaceTrack(track).catch(e => say('Troca de lente falhou: ' + e.message, 'error'));
-    showCapabilities();
-  }
+  if (!track) return null;
+  cam.stream.removeTrack(old); cam.stream.addTrack(track); q('#view').srcObject = cam.stream; q('#view').play().catch(() => {});
+  showCapabilities();
+  const sender = cam.pcs.get('media')?.pc.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
+  const out = window.AndromedaOptics?.output() || track;
+  if (sender && sender.track !== out) await sender.replaceTrack(out).catch(e => say('Troca de câmera falhou: ' + e.message, 'error'));
+  await bitrate().catch(() => {});
+  return track;
+}
+q('#lens').onchange = async () => {
+  if (!cam.stream) { renderLenses(); return; }
+  await reopenVideo(q('#lens').value);
   renderLenses();
 };
-for (const id of ['#resolution', '#fps', '#input']) q(id).onchange = () => { if (cam.running) say('Pare e reconecte para aplicar resolução, fps ou microfone. A prévia mostra o formato real atual.', 'warn'); };
+
+// Resolução e quadros/s valem na hora: primeiro sem fechar a câmera; se o aparelho não muda ao vivo, reabre.
+async function applyFormat() {
+  if (!cam.stream) return;
+  const [width, height] = q('#resolution').value.split('x').map(Number), fps = Number(q('#fps').value);
+  const track = cam.stream.getVideoTracks()[0];
+  const fits = () => { const st = track.getSettings(), long = Math.max(st.width || 0, st.height || 0), short = Math.min(st.width || 0, st.height || 0); return long >= width * 0.95 && short >= height * 0.95 && (st.frameRate || 0) >= fps * 0.9; };
+  let ok = await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps } }).then(() => true, () => false);
+  if (!ok || !fits()) ok = !!(await reopenVideo(q('#lens').value));
+  else { showCapabilities(); await bitrate().catch(() => {}); }
+  const now = cam.stream?.getVideoTracks()[0]?.getSettings() || {};
+  const got = (now.width || 0) + '×' + (now.height || 0) + ' · ' + Math.round(now.frameRate || 0) + ' fps';
+  say(Math.max(now.width || 0, now.height || 0) >= width * 0.95 && (now.frameRate || 0) >= fps * 0.9 ? 'Formato aplicado: ' + got + '.' : 'Este aparelho entregou ' + got + ' nesta lente (pedido: ' + q('#resolution').selectedOptions[0].text + ' · ' + fps + ' fps).', 'info');
+}
+// Microfone novo: troca no envio e no intercom sem derrubar o vídeo.
+async function applyMic() {
+  if (!cam.stream) return;
+  const old = cam.stream.getAudioTracks()[0];
+  let fresh;
+  try { fresh = (await navigator.mediaDevices.getUserMedia({ video: false, audio: { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: false } })).getAudioTracks()[0]; }
+  catch (e) { say('Microfone não abriu: ' + captureMessage(e), 'error'); return; }
+  fresh.enabled = old ? old.enabled : true;
+  if (old) { cam.stream.removeTrack(old); old.stop(); }
+  cam.stream.addTrack(fresh);
+  const media = cam.pcs.get('media')?.pc.getSenders().find(s => s.track?.kind === 'audio');
+  if (media) await media.replaceTrack(fresh).catch(() => {});
+  const ic = fresh.clone(); ic.enabled = cam.intercomTrack ? cam.intercomTrack.enabled : false;
+  const intercom = cam.pcs.get('intercom')?.pc.getSenders().find(s => s.track?.kind === 'audio');
+  if (intercom) await intercom.replaceTrack(ic).catch(() => {});
+  cam.intercomTrack?.stop(); cam.intercomTrack = ic;
+  if (cam.ac && cam.meter) cam.ac.createMediaStreamSource(new MediaStream([fresh])).connect(cam.meter);
+  say('Microfone trocado: ' + (q('#input').selectedOptions[0]?.text || 'padrão') + '.', 'ok');
+}
+q('#resolution').onchange = q('#fps').onchange = () => { if (cam.running) applyFormat().catch(e => say(e.message, 'warn')); };
+q('#input').onchange = () => { if (cam.running) applyMic().catch(e => say(e.message, 'warn')); };
 
 /* ---------- WebRTC ---------- */
 
@@ -211,7 +290,11 @@ async function makePeer(lane) {
   const pc = new RTCPeerConnection({ iceServers: cam.ice }), p = { pc, queue: [] };
   cam.pcs.set(lane, p);
   pc.onicecandidate = e => { if (e.candidate) send({ type: 'signal', lane, signal: { candidate: e.candidate.toJSON() } }); };
-  if (lane === 'media') for (const t of cam.stream.getTracks()) pc.addTrack(t, cam.stream);
+  if (lane === 'media') {
+    const video = cam.stream.getVideoTracks()[0], out = window.AndromedaOptics?.output() || video;
+    for (const t of cam.stream.getTracks()) pc.addTrack(t === video ? out : t, cam.stream);
+    preferHardwareCodec(pc);
+  }
   else {
     cam.intercomTrack = cam.stream.getAudioTracks()[0].clone(); cam.intercomTrack.enabled = false;
     pc.addTrack(cam.intercomTrack, new MediaStream([cam.intercomTrack]));
@@ -222,7 +305,7 @@ async function makePeer(lane) {
   }
   pc.onconnectionstatechange = () => {
     if (lane !== 'media') return;
-    if (pc.connectionState === 'connected') { say('Vídeo conectado à mesa. O tally indica o barramento PGM, não a confirmação do YouTube.', 'ok'); q('#ptt').disabled = false; }
+    if (pc.connectionState === 'connected') { bitrate().catch(() => {}); say('Vídeo conectado à mesa. O tally indica o barramento PGM, não a confirmação do YouTube.', 'ok'); q('#ptt').disabled = false; }
     if (['failed', 'disconnected'].includes(pc.connectionState)) {
       tally('offline'); say('Conexão interrompida. Reconectando…', 'warn'); ptt(false);
       clearTimeout(cam.retry); cam.retry = setTimeout(() => { if (cam.running) cam.ws?.close(); }, 2000);
@@ -337,6 +420,7 @@ q('#inviteApply').onclick = () => {
 
 /* ---------- iniciar e parar ---------- */
 
+function captureMessage(e) { return captureError(e); }
 function captureError(e) {
   if (e.name === 'InviteError') return e.message;
   if (e.name === 'NotAllowedError') return 'Permissão negada. Libere câmera e microfone nas permissões do site e toque de novo.';
@@ -352,7 +436,7 @@ async function start() {
   if (!localTest && !cam.relay && !gateway) { say('Este convite precisa do endereço da mesa. Abra o link recebido no celular.', 'warn'); return; }
   if (!isSecureContext) { say('Abra o link com https://. O celular não libera a câmera em endereço sem segurança.', 'error'); return; }
   q('#start').disabled = true; setRun('starting');
-  if (prefs.get('fullscreen', '1') === '1') document.documentElement?.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+  if (prefs.get('fullscreen', '1') === '1' && canFullscreen()) enterFullscreen();
   try {
     if (!localTest && cam.relay) {
       const info = await relaySession();
@@ -390,6 +474,7 @@ async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request(
 function stop() {
   cam.running = false; cam.generation++; clearTimeout(cam.retry);
   cam.ws?.close(); cleanPeers();
+  window.AndromedaOptics?.reset();
   cam.stream?.getTracks().forEach(t => t.stop()); cam.stream = null; q('#view').srcObject = null;
   cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null;
   cam.wake?.release().catch(() => {}); cam.wake = null;
@@ -493,6 +578,9 @@ q('#heroTest').onclick = () => { location.href = location.pathname + '?teste=1';
 q('#localTest').onclick = () => { location.href = location.pathname + (localTest ? '' : '?teste=1'); };
 q('#fullscreenPref').checked = prefs.get('fullscreen', '1') === '1';
 q('#fullscreenPref').onchange = () => prefs.set('fullscreen', q('#fullscreenPref').checked ? '1' : '0');
+q('#fullToggle').onclick = toggleFullscreen;
+q('#fullHelp').onclick = () => { q('#setup').close(); toggleFullscreen(); };
+paintFullscreen();
 
 /* ---------- estado inicial ---------- */
 
