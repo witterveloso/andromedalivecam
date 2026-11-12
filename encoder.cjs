@@ -66,8 +66,8 @@ function groupsFor(cfg) {
   const h = cfg.destinations.filter(d => d.aspect !== '9:16'), v = cfg.destinations.filter(d => d.aspect === '9:16');
   const formats = cfg.record?.formats || '16:9', recH = !!cfg.record && formats !== '9:16', recV = !!cfg.record && formats !== '16:9';
   const groups = [];
-  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? cfg.record : null });
-  if (v.length || recV) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '-vertical.mkv') } : null });
+  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
+  if (v.length || recV) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null });
   return groups;
 }
 
@@ -75,6 +75,7 @@ function validateRecording(input) {
   const dir = String(input.dir || '').trim();
   if (!dir || !path.isAbsolute(dir)) fail('Escolha a pasta de gravação.');
   if (/[|\r\n]/.test(dir)) fail('A pasta de gravação contém caracteres não aceitos.');
+  // A mesa manda o formato (padrão: os dois). Um cliente antigo, sem o campo, só tem a saída 16:9.
   const formats = ['16:9', '9:16', 'both'].includes(input.formats) ? input.formats : '16:9';
   // Nome com a data e a hora locais do computador, que é como o operador procura o arquivo.
   const now = new Date(), two = n => String(n).padStart(2, '0');

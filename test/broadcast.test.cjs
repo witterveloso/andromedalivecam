@@ -30,7 +30,7 @@ test('one encode feeds every destination through its own recovering queue, plus 
  assert.equal(args.filter(a=>a==='libx264').length,1);assert.equal(args[args.lastIndexOf('-f')+1],'tee');
  const outputs=spec.split('|');assert.equal(outputs.length,3);
  assert(outputs[0].startsWith('[f=fifo:fifo_format=flv:')&&outputs[0].includes('attempt_recovery=1')&&outputs[0].endsWith(cfg.destinations[0].target));
- assert(outputs[2].startsWith('[f=matroska:onfail=ignore]')&&outputs[2].includes("Lives \\[2026\\] d\\'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d\.mkv$/.test(outputs[2]));
+ assert(outputs[2].startsWith('[f=matroska:onfail=ignore]')&&outputs[2].includes("Lives \\[2026\\] d\\'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d_16x9\.mkv$/.test(outputs[2]));
  assert.equal(validateBroadcast({...base,record:{dir:os.tmpdir()}}).destinations.length,0,'recording alone is allowed');
 });
 

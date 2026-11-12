@@ -21,18 +21,20 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const gb = bytes => bytes == null ? '—' : bytes >= 1e12 ? (bytes / 1e12).toFixed(2) + ' TB' : bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(bytes / 1e6)) + ' MB';
 
-  const model = { recordFormats: '16:9', destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
+  const model = { recordFormats: 'both', formatsVersion: 2, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE));
     if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false, aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' })) });
   } catch { /* primeiro uso */ }
+  // A partir da 0.18 a gravação sai nos dois formatos por padrão (16:9 e 9:16); o operador ainda pode escolher um só.
+  if (model.formatsVersion !== 2) { model.recordFormats = 'both'; model.formatsVersion = 2; }
   // Modo de saída escolhido pelo operador: transmitir e gravar, só transmitir ou só gravar.
   const MODES = { both: 'Transmitir e gravar', stream: 'Só transmitir', record: 'Só gravar' };
   if (!MODES[model.mode]) model.mode = model.record ? 'both' : 'stream';
   model.record = model.mode !== 'stream';
   const streaming = () => model.mode !== 'record';
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '' })) })); } catch { /* sem armazenamento */ } };
-  const live = { states: new Map(), recording: null, recorded: null, storage: null, checked: null };
+  const live = { states: new Map(), recording: null, recorded: null, files: [], storage: null, checked: null };
   window.andromedaBroadcast = { model, live };
 
   const active = () => model.destinations.filter(d => d.enabled && d.server.trim() && d.key.trim());
@@ -131,8 +133,8 @@
   panel.append(rec);
   const recEnable = $('#recEnable'), recDir = $('#recDir'), recStatus = $('#recStatus');
   const recFormats = make('select'); recFormats.id = 'recFormats';
-  for (const [v, t] of [['16:9', '16:9 · horizontal'], ['9:16', '9:16 · vertical'], ['both', 'Os dois (dois arquivos)']]) recFormats.add(new Option(t, v));
-  recFormats.value = ['16:9', '9:16', 'both'].includes(model.recordFormats) ? model.recordFormats : '16:9';
+  for (const [v, t] of [['both', '16:9 e 9:16 · dois arquivos'], ['16:9', 'Só 16:9 · horizontal'], ['9:16', 'Só 9:16 · vertical']]) recFormats.add(new Option(t, v));
+  recFormats.value = ['16:9', '9:16', 'both'].includes(model.recordFormats) ? model.recordFormats : 'both';
   const recFormatsLabel = make('label', 'rec-formats', 'Formato da gravação'); recFormatsLabel.append(recFormats);
   rec.querySelector('.rec-body').prepend(recFormatsLabel);
   recFormats.onchange = () => { model.recordFormats = recFormats.value; save(); summary(); };
@@ -184,16 +186,18 @@
   armButton.hidden = true; // substituído pela escolha de modo ao lado do botão principal
   recEnable.closest('label').hidden = true;
 
+  const lastFiles = () => 'Última gravação: ' + (live.files.length ? live.files : [live.recorded]).map(f => (f.format ? f.format + ' → ' : '') + f.file + ' (' + gb(f.size) + ')').join(' · ');
   function summary() {
     const on = streaming() ? active().length : 0, vert = streaming() ? active().filter(d => d.aspect === '9:16') : [], vbit = window.andromedaVertical?.settings.bitrate || 4;
     const total = model.bitrate * (on - vert.length) + vbit * vert.length;
     window.andromedaVertical?.setUses(model.destinations.filter(d => streaming() && d.enabled && d.aspect === '9:16').map(d => d.name).concat(model.record && model.recordFormats !== '16:9' ? ['gravação'] : []));
     upload.textContent = !streaming() ? 'Só gravar: nada é enviado às plataformas.' : on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino pronto: informe servidor e chave.';
     if (model.record) {
-      const perHour = (model.bitrate * 1000 + 128) * 3600 / 8 / 1e6, free = live.checked?.free;
+      const vbit = window.andromedaVertical?.settings.bitrate || 4, rate = (model.recordFormats !== '9:16' ? model.bitrate * 1000 + 128 : 0) + (model.recordFormats !== '16:9' ? vbit * 1000 + 128 : 0);
+      const perHour = rate * 3600 / 8 / 1e6, free = live.checked?.free;
       recStatus.dataset.tone = '';
-      recStatus.textContent = live.recorded ? 'Última gravação: ' + live.recorded.file + ' (' + gb(live.recorded.size) + ')' : !model.dir ? 'Escolha a pasta de gravação.' : 'Cerca de ' + perHour.toFixed(1) + ' GB por hora' + (free != null ? ' · ' + gb(free) + ' livres (' + Math.floor(free / 1e9 / perHour) + ' h de gravação)' : ' · clique em Verificar pasta') + '. Arquivo MP4 (H.264 + AAC).';
-    } else recStatus.textContent = live.recorded ? 'Última gravação: ' + live.recorded.file + ' (' + gb(live.recorded.size) + ')' : 'Gravação desligada.';
+      recStatus.textContent = live.recorded ? lastFiles() : !model.dir ? 'Escolha a pasta de gravação.' : 'Cerca de ' + perHour.toFixed(1) + ' GB por hora' + (free != null ? ' · ' + gb(free) + ' livres (' + Math.floor(free / 1e9 / perHour) + ' h de gravação)' : ' · clique em Verificar pasta') + '. ' + (model.recordFormats === 'both' ? 'Dois arquivos MP4: 16:9 e 9:16.' : 'Arquivo MP4 ' + model.recordFormats + '.') + ' (H.264 + AAC)';
+    } else recStatus.textContent = live.recorded ? lastFiles() : 'Gravação desligada.';
     paintButtons();
   }
   function paintButtons() {
@@ -260,7 +264,7 @@
         liveTx.recorderV = recorderV;
       }
       const dual = needV;
-      const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.phase = 'connecting';
+      const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = ''; liveTx.phase = 'connecting';
       for (const d of targets) live.states.set(d.id, { state: 'connecting' });
       sync(); txStatus('Conectando o codificador…');
       liveTx.stopTimer = setTimeout(() => { if (epoch === liveTx.epoch && liveTx.phase !== 'sending') finishTransport('O codificador não iniciou o envio. Confira a conexão e tente de novo.'); }, 35000);
@@ -281,8 +285,8 @@
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { const groups = msg.groups || ['h']; if (groups.includes('h') || !dual) recorder.start(250); else liveTx.recorder = null; if (recorderV && groups.includes('v')) recorderV.start(250); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
-        else if (msg.type === 'recording') { live.recording = msg; paintButtons(); }
-        else if (msg.type === 'recorded') { live.recorded = msg; log('Gravação salva: ' + msg.file); summary(); }
+        else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
+        else if (msg.type === 'recorded') { live.recorded = msg; live.files.push(msg); log('Gravação ' + (msg.format || '') + ' salva: ' + msg.file); summary(); }
         else if (msg.type === 'destination') {
           live.states.set(msg.id, { state: msg.state, reason: msg.reason || '' }); paintStatus();
           const d = model.destinations.find(x => x.id === msg.id);
@@ -296,9 +300,9 @@
           }
           liveTx.phase = 'sending'; state.live = true; liveTx.frames = msg.frames; sync();
           const trouble = [...live.states.values()].filter(s => s.state === 'retrying').length;
-          txStatus((targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
+          txStatus((liveTx.notice ? liveTx.notice + ' — ' : '') + (targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
         }
-        else if (msg.type === 'notice') { log(msg.message); txStatus(msg.message); }
+        else if (msg.type === 'notice') { log(msg.message); liveTx.notice = msg.message; txStatus(msg.message); }
         else if (msg.type === 'error') finishTransport(msg.message);
         else if (msg.type === 'stopped') finishTransport();
       };
