@@ -20,6 +20,8 @@ Na mesma rede Wi-Fi, a mesa basta. Para câmeras em 4G/5G ou em outra rede, publ
 
 O instalador ainda não tem assinatura digital, então o Windows SmartScreen mostra "O Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**. Para distribuir a clientes, assine com um certificado de assinatura de código (veja [AVALIACAO_PRODUTO.md](AVALIACAO_PRODUTO.md)).
 
+**Versão portátil (sem instalar).** Na mesma página de versões, baixe `Andromeda-Live-0.12.0-portatil-windows.zip`, clique com o botão direito → **Extrair tudo**, abra a pasta extraída e dê dois cliques em **Andromeda Live**. O navegador costuma baixar `.zip` sem a retenção que aplica a programas `.exe`.
+
 **Modo navegador (alternativa).** Com Node.js 22 ou superior: `INSTALAR.bat` e depois `INICIAR.bat`, que abre a mesa no navegador em `http://localhost:3180`. Mantenha a aba visível durante a transmissão.
 
 **Pastas do programa instalado:** logs de auditoria, licença e configuração da nuvem ficam em `%APPDATA%\Andromeda Live\` (cole esse caminho na barra do Explorador de Arquivos).
