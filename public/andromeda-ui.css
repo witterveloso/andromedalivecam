@@ -635,3 +635,35 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .layout-editing .free-grid, .layout-editing .free-editbar { -webkit-user-select: none; user-select: none; }
 .free-editbar { width: auto; max-width: calc(100% - 32px); }
 .free-editbar span { flex: 0 1 auto; }
+
+/* ---------- mesa na nuvem: retorno do PGM e controle remoto ---------- */
+.remote-panel { display: grid; gap: 12px; }
+.remote-intro p { max-width: 80ch; }
+.remote-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 12px; }
+.remote-card { display: grid; grid-template-columns: 132px minmax(0, 1fr); grid-template-areas: "title title" "text text" "qr url" "qr actions" "extra extra" "list list"; gap: 8px 12px; padding: 14px; background: var(--d-inset); border: 1px solid var(--d-line); border-radius: 10px; }
+.remote-card h4 { grid-area: title; margin: 0; color: var(--d-text); font: 700 12px var(--d-display); letter-spacing: .14em; text-transform: uppercase; }
+.remote-card > p { grid-area: text; margin: 0; color: var(--d-muted); font-size: 12px; }
+.remote-qr { grid-area: qr; width: 132px; aspect-ratio: 1; display: grid; place-items: center; padding: 6px; background: #fff; border-radius: 8px; color: #555; font-size: 10px; text-align: center; }
+.remote-qr:empty, .remote-qr:not(:has(svg)) { background: transparent; border: 1px dashed var(--d-line-2); color: var(--d-faint); }
+.remote-qr svg { width: 100%; height: 100%; }
+.remote-card > label:not(.remote-check) { grid-area: url; display: grid; gap: 4px; color: var(--d-muted); font-size: 11px; }
+.remote-url { width: 100%; min-width: 0; font: 500 11px var(--d-mono); }
+.remote-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+.remote-actions button, .remote-forget { min-height: 30px; padding: 0 10px; font-size: 11.5px; }
+.remote-make { background: var(--brand-blue); border-color: transparent; color: #00142a; font-weight: 800; }
+.remote-check, .remote-forget { grid-area: extra; justify-self: start; display: flex; align-items: center; gap: 6px; color: var(--d-muted); font-size: 12px; }
+.remote-list { grid-area: list; display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.remote-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--d-line); border-radius: 8px; font-size: 12px; }
+.remote-item span { flex: 1 1 160px; }
+.remote-item[data-state="pending"] { border-color: var(--brand-blue); background: rgba(0, 163, 255, .08); }
+.remote-item button { min-height: 28px; padding: 0 10px; font-size: 11px; }
+.remote-empty { color: var(--d-faint); font-size: 12px; }
+.remote-note:empty { display: none; }
+.remote-yes { background: var(--brand-blue); border-color: transparent; color: #00142a; font-weight: 800; }
+.remote-no { color: #ff8fa3; }
+.remote-ask { position: fixed; top: 64px; right: 16px; z-index: 80; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; width: min(420px, calc(100% - 32px)); padding: 12px 14px; background: #0e1640; border: 1px solid var(--brand-blue); border-radius: var(--d-r); box-shadow: 0 14px 40px rgba(0, 0, 0, .6); }
+.remote-ask p { flex: 1 1 100%; margin: 0; color: var(--d-text); font-size: 13px; }
+.remote-ask strong { color: var(--brand-blue); }
+.remote-ask button { min-height: 34px; }
+.remote-chip { align-self: center; margin-right: 12px; padding: 3px 9px; border: 1px solid var(--brand-blue); border-radius: 999px; color: var(--brand-blue); font: 700 10px var(--d-mono); letter-spacing: .08em; white-space: nowrap; }
+@media (max-width: 600px) { .remote-card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "text" "qr" "url" "actions" "extra" "list"; } }
