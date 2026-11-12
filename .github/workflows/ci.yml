@@ -77,8 +77,14 @@ jobs:
       - name: Abrir o programa empacotado e conferir a mesa
         shell: pwsh
         run: |
+          # Confere a versão portátil exatamente como o usuário a recebe: o zip extraído.
+          $zip = Get-ChildItem dist\*-portatil-windows.zip | Select-Object -First 1
+          if (-not $zip) { throw 'Zip portátil não foi gerado' }
+          $portable = Join-Path $env:RUNNER_TEMP 'portatil'
+          Expand-Archive -Path $zip.FullName -DestinationPath $portable -Force
           $result = Join-Path $env:RUNNER_TEMP 'smoke.json'
-          $exe = Join-Path $PWD 'dist\win-unpacked\Andromeda Live.exe'
+          $exe = Join-Path $portable 'Andromeda Live.exe'
+          if (-not (Test-Path $exe)) { Get-ChildItem $portable; throw 'Andromeda Live.exe não está na raiz do zip' }
           $p = Start-Process -FilePath $exe -ArgumentList "--smoke-test=$result" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'O programa não terminou a conferência em 120 s' }
           Get-Content $result
@@ -92,6 +98,7 @@ jobs:
           name: Andromeda-Live-Windows
           path: |
             dist/*.exe
+            dist/*.zip
             dist/smoke.json
             dist/smoke.png
           if-no-files-found: error
@@ -104,9 +111,9 @@ jobs:
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "v$version"
-          if (-not (Test-Path dist\*.exe)) { throw 'Nenhum instalador em dist/' }
+          if (-not (Test-Path dist\*.exe) -or -not (Test-Path dist\*.zip)) { throw 'Instalador ou zip portátil ausente em dist/' }
           # O próprio gh expande o padrão; nada de listas do PowerShell (um item único virava letras soltas).
           gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' --clobber }
-          else { gh release create $tag 'dist/*.exe' --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' 'dist/*.zip' --clobber }
+          else { gh release create $tag 'dist/*.exe' 'dist/*.zip' --title "Andrômeda Live $version" --notes-file ATUALIZACAO_012.md --target $env:GITHUB_SHA }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a versão' }

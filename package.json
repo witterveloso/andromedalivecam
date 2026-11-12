@@ -13,7 +13,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "test:ui": "node test/workspace-ui.cjs",
     "test:python": "python3 -m unittest discover -s test -p \"*_test.py\"",
-    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never",
     "dist:dir": "electron-builder --dir --publish never"
   },
   "dependencies": {
@@ -58,10 +58,16 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "desktop/build/icon.ico",
-      "artifactName": "Andromeda-Live-Setup-${version}.${ext}"
+      "artifactName": "Andromeda-Live-${version}-portatil-windows.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -72,7 +78,8 @@
       "shortcutName": "Andromeda Live",
       "uninstallDisplayName": "Andromeda Live",
       "installerIcon": "desktop/build/icon.ico",
-      "uninstallerIcon": "desktop/build/icon.ico"
+      "uninstallerIcon": "desktop/build/icon.ico",
+      "artifactName": "Andromeda-Live-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
