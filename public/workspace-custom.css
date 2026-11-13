@@ -11,3 +11,8 @@
 .transition-lever:focus-visible{outline:2px solid #00a3ff;outline-offset:4px;border-radius:8px}
 .dock-panel .trans-panel{width:100%;min-width:0}.dock-panel .pgm-audio-monitor{margin:0;border:0;border-top:1px solid #33394e}
 @media(max-width:900px){.custom-workspace.main{grid-template-columns:1fr}.dock-left,.dock-right,.dock-bottom{grid-column:1}.dock-right{grid-row:1}.layout-row{grid-template-columns:1fr 1fr 35px 35px}.layout-row strong{grid-column:1/-1}.layout-row select{min-width:0;width:100%}}@media(max-width:500px){.workspace-page>.dock-panel[data-width=half]{width:100%}.dock-zone>.dock-panel[data-width=half]{grid-column:span 2}}
+
+/* Prévia dos efeitos acompanha a rolagem: fica presa logo abaixo da barra do topo enquanto os ajustes descem ou sobem. */
+.workspace-page>.dock-panel[data-tool=fx-preview]{position:sticky;top:calc(var(--topbar-h,56px) + 12px);z-index:5;max-height:calc(100vh - var(--topbar-h,56px) - 66px);overflow-y:auto}
+.workspace-page>.dock-panel[data-tool=fx-preview] canvas{display:block;width:auto;max-width:100%;max-height:max(160px,calc(100vh - var(--topbar-h,56px) - 370px));margin-inline:auto}
+@media(max-width:500px){.workspace-page>.dock-panel[data-tool=fx-preview]{position:static;max-height:none;overflow:visible}.workspace-page>.dock-panel[data-tool=fx-preview] canvas{width:100%;max-height:none}}

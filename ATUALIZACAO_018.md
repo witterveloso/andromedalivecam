@@ -1,5 +1,16 @@
 # Andrômeda Live 0.18 — gravação em 16:9 e 9:16
 
+## 0.18.1 — prévia dos efeitos acompanha a rolagem
+
+Na página **GC e efeitos**, a **Prévia dos efeitos** agora acompanha a barra de rolagem:
+- ao descer ou subir a página para mexer nos ajustes (GC, logotipo, PiP), a prévia fica presa logo abaixo do menu do topo, ao lado dos ajustes;
+- em telas mais baixas, como notebooks, a imagem da prévia diminui para caber inteira na altura da tela;
+- no celular, onde os painéis ficam um embaixo do outro, a prévia continua no lugar normal.
+
+Testado no navegador em 1600×900, 1366×680 e 420×860, rolando para baixo e para cima, inclusive com o mouse sobre a prévia.
+
+## 0.18.0
+
 A gravação passa a sair nos dois formatos por padrão: um arquivo horizontal para YouTube, Facebook e edição, e um vertical para Instagram, TikTok, Reels e Shorts.
 
 ## Gravação nos dois formatos
