@@ -3,7 +3,7 @@
  * Operação reorganizada (0.19).
  *
  * - "Comandos" no lugar da seleção de fontes: o PREVIEW passa a ser escolhido no multiview (clique) e o painel
- *   ganha os comandos de produção: GC 1–3, LOGO, REGRESSIVA (direto no AR), PiP, VT e VINHETA (vão ao PREVIEW),
+ *   ganha os comandos de produção: GC 1–3, LOGO, REGRESSIVA (direto no AR), VT, VT PRÓXIMO e VINHETA (vão ao PREVIEW),
  *   BLACK (F1) e BARRAS (F2). Clique executa; duplo clique abre os ajustes do comando.
  * - "Áudio master" no lugar de "Camadas no ar": modulação L/R, fader master e FADE OUT com tempo ajustável.
  *   O monitor do AR fica só com a imagem; o áudio liga sozinho na primeira interação.
@@ -41,7 +41,7 @@
   bus.querySelectorAll('.bus-row').forEach(row => { row.hidden = true; });
   const grid = make('div', 'cmd-grid'); grid.setAttribute('role', 'toolbar'); grid.setAttribute('aria-label', 'Comandos de produção');
   bus.append(grid);
-  bus.append(keyPanel); // monitor do KEY 1 (PiP) acompanha o comando PiP
+  bus.append(keyPanel); // monitor do KEY 1 (PiP; o PiP agora só se liga em GC e efeitos)
 
   const gcName = n => (fx.live.layers[n]?.name || 'GC ' + (n + 1));
   const COMMANDS = [
@@ -50,8 +50,8 @@
     { id: 'gc2', name: () => 'GC · ' + gcName(2), run: () => $('#fxGC2').click(), on: () => fx.live.layers[2]?.on, settings: () => openGC(2) },
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
-    { id: 'pip', name: () => 'PiP', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
+    { id: 'vtnext', name: () => 'PRÓXIMO VT', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
     { id: 'vinheta', name: () => 'VINHETA', sub: () => vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo', run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
     { id: 'black', name: () => 'BLACK', run: () => R.toggleBlack(), on: () => black.on, settings: b => popBlack(b) },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.toggleBars(), on: () => bars.on, settings: b => popBars(b) },
@@ -60,6 +60,8 @@
   const LAYOUT_KEY = 'andromeda.commands.v1';
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
+  // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
+  if (!cmdLayout.order.includes('vtnext') && cmdLayout.order.includes('vt')) cmdLayout.order.splice(cmdLayout.order.indexOf('vt') + 1, 0, 'vtnext');
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
 
@@ -84,7 +86,7 @@
       b.querySelector('.cmd-name').textContent = c.name(); b.querySelector('.cmd-sub').textContent = sub;
       const key = keyOf(id); b.querySelector('.cmd-key').textContent = key ? prettyKey(key) : '';
       b.setAttribute('aria-pressed', String(on)); b.dataset.prv = String(prv);
-      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vinheta: 'leva ao PREVIEW', countdown: 'entra/sai do AR', black: 'fade para o preto / volta', bars: 'barras no AR / retira' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
+      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vtnext: 'dispara o próximo VT da playlist (com VT no AR, troca já; senão leva ao PREVIEW)', vinheta: 'leva ao PREVIEW', countdown: 'entra/sai do AR', black: 'fade para o preto / volta', bars: 'barras no AR / retira' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
     }
   }
   setInterval(paint, 200);
@@ -248,8 +250,8 @@
     { id: 'gc2', label: 'GC 3', key: 'F5', run: () => byId('gc2').run() },
     { id: 'logo', label: 'LOGO', key: 'F6', run: () => byId('logo').run() },
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
-    { id: 'pip', label: 'PiP', key: 'F8', run: () => byId('pip').run() },
     { id: 'vt', label: 'VT no PREVIEW', key: 'F9', run: () => R.vtToPreview() },
+    { id: 'vtnext', label: 'VT PRÓXIMO (dispara o próximo da playlist)', key: 'Shift+F9', run: () => R.vtNext() },
     { id: 'vinheta', label: 'VINHETA no PREVIEW', key: 'F10', run: () => R.vinhetaToPreview() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
   ];
@@ -261,7 +263,7 @@
     const base = e.code === 'Space' ? 'Space' : e.key === 'Enter' ? 'Enter' : /^F\d{1,2}$/.test(e.key) ? e.key : e.key.length === 1 ? e.key.toUpperCase() : e.key;
     return [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && base.length > 1 && 'Shift', base].filter(Boolean).join('+');
   };
-  const prettyKey = k => k.replace('Space', 'Espaço').replace('Enter', 'Enter').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→');
+  const prettyKey = k => k.replace('Space', 'Espaço').replace('Enter', 'Enter').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→').replace('Shift+', '⇧');
   const LEGACY = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', 'M', 'Space', 'Enter']);
   const typing = t => t.isContentEditable || !!t.closest?.('input,select,textarea');
   let capturing = null;

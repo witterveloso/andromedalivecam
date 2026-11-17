@@ -295,6 +295,24 @@ function vtToPreview() {
   audioMixer.enable().catch(() => {});
   select('prv', VT_SOURCE); return true;
 }
+// Comando VT PRÓXIMO: dispara o próximo VT da playlist sem abrir o painel.
+// Com um VT tocando no AR, troca já para o seguinte (sem sair do AR); sem VT no AR, leva o próximo ao PREVIEW, como o botão VT.
+function vtNext() {
+  if (!vt.items.length) { log('VT: adicione vídeos na playlist (painel VT · Playlist).'); return false; }
+  if (!(state.pgm === VT_SOURCE && vtPlayer.running)) return vtToPreview();
+  const next = vt.items.indexOf(vtPlayer.item) + 1, item = vt.items[next];
+  if (!item) { log('VT: este é o último da playlist.'); return false; }
+  if (item.error) { log('VT: o próximo ("' + item.name + '") não pode ser exibido: ' + item.error); return false; }
+  vtPlayer.running = false; vtPlayer.item.el.pause(); vt.cue = next; vtPlayer.item = item; startPlayer(vtPlayer); paintVTList();
+  audit('info', 'vt-proximo', 'VT PRÓXIMO disparado: ' + item.name); return true;
+}
+// Texto do botão: qual VT será disparado (e a posição na playlist).
+function vtNextLabel() {
+  if (!vt.items.length) return 'playlist vazia';
+  const onAir = state.pgm === VT_SOURCE && vtPlayer.running, at = onAir ? vt.items.indexOf(vtPlayer.item) + 1 : vt.cue, item = vt.items[at];
+  if (!item) return 'último VT';
+  return (at + 1) + '/' + vt.items.length + ' · ' + item.name;
+}
 function vtOff() { if (state.pgm === VT_SOURCE && !state.busy && state.progress === 0) { if (vtPlayer.transition === 'cut') cut(); else auto(); } }
 $('#vtFire').onclick = () => vtToPreview();
 $('#vtStop').onclick = () => vtOff();
@@ -385,4 +403,4 @@ inspectionSettings = function () { return inspecting === 'countdown' ? structure
 
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
 window.andromedaRundown = { countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
-  addFiles, cue, vtToPreview, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };
+  addFiles, cue, vtToPreview, vtNext, vtNextLabel, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };

@@ -796,6 +796,8 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .cmd-btn[data-prv="true"] .cmd-sub { color: var(--d-pvw-text); }
 .cmd-btn[aria-pressed="true"] { border-color: #ff5c7c; background: var(--d-pgm); color: #fff; }
 .cmd-btn[aria-pressed="true"] .cmd-sub, .cmd-btn[aria-pressed="true"] .cmd-key { color: rgba(255, 255, 255, .85); }
+.cmd-btn[data-cmd="vtnext"] { border-color: #ffb020; border-style: dashed; }
+.cmd-btn[data-cmd="vtnext"] .cmd-name { color: #ffd37a; font-size: .92em; letter-spacing: 0; }
 .cmd-btn[data-cmd="black"] { background: #000; }
 .cmd-btn[data-cmd="black"][aria-pressed="true"] { background: var(--d-pgm); }
 .cmd-pop { position: fixed; z-index: 95; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--d-line-2); border-radius: var(--d-r); background: var(--d-panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .6); }
