@@ -1,5 +1,11 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.4
+- **Medidores de áudio no estilo da referência do operador:** barras arredondadas que enchem em degradê contínuo (verde na base, amarelo e vermelho na ponta), sem segmentos.
+  - **Mixer de áudio:** um canal por fonte, lado a lado, com o medidor alto, o **nome curto embaixo** (CAM 1, BM CAM…; o nome completo aparece ao passar o mouse) em verde, e o estado: **MUTE** em vermelho quando a fonte está em OFF (barra apagada e nome em cinza), **AFV** ou **ON** nos outros casos. Modo e volume continuam embaixo de cada canal; "Reiniciar vídeo" só aparece para fontes que são arquivos de vídeo.
+  - **Áudio master:** L e R no mesmo estilo, com o pico em dBFS e o nome do canal embaixo.
+  - A altura da barra continua sendo o pico real em dBFS (−60 a 0). Chegar a 0 dBFS (limite digital) acende a borda vermelha e o selo PEAK.
+
 ## 0.21.3
 - **Mesa no Padrão novo: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.** Quem estava com o Padrão antigo passa ao novo sozinho; um layout mexido pelo operador fica como está (e o Padrão novo pode ser escolhido em *Personalizar → Modelo*).
 - **PREVIEW e PGM iguais e alinhados:** o PGM ganhou a mesma faixa de informação embaixo da imagem (fonte no ar e estado do sinal; com VT no ar mostra o nome e NO AR ou PAUSADO). Antes só o PREVIEW tinha a faixa e a imagem do PGM ficava 22 px mais baixa.
