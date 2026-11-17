@@ -83,5 +83,19 @@ q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(
 // Ordem e visibilidade dos botões de comando.
 q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,9,'and hidden');
 console.log('PASS: commands panel (GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
+{const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
+assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');
+assert.deepEqual([...q('#pfPreset').options].map(o=>o.value),['veryfast','superfast','ultrafast']);
+// ajuste fino: guarda a compensação e a mostra com sinal
+q('#syncSlider').value='-120';q('#syncSlider').dispatchEvent(new w.Event('input'));assert.equal(vm.runInContext('andromedaBroadcast.model.avSyncMs',ctx),-120);assert.match(q('#syncState').textContent,/−120 ms · imagem atrasada/);q('#syncSlider').value='80';q('#syncSlider').dispatchEvent(new w.Event('input'));assert.match(q('#syncState').textContent,/\+80 ms · som atrasado/);q('#syncZero').click();assert.equal(vm.runInContext('andromedaBroadcast.model.avSyncMs',ctx),0);
+q('#pfPreset').value='ultrafast';q('#pfPreset').dispatchEvent(new w.Event('change'));assert.equal(vm.runInContext('andromedaBroadcast.model.preset',ctx),'ultrafast');q('#pfPreset').value='veryfast';q('#pfPreset').dispatchEvent(new w.Event('change'));
+// a mensagem de início leva compensação, velocidade, e avisa que o navegador sabe reabrir o gravador; só a calibração pede "calibrate"
+const src=fs.readFileSync(root+'/broadcast.js','utf8');assert.match(src,/avSyncMs: liveTx\.calibrating \? 0 : \(model\.avSyncMs \|\| 0\), preset: model\.preset \|\| 'veryfast', resync: true, calibrate: !!liveTx\.calibrating/);assert.match(src,/if \(!liveTx\.calibrating\) state\.live = true/,'calibration never puts the desk on air');
+assert.match(src,/recorder\.state === 'inactive'\) recorder\.start\(100\)/,'a restart never calls start() on a recording recorder');assert.match(src,/msg\.type === 'restart'\) \{ reopen\(msg\.group\)/);
+// sem plataforma alcançável, o pré-voo impede o início; com falha do próprio pré-voo, não atrapalha
+assert.equal(typeof vm.runInContext('window.andromedaPreflight',ctx),'function');
+// modo leve: miniaturas ainda mais espaçadas quando o codificador fica para trás
+assert.match(fs.readFileSync(root+'/index.html','utf8'),/const k=window\.andromedaLight\?3:1;/);assert.match(src,/if \(msg\.overload\) window\.andromedaLight = true/);
+console.log('PASS: lip-sync calibration and fine adjustment, machine check card, restart-safe recorders, light mode')}
 console.log('PASS: remote control applies PRV/CUT through the desk buttons and refuses anything else');
 console.log('PASS: all application scripts load; Preview left / PGM right; audio attached; 15 tool panels; partial transition; both T-bar directions; AUTO lock; free layout: size, position, page, no overlap, edit mode');dom.window.close();

@@ -6,6 +6,10 @@
  * São processos independentes: se o vertical cair, o 16:9 continua no ar (e vice-versa); a sessão só termina
  * quando o operador para ou quando todos os formatos falham.
  *
+ * Autorrecuperação: se o FFmpeg de um formato cair no meio da sessão, ele é reiniciado (até 3 vezes em 2 minutos) e o navegador
+ * recebe {type:'restart'} para abrir um gravador novo (o cabeçalho do WebM só existe no começo de cada gravador); até o cabeçalho
+ * novo chegar, os pedaços antigos são descartados. Cada reinício grava num arquivo novo (_p2, _p3…), sem sobrescrever o anterior.
+ *
  * Protocolo (WebSocket):
  *  - texto: {type:'start', destinations:[{…, aspect}], record:{dir, formats}, vertical:{resolution, bitrate}, channels}
  *           e {type:'stop'}.
@@ -14,12 +18,16 @@
  */
 const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
+const os = require('node:os');
+const { analyze } = require('./avsync.cjs');
 const { validateConfig, validateBroadcast, argsFor, argsForGroup, groupsFor, detectEncoders, destinationEvents, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
 
 const MAX_QUEUE = 8 * 1024 * 1024;
+const EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]); // assinatura do início de um arquivo WebM/Matroska
 
 function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shared }) {
-  let stopping = false, everStarted = false, lastInput = Date.now(), startedAt = 0, broadcast = null, dual = false;
+  let stopping = false, everStarted = false, lastInput = Date.now(), startedAt = 0, broadcast = null, dual = false, calibrating = null, canRestart = false;
+  const parts = new Map(), restarts = new Map(); // id do grupo -> arquivos de gravação (um por reinício) / instantes dos reinícios
   const runners = new Map(); // id do grupo -> { group, child, ready, lastFrame, lastProgress, stderr, progress, closed, killTimer }
   const troubled = new Map();
   const send = data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
@@ -53,13 +61,23 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     clearInterval(watchdog);
     if (shared.active === ws) shared.active = null;
     if (startedAt) audit.info('transmissao', 'fim', 'Envio encerrado', { segundos: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0, quadros: Math.max(0, ...[...runners.values()].map(r => r.lastFrame)), formatos: [...runners.keys()] });
-    const records = [...runners.values()].filter(r => r.group?.record).map(r => ({ ...r.group.record, aspect: r.group.aspect }));
+    const records = [...parts.values()].flat();
     const next = () => {
       const record = records.shift();
       if (!record) { send({ type: 'stopped' }); ws.close(); return; }
-      finalize(record, saved => { if (saved) { audit.info('gravacao', 'arquivo', 'Gravação ' + record.aspect + ' salva', { arquivo: saved.file, formato: record.aspect, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', format: record.aspect, ...saved }); } else { audit.error('gravacao', 'arquivo-vazio', 'A gravação ' + record.aspect + ' não gerou arquivo.'); send({ type: 'notice', message: 'Atenção: a gravação ' + record.aspect + ' não gerou arquivo.' }); } next(); });
+      finalize(record, saved => { if (calibrating) { measureCalibration(saved, next); return; } if (saved) { audit.info('gravacao', 'arquivo', 'Gravação ' + record.aspect + ' salva', { arquivo: saved.file, formato: record.aspect, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', format: record.aspect, ...saved }); } else { audit.error('gravacao', 'arquivo-vazio', 'A gravação ' + record.aspect + ' não gerou arquivo.'); send({ type: 'notice', message: 'Atenção: a gravação ' + record.aspect + ' não gerou arquivo.' }); } next(); });
     };
     next();
+  }
+
+  // Calibração do sincronismo: a gravação de teste (clarões + bipes) é medida aqui e apagada em seguida.
+  function measureCalibration(saved, next) {
+    const dir = calibrating.dir;
+    const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* arquivo temporário preso: o sistema limpa depois */ } };
+    if (!saved) { send({ type: 'avsync', error: 'A gravação de teste não gerou arquivo.' }); cleanup(); next(); return; }
+    analyze(ffmpeg, saved.file).then(result => { audit.info('sincronismo', 'calibracao', 'Sincronismo medido: som ' + result.offsetMs + ' ms em relação à imagem', { dispersaoMs: result.spreadMs, pares: result.pairs }); send({ type: 'avsync', ...result }); })
+      .catch(e => { audit.warn('sincronismo', 'calibracao-falhou', e.message); send({ type: 'avsync', error: e.message }); })
+      .finally(() => { cleanup(); next(); });
   }
 
   const watchdog = setInterval(() => {
@@ -91,16 +109,64 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     r.warnedAt = Date.now();
     const message = 'Atenção: o computador está entregando poucos quadros para a saída ' + r.group.aspect + ' (a imagem fica travando na gravação e na transmissão). Feche programas pesados ou use 720p.';
     audit.warn('transmissao', 'quadros-faltando', message, { formato: r.group.aspect, repetidosPorSegundo: fresh });
-    send({ type: 'notice', message });
+    send({ type: 'notice', overload: true, message });
   }
 
-  function launch(group, args) {
-    const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dups: 0, starved: 0, warnedAt: 0 };
+  // Velocidade real do codificador: quanto de imagem ele produz por segundo de relógio. Com entrada ao vivo, 1,0 é o normal;
+  // abaixo disso ele está ficando para trás (computador sobrecarregado). Média das últimas 8 amostras (8 s).
+  function load(r) {
+    const now = Date.now();
+    if (r.prevWall && Number.isFinite(r.curOut) && Number.isFinite(r.prevOut)) {
+      r.samples.push({ wall: (now - r.prevWall) / 1000, out: (r.curOut - r.prevOut) / 1e6 }); if (r.samples.length > 8) r.samples.shift();
+      const wall = r.samples.reduce((a, s) => a + s.wall, 0), out = r.samples.reduce((a, s) => a + s.out, 0);
+      r.speed = wall > 0 ? out / wall : 1;
+      if (r.samples.length >= 8 && r.lastFrame > 150 && !stopping) {
+        const low = r.speed < .92;
+        if (low && now - r.warnedLoad > 60000) {
+          r.warnedLoad = now;
+          const message = 'Atenção: o computador não está acompanhando a codificação ' + r.group.aspect + ' (' + r.speed.toFixed(2).replace('.', ',') + '× do tempo real). A imagem pode travar. Mesa em modo leve; feche programas pesados, ligue o cabo de força ou use 720p.';
+          audit.warn('transmissao', 'sobrecarga', message, { formato: r.group.aspect, velocidade: Math.round(r.speed * 100) / 100 }); send({ type: 'notice', overload: true, message });
+        }
+      }
+      if (now - r.sentHealth > 4000) { r.sentHealth = now; send({ type: 'health', group: r.group.aspect, speed: Math.round(r.speed * 100) / 100 }); }
+    }
+    r.prevWall = now; r.prevOut = r.curOut;
+  }
+
+  // Reinicia o codificador de um formato que caiu. Devolve false se não puder (cliente antigo, já reiniciou 3 vezes em 2 min…).
+  function tryRestart(r) {
+    if (!canRestart || !broadcast || stopping || r.failed) return false;
+    const now = Date.now(), recent = (restarts.get(r.group.id) || []).filter(t => now - t < 120000);
+    if (recent.length >= 3) { audit.error('transmissao', 'reinicio-esgotado', 'O codificador ' + r.group.aspect + ' caiu 3 vezes em 2 minutos: sem novas tentativas.'); return false; }
+    recent.push(now); restarts.set(r.group.id, recent);
+    const group = { ...r.group }, n = (parts.get(group.id) || []).length + 1;
+    if (group.record) group.record = { ...group.record, file: group.record.file.replace(/(_p\d+)?\.mkv$/, '_p' + n + '.mkv') };
+    audit.warn('transmissao', 'reinicio', 'Codificador ' + group.aspect + ' reiniciado (tentativa ' + recent.length + ' de 3)', { formato: group.aspect });
+    launch(group, argsForGroup(broadcast, group), true);
+    runners.get(group.id).awaitHeader = true; // descarta o que o gravador antigo ainda mandar até chegar o cabeçalho novo
+    for (const d of group.destinations) send({ type: 'destination', id: d.id, state: 'retrying', reason: 'Codificador reiniciado' });
+    send({ type: 'restart', group: group.id, attempt: recent.length, message: 'O codificador ' + group.aspect + ' foi reiniciado sozinho (tentativa ' + recent.length + ' de 3). A transmissão volta em instantes.' });
+    send({ type: 'notice', message: 'O codificador ' + group.aspect + ' foi reiniciado sozinho (tentativa ' + recent.length + ' de 3). A transmissão volta em instantes.' });
+    return true;
+  }
+
+  // Erro de escrita no pipe, fechamento do processo e entrada interrompida chegam em ordem imprevisível: o primeiro decide.
+  function died(r, message) {
+    if (r.dying) return; r.dying = true;
+    if (!stopping && tryRestart(r)) return;
+    groupFailed(r, message);
+  }
+
+  function launch(group, args, restarted = false) {
+    const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dying: false, awaitHeader: false, dups: 0, starved: 0, warnedAt: 0, samples: [], speed: 1, prevWall: 0, prevOut: 0, curOut: NaN, warnedLoad: 0, sentHealth: 0 };
     runners.set(group.id, r);
+    if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
-    child.on('spawn', () => { r.ready = true; if ([...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
+    // Prioridade acima do normal: em computador apertado, quem disputa a CPU (navegador, antivírus) não deve atrasar o codificador.
+    try { if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL); } catch { /* sem permissão: segue com a prioridade normal */ }
+    child.on('spawn', () => { r.ready = true; if (!restarted && [...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
     child.on('error', () => groupFailed(r, 'Não foi possível iniciar o FFmpeg. Execute o diagnóstico do pacote.'));
-    child.stdin.on('error', () => { if (!stopping) groupFailed(r, 'Entrada do codificador interrompida.'); });
+    child.stdin.on('error', () => { if (!stopping) died(r, 'Entrada do codificador interrompida.'); });
     child.stderr.on('data', d => {
       const text = d.toString();
       r.stderr = (r.stderr + (broadcast ? redact(text, { destinations: group.destinations }) : text)).slice(-8192);
@@ -117,6 +183,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       while ((idx = r.progress.indexOf('\n')) >= 0) {
         const line = r.progress.slice(0, idx).trim(); r.progress = r.progress.slice(idx + 1);
         if (line.startsWith('dup_frames=')) { starving(r, Number(line.slice(11))); continue; }
+        if (line.startsWith('out_time_us=')) { r.curOut = Number(line.slice(12)); continue; }
+        if (line === 'progress=continue') { load(r); continue; }
         if (!line.startsWith('frame=')) continue;
         const frames = Number(line.slice(6)); if (!(frames > r.lastFrame)) continue;
         if (!r.lastFrame) audit.info('transmissao', 'enviando', 'Codificador ' + group.aspect + ' produzindo quadros');
@@ -131,7 +199,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       if (!stopping && !r.failed) {
         const message = broadcast ? safeBroadcastError(r.stderr) : safeError(r.stderr);
         audit.error('transmissao', 'codificador-encerrou', message, { formato: group.aspect, codigo: code, log: r.stderr.slice(-1500) });
-        groupFailed(r, message);
+        died(r, message);
       }
       r.child = null;
       if (!alive().length) finish();
@@ -146,8 +214,15 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       if (dual) { id = data[0] === 1 ? 'v' : 'h'; chunk = data.subarray(1); }
       const r = runners.get(id);
       if (!r || !r.ready || r.closed || r.failed) { send({ type: 'ack', bytes: data.length }); return; }
+      if (r.awaitHeader) {
+        // O Chrome costuma dividir o começo do WebM em pedaços pequenos (o 1º pode ter 1 byte): procura a assinatura do cabeçalho
+        // (1A 45 DF A3) na sequência, inclusive entre dois pedaços, e só então começa a entregar dados ao codificador.
+        const joined = r.headTail ? Buffer.concat([r.headTail, chunk]) : chunk, at = joined.indexOf(EBML);
+        if (at < 0) { r.headTail = joined.subarray(Math.max(0, joined.length - 3)); send({ type: 'ack', bytes: data.length }); return; }
+        r.awaitHeader = false; r.headTail = null; chunk = joined.subarray(at);
+      }
       if (r.child.stdin.writableLength + chunk.length > MAX_QUEUE) { groupFailed(r, 'O codificador ' + r.group.aspect + ' não está acompanhando o sinal. Reduza a resolução e tente novamente.'); send({ type: 'ack', bytes: data.length }); return; }
-      r.child.stdin.write(chunk, err => { if (err && !stopping) groupFailed(r, 'O codificador encerrou a entrada de vídeo.'); else if (!err) send({ type: 'ack', bytes: data.length }); });
+      r.child.stdin.write(chunk, err => { if (err && !stopping) died(r, 'O codificador encerrou a entrada de vídeo.'); else if (!err) send({ type: 'ack', bytes: data.length }); });
       return;
     }
     let msg; try { msg = JSON.parse(data.toString()); } catch { fail('Comando inválido.'); return; }
@@ -157,6 +232,11 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     everStarted = true;
     if (shared.active) { fail('Já existe uma transmissão ativa neste serviço. Encerre-a na outra aba.'); return; }
     if (!ffmpeg) { fail('FFmpeg não encontrado. Execute INSTALAR.bat e depois INICIAR.bat.'); return; }
+    if (msg.calibrate === true) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-sync-'));
+      calibrating = { dir };
+      msg = { type: 'start', resolution: '720p', bitrate: 3, encoder: 'libx264', destinations: [], record: { dir, formats: '16:9' }, channels: 1, avSyncMs: 0 };
+    }
     const multi = Array.isArray(msg.destinations) || !!msg.record;
     let cfg, groups;
     try {
@@ -169,7 +249,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         if (groups.length > 1 && msg.channels !== 2) throw Error('Atualize a mesa: esta transmissão precisa das saídas 16:9 e 9:16.');
       } else cfg = validateConfig(msg);
     } catch (e) { fail(e.message); return; }
-    dual = multi && msg.channels === 2;
+    dual = multi && msg.channels === 2; canRestart = multi && msg.resync === true && !calibrating;
     shared.active = ws; broadcast = multi ? cfg : null; startedAt = Date.now(); lastInput = Date.now();
     audit.info('transmissao', 'inicio', multi ? 'Envio iniciado: ' + (cfg.destinations.map(d => d.name + ' (' + d.aspect + ')').join(', ') || 'somente gravação') + (cfg.record ? ' + gravação ' + (cfg.record.formats === 'both' ? '16:9 e 9:16' : cfg.record.formats) : '') : 'Envio iniciado: YouTube',
       { resolucao: cfg.resolution, bitrateMbps: cfg.bitrate, codificador: cfg.encoder || 'libx264', destinos: multi ? cfg.destinations.map(d => d.name) : ['YouTube'], gravacao: cfg.record?.dir || null, formatos: multi ? groups.map(g => g.aspect + ' ' + g.size.replace(':', '×')) : ['16:9'] });

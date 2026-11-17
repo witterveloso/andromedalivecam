@@ -8,6 +8,7 @@
  * então a queda de uma plataforma não interrompe as outras nem a gravação.
  */
 const { spawnSync } = require('node:child_process');
+const { clampOffset } = require('./avsync.cjs');
 const path = require('node:path');
 
 const PLATFORMS = {
@@ -58,7 +59,8 @@ function validateBroadcast(input) {
   const resolution = input.resolution; if (!['720p', '1080p'].includes(resolution)) fail('Esta versão transmite em 720p ou 1080p.');
   const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < 3 || bitrate > 20) fail('Bitrate deve ficar entre 3 e 20 Mbps.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
-  return { destinations, record, resolution, bitrate, fps: 30, encoder, vertical: { resolution: vres, bitrate: vbit } };
+  // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
+  return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', vertical: { resolution: vres, bitrate: vbit } };
 }
 
 // Grupos de codificação: cada formato com seus destinos e sua gravação. Só existe o grupo que tiver uso.
@@ -95,9 +97,11 @@ function validateConfig(input) {
 
 /* ---------- argumentos do FFmpeg ---------- */
 
+// Velocidade do x264: mais rápido = menos CPU e um pouco menos de qualidade por bitrate (o pré-voo escolhe pelo computador).
+const PRESETS = ['veryfast', 'superfast', 'ultrafast'];
 // Codificadores por GPU são opcionais: só entram se o teste de um quadro passar nesta máquina.
 const ENCODERS = {
-  libx264: kb => ['-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-profile:v', 'high', '-b:v', kb + 'k', '-minrate', kb + 'k', '-maxrate', kb + 'k', '-bufsize', kb * 2 + 'k', '-x264-params', 'nal-hrd=cbr:force-cfr=1'],
+  libx264: (kb, preset = 'veryfast') => ['-c:v', 'libx264', '-preset', preset, '-tune', 'zerolatency', '-profile:v', 'high', '-b:v', kb + 'k', '-minrate', kb + 'k', '-maxrate', kb + 'k', '-bufsize', kb + 'k', '-x264-params', 'nal-hrd=cbr:force-cfr=1'],
   h264_nvenc: kb => ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'll', '-profile:v', 'high', '-rc', 'cbr', '-b:v', kb + 'k', '-maxrate', kb + 'k', '-bufsize', kb * 2 + 'k', '-bf', '0'],
   h264_qsv: kb => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-profile:v', 'high', '-b:v', kb + 'k', '-maxrate', kb + 'k', '-bufsize', kb * 2 + 'k', '-bf', '0'],
   h264_amf: kb => ['-c:v', 'h264_amf', '-usage', 'lowlatency', '-profile:v', 'high', '-rc', 'cbr', '-b:v', kb + 'k', '-maxrate', kb + 'k', '-bufsize', kb * 2 + 'k', '-bf', '0'],
@@ -119,7 +123,7 @@ function detectEncoders(ffmpeg) {
 
 // No tee, | separa saídas e [ ] delimita opções: escapamos o que puder aparecer num caminho de arquivo.
 const teeEscape = value => value.replace(/\\/g, '/').replace(/(['\[\]])/g, '\\$1');
-const FIFO = 'f=fifo:fifo_format=flv:queue_size=900:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
+const FIFO = 'f=fifo:fifo_format=flv:queue_size=240:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
 
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
@@ -127,13 +131,20 @@ function outputArgs(group) {
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
 }
 
+// Entrada do WebM vindo do navegador com sondagem curta: o navegador manda o cabeçalho com as duas faixas no começo, então
+// 256 KB bastam para identificar imagem e som. NÃO usar -fflags +nobuffer: ele descarta o primeiro quadro-chave lido na
+// sondagem e a imagem só aparece no quadro-chave seguinte (medido: clarões iniciais perdidos).
+// Filtros de imagem e som com a compensação de sincronismo: só o lado que está adiantado recebe atraso.
+const videoFilter = (size, avSync = 0) => `scale=${size}:flags=bilinear,setsar=1` + (avSync < 0 ? `,setpts=PTS+${(-avSync / 1000).toFixed(3)}/TB` : '');
+const audioFilter = (avSync = 0) => 'aresample=async=1:first_pts=0' + (avSync > 0 ? `,adelay=${avSync}:all=1` : '');
+const INPUT_FLAGS = ['-flags', '+low_delay', '-thread_queue_size', '64', '-probesize', '262144', '-analyzeduration', '200000'];
 // Uma codificação por grupo (formato). Cada grupo roda num FFmpeg próprio: a queda de um não derruba o outro.
 function argsForGroup(cfg, group) {
   const size = group.size, kb = Math.round(group.bitrate * 1000);
-  return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', '-thread_queue_size', '128', '-probesize', '1000000', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0',
-    '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${size}:flags=bilinear,setsar=1`, '-r', '30',
-    ...ENCODERS[cfg.encoder || 'libx264'](kb), '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1',
+  return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', ...INPUT_FLAGS, '-f', 'webm', '-i', 'pipe:0',
+    '-map', '0:v:0', '-map', '0:a:0', '-vf', videoFilter(size, cfg.avSync), '-r', '30',
+    ...ENCODERS[cfg.encoder || 'libx264'](kb, cfg.preset), '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', audioFilter(cfg.avSync), '-progress', 'pipe:3', '-stats_period', '1',
     ...outputArgs(group)];
 }
 // Compatibilidade: o grupo principal (16:9, ou o único que houver).
@@ -142,7 +153,7 @@ function argsForBroadcast(cfg) { return argsForGroup(cfg, groupsFor(cfg)[0]); }
 /* Compatibilidade: um destino, saída FLV direta (falha de conexão encerra o processo). */
 function argsFor(c) {
   const size = c.resolution === '720p' ? '1280:720' : '1920:1080', kb = Math.round(c.bitrate * 1000);
-  return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', '-thread_queue_size', '128', '-probesize', '1000000', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0',
+  return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', ...INPUT_FLAGS, '-f', 'webm', '-i', 'pipe:0',
     '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${size}:flags=bilinear,setsar=1`, '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-b:v', kb + 'k', '-minrate', kb + 'k', '-maxrate', kb + 'k', '-bufsize', (kb * 2) + 'k', '-x264-params', 'nal-hrd=cbr:force-cfr=1', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1', '-f', 'flv', '-flvflags', 'no_duration_filesize', '-rw_timeout', '15000000', c.target];
 }
@@ -194,4 +205,4 @@ function safeBroadcastError(stderr) {
   return 'O codificador foi interrompido. Confira a conexão e os destinos e inicie novamente.';
 }
 
-module.exports = { PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents };
+module.exports = { PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };
