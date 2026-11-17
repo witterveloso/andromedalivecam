@@ -2,13 +2,15 @@
 /*
  * Andrômeda Live — mesa remota (página aberta pelo link que a mesa gera).
  * #v=<chave>: retorno do PGM, só assistir.  #c=<chave>: controle remoto, com Preview, PGM e botões da mesa.
+ * #a=<chave>: mesa de áudio (modo e volume de cada fonte, master, FADE OUT), ouvindo o PGM.
  * A combinação passa cifrada pelo ponto de encontro (relay.js); imagem, som e comandos vão direto pela conexão WebRTC.
  */
 (() => {
   const $ = s => document.querySelector(s);
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
-  const hash = /^#([vc])=([a-f0-9]{48})$/.exec(location.hash || '');
-  const kind = hash ? (hash[1] === 'v' ? 'view' : 'control') : null, key = hash?.[2];
+  const hash = /^#([vca])=([a-f0-9]{48})$/.exec(location.hash || '');
+  const kind = hash ? ({ v: 'view', c: 'control', a: 'mixer' })[hash[1]] : null, key = hash?.[2];
+  const TITLE = { view: 'Retorno do PGM', control: 'Controle remoto', mixer: 'Mesa de áudio' };
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* privado */ } } };
   const randomHex = n => [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join('');
   let device = store.get('andromeda.remote.device'); if (!/^[a-f0-9]{24}$/.test(device || '')) { device = randomHex(12); store.set('andromeda.remote.device', device); }
@@ -20,9 +22,10 @@
   document.body.dataset.mode = kind || 'none';
   if (!kind) { gate('Link incompleto', 'Abra o link inteiro que o operador da mesa enviou (ele termina com uma chave longa).'); setStatus('Sem link', 'bad'); return; }
   if (!window.AndromedaRelay || !window.RTCPeerConnection) { gate('Navegador sem suporte', 'Use o Chrome, Edge, Firefox ou Safari atualizados.'); setStatus('Sem suporte', 'bad'); return; }
-  $('#title').textContent = kind === 'view' ? 'Retorno do PGM' : 'Controle remoto';
-  document.title = 'Andrômeda Live · ' + (kind === 'view' ? 'Retorno do PGM' : 'Controle remoto');
-  $('#prvBox').hidden = kind === 'view';
+  $('#title').textContent = TITLE[kind];
+  document.title = 'Andrômeda Live · ' + TITLE[kind];
+  $('#prvBox').hidden = kind !== 'control';
+  if (kind === 'mixer') { $('.monitors').hidden = true; $('#full').hidden = true; $('#sound').textContent = 'Ouvir o PGM'; }
 
   const brokers = Array.isArray(window.ANDROMEDA_RELAY) && window.ANDROMEDA_RELAY.length ? window.ANDROMEDA_RELAY : AndromedaRelay.DEFAULT_BROKERS;
   let channel = null, sid = null, pc = null, dc = null, helloTimer = null, pingTimer = null, watchdog = null, stopped = false, tries = 0, name = '';
@@ -63,8 +66,8 @@
     pc.ontrack = e => { const video = byStream[e.streams[0]?.id] || ui.pgm; if (video.srcObject !== e.streams[0]) video.srcObject = e.streams[0]; video.play().catch(() => {}); };
     pc.ondatachannel = e => {
       dc = e.channel;
-      dc.onopen = () => { ui.gate.hidden = true; ui.screens.hidden = false; ui.controls.hidden = kind !== 'control'; setStatus(kind === 'view' ? 'Conectado · assistindo o PGM' : 'Conectado · operando a mesa', 'ok'); clearInterval(pingTimer); pingTimer = setInterval(() => { if (dc?.readyState === 'open') dc.send('{"type":"ping"}'); }, 3000); };
-      dc.onmessage = e2 => { let m; try { m = JSON.parse(e2.data); } catch { return; } if (m.type === 'state') render(m); else if (m.type === 'notice') notice(m.text); };
+      dc.onopen = () => { ui.gate.hidden = true; ui.screens.hidden = false; ui.controls.hidden = kind !== 'control'; $('#mixer').hidden = kind !== 'mixer'; setStatus(({ view: 'Conectado · assistindo o PGM', control: 'Conectado · operando a mesa', mixer: 'Conectado · operando o áudio' })[kind], 'ok'); clearInterval(pingTimer); pingTimer = setInterval(() => { if (dc?.readyState === 'open') dc.send('{"type":"ping"}'); }, 3000); };
+      dc.onmessage = e2 => { let m; try { m = JSON.parse(e2.data); } catch { return; } if (m.type === 'state') render(m); else if (m.type === 'levels') levels(m); else if (m.type === 'notice') notice(m.text); };
       dc.onclose = () => reconnect('Conexão com a mesa interrompida.');
     };
     pc.onconnectionstatechange = () => {
@@ -98,7 +101,7 @@
   /* ---------- controles ---------- */
   let noticeTimer = null;
   function notice(text) { const el = $('#notice'); el.textContent = String(text || '').slice(0, 200); el.hidden = !el.textContent; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { el.hidden = true; }, 5000); }
-  const cmd = (c, extra = {}) => { if (dc?.readyState === 'open' && kind === 'control') dc.send(JSON.stringify({ type: 'cmd', cmd: c, ...extra })); };
+  const cmd = (c, extra = {}) => { if (dc?.readyState === 'open' && kind !== 'view') dc.send(JSON.stringify({ type: 'cmd', cmd: c, ...extra })); };
   let last = null;
   function button(label, className, onclick, pressed) { const b = make('button', className, label); b.type = 'button'; b.onclick = onclick; if (pressed !== undefined) b.setAttribute('aria-pressed', String(pressed)); return b; }
   function render(s) {
@@ -106,6 +109,7 @@
     $('#pgmName').textContent = s.pgmName || ''; $('#prvName').textContent = s.prvName || '';
     $('#pgmTag').textContent = s.live ? 'PGM · NO AR' : 'PGM';
     document.body.classList.toggle('on-air', !!s.live);
+    if (kind === 'mixer') { renderMixer(s.audio); return; }
     if (kind !== 'control') return;
     const prv = $('#busPrv'), hot = $('#busPgm');
     prv.replaceChildren(...s.sources.map(src => { const b = button(src.name, 'src' + (src.conn ? '' : ' off') + (src.i === s.prv ? ' is-prv' : '') + (src.i === s.pgm ? ' is-pgm' : ''), () => cmd('prv', { i: src.i }), src.i === s.prv); b.disabled = src.disabled; return b; }));
@@ -120,6 +124,49 @@
       layers.append(logo, button('PiP', 'layer', () => cmd('pip'), s.fx.pip), button('Retirar todas', 'layer clear', () => cmd('clear')));
     }
   }
+  /* ---------- mesa de áudio ---------- */
+  const MODES = [['off', 'OFF'], ['afv', 'AFV'], ['on', 'ON']];
+  const dragging = new Set();
+  // Volume mandado no máximo 15 vezes por segundo enquanto arrasta.
+  const throttle = (fn, ms = 66) => { let t = 0, last = null; return v => { last = v; if (t) return; t = setTimeout(() => { t = 0; fn(last); }, ms); }; };
+  const masterSend = throttle(v => cmd('mvol', { value: v }));
+  const stripSend = new Map();
+  function renderMixer(a) {
+    if (!a) return;
+    const box = $('#strips');
+    if (box.dataset.sig !== a.channels.map(c => c.i + c.name).join('|')) {
+      box.dataset.sig = a.channels.map(c => c.i + c.name).join('|'); box.replaceChildren();
+      for (const c of a.channels) {
+        const strip = make('div', 'strip'); strip.dataset.i = c.i;
+        const name = make('strong', 'strip-name', c.name), meter = make('meter', 'strip-meter'); meter.min = 0; meter.max = 1; meter.setAttribute('aria-label', 'Nível ' + c.name);
+        const modes = make('div', 'modes'); modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Modo de áudio de ' + c.name);
+        for (const [v, t] of MODES) { const b = make('button', 'mode', t); b.type = 'button'; b.dataset.mode = v; b.onclick = () => cmd('amode', { i: c.i, value: v }); modes.append(b); }
+        const fader = make('input', 'strip-fader'); fader.type = 'range'; fader.min = '0'; fader.max = '100'; fader.setAttribute('aria-label', 'Volume de ' + c.name);
+        stripSend.set(c.i, throttle(v => cmd('avol', { i: c.i, value: v })));
+        fader.oninput = () => stripSend.get(c.i)(Number(fader.value) / 100);
+        for (const t of ['pointerdown', 'focus']) fader.addEventListener(t, () => dragging.add(fader)); for (const t of ['pointerup', 'blur', 'change']) fader.addEventListener(t, () => dragging.delete(fader));
+        strip.append(name, meter, modes, fader); box.append(strip);
+      }
+    }
+    for (const c of a.channels) {
+      const strip = box.querySelector('.strip[data-i="' + c.i + '"]'); if (!strip) continue;
+      strip.dataset.has = String(c.has); strip.dataset.mode = c.mode;
+      for (const b of strip.querySelectorAll('.mode')) b.setAttribute('aria-pressed', String(b.dataset.mode === c.mode));
+      const fader = strip.querySelector('.strip-fader'); if (!dragging.has(fader)) fader.value = String(Math.round(c.volume * 100));
+    }
+    const mv = $('#mVol'); if (!dragging.has(mv)) mv.value = String(Math.round(a.master.volume * 100));
+    $('#mVolOut').textContent = Math.round(a.master.volume * 100) + '%';
+    const fade = $('#mFade'); fade.textContent = a.master.fading ? (a.master.fadeOut ? 'FADE OUT…' : 'FADE IN…') : a.master.fadeOut ? 'FADE IN' : 'FADE OUT'; fade.dataset.state = a.master.fadeOut ? 'out' : 'in'; mv.disabled = a.master.fading;
+    if (document.activeElement !== $('#mFadeTime')) $('#mFadeTime').value = String(a.master.fadeTime);
+  }
+  function levels(m) {
+    $('#mL').value = m.m?.[0] || 0; $('#mR').value = m.m?.[1] || 0;
+    (m.ch || []).forEach((v, i) => { const meter = $('#strips .strip[data-i="' + i + '"] .strip-meter'); if (meter) meter.value = v; });
+  }
+  $('#mVol').oninput = () => { $('#mVolOut').textContent = $('#mVol').value + '%'; masterSend(Number($('#mVol').value) / 100); };
+  for (const t of ['pointerdown', 'focus']) $('#mVol').addEventListener(t, () => dragging.add($('#mVol'))); for (const t of ['pointerup', 'blur', 'change']) $('#mVol').addEventListener(t, () => dragging.delete($('#mVol')));
+  $('#mFade').onclick = () => cmd('fade');
+  $('#mFadeTime').onchange = () => cmd('fadetime', { value: Number($('#mFadeTime').value) });
   $('#cut').onclick = () => cmd('cut');
   $('#auto').onclick = () => cmd('auto');
   // Teclado no computador: Espaço = CUT, Enter = AUTO, 1–9 = Preview.
@@ -135,7 +182,7 @@
   /* ---------- início ---------- */
   async function begin() {
     stopped = false; ui.form.hidden = true; ui.retry.hidden = true;
-    gate(kind === 'view' ? 'Retorno do PGM' : 'Controle remoto', 'Procurando a mesa…');
+    gate(TITLE[kind], 'Procurando a mesa…');
     setStatus('Conectando ao ponto de encontro…', 'warn');
     if (!channel) { channel = new AndromedaRelay.Channel({ inviteKey: key, role: 'cam', brokers }); channel.on(onMessage); }
     if (!(await channel.whenConnected(10000))) { setStatus('Sem internet ou ponto de encontro indisponível. Tentando de novo…', 'bad'); setTimeout(begin, 4000); return; }
@@ -143,10 +190,10 @@
   }
   ui.retry.onclick = () => begin();
   window.addEventListener('pagehide', () => { if (sid && channel) channel.send({ sid, msg: { type: 'leave' } }).catch(() => {}); });
-  if (kind === 'control') {
+  if (kind !== 'view') {
     name = store.get('andromeda.remote.name') || '';
     ui.name.value = name;
-    gate('Controle remoto', 'Este link opera a mesa ao vivo. Diga quem você é: o operador da mesa vai aprovar o acesso.', { form: true });
+    gate(TITLE[kind], kind === 'mixer' ? 'Este link opera o áudio da transmissão ao vivo. Diga quem você é: o operador da mesa vai aprovar o acesso.' : 'Este link opera a mesa ao vivo. Diga quem você é: o operador da mesa vai aprovar o acesso.', { form: true });
     setStatus('Aguardando seu nome', '');
     ui.form.onsubmit = e => { e.preventDefault(); name = ui.name.value.replace(/\s+/g, ' ').trim().slice(0, 40); if (!name) return; store.set('andromeda.remote.name', name); begin(); };
   } else begin();

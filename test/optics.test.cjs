@@ -13,6 +13,8 @@ test('only the physical lenses become buttons, with short names, on iPhone (pt-B
   assert.equal(name('Back Ultra Wide Camera'), '0,5×'); assert.equal(name('Back Telephoto Camera'), 'Tele');
   assert.equal(name('camera2 0, facing back'), '1×'); assert.equal(name('camera2 1, facing front'), 'Frontal');
   assert.equal(name('', 3), 'Câm 4');
+  const kind = l => ctx.lensInfo(l, 0).kind;
+  assert.equal(kind('Câmera Ultra-angular Traseira'), 'Ultra-angular'); assert.equal(kind('Back Telephoto Camera'), 'Teleobjetiva'); assert.equal(kind('Câmera Traseira'), 'Grande-angular (principal)'); assert.equal(kind('Câmera Frontal TrueDepth'), 'Frontal TrueDepth'); assert.equal(name('Back Macro Camera'), 'Macro');
   for (const v of ['Câmera Tripla Traseira', 'Câmera Grande-Angular Dupla Traseira', 'Câmera Dupla Traseira', 'Back Triple Camera', 'Back Dual Wide Camera']) assert(virtual(v), v + ' is a virtual camera, not a lens');
   for (const p of ['Câmera Traseira', 'Câmera Ultra-angular Traseira', 'Câmera Teleobjetiva Traseira', 'Câmera Frontal']) assert(!virtual(p), p);
   const order = ['Câmera Frontal', 'Câmera Teleobjetiva Traseira', 'Câmera Traseira', 'Câmera Ultra-angular Traseira'].sort((a, b) => ctx.lensInfo(a, 0).rank - ctx.lensInfo(b, 0).rank).map(l => name(l));
@@ -26,9 +28,9 @@ test('camera controls: parameter bar over the image, slider zoom with programmed
   assert.match(html, /<nav id="params" class="params"/);
   assert.doesNotMatch(optics, /zoom-step|'−'\), zValue/, 'no more +/− zoom buttons');
   assert.match(optics, /zoomLive = slider\(r, st\.zoom/, 'zoom is a sliding bar');
-  assert.match(optics, /points: Array\.isArray\(saved\.points\) && saved\.points\.length === 4/, 'four programmable points');
-  assert.match(optics, /const ease = t =>/, 'smooth programmed zoom curve');
-  assert.match(optics, /Math\.log\(from\)/, 'zoom moves at constant apparent speed');
+  assert.doesNotMatch(optics, /saved\.points|zoomTo|SPEEDS|Gravar ponto|zoom-point/, 'programmed zoom movement removed (0.19): only the bar and the pinch');
+  assert.match(optics, /function remote\(m\)/, 'the desk can operate zoom, lens and framing');
+  assert.match(optics, /p\.pan\.x \* room/, 'framing moves the crop inside the room left by the zoom');
   assert.match(optics, /nativeStabKey/, 'uses the device stabilization when the browser exposes it');
   assert.match(optics, /function makeStabilizer\(\)/, 'own stabilization otherwise');
   assert.match(cam, /send\(\{ type: 'presence', state: 'background' \}\)/); assert.match(cam, /async function resumeCamera\(\)/);

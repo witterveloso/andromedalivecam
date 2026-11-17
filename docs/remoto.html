@@ -38,6 +38,16 @@
     <button id="sound" aria-pressed="false">Ativar som</button>
     <button id="full">Tela cheia</button>
   </div>
+  <section id="mixer" class="mixer" hidden aria-label="Mesa de áudio">
+    <div class="master-strip">
+      <span class="lbl">MASTER</span>
+      <div class="master-meters"><meter id="mL" min="0" max="1" aria-label="Nível master esquerdo"></meter><meter id="mR" min="0" max="1" aria-label="Nível master direito"></meter></div>
+      <label class="master-vol">Volume <input id="mVol" type="range" min="0" max="100" aria-label="Volume master"><output id="mVolOut"></output></label>
+      <div class="fade-row"><button id="mFade" class="fade" type="button">FADE OUT</button><label>Tempo <input id="mFadeTime" type="number" min="0.5" max="30" step="0.5" aria-label="Tempo do fade em segundos"> s</label></div>
+    </div>
+    <div id="strips" class="strips"></div>
+    <p class="mixer-note">OFF: sem áudio · AFV: acompanha a imagem no AR · ON: áudio contínuo.</p>
+  </section>
   <section id="controls" class="controls" hidden aria-label="Controles da mesa">
     <div class="row"><span class="lbl prv">PRV</span><div id="busPrv" class="bus"></div></div>
     <details class="hot"><summary>Corte direto no PGM</summary><div class="row"><span class="lbl pgm">PGM</span><div id="busPgm" class="bus"></div></div></details>

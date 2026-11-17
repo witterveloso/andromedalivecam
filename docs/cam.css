@@ -431,16 +431,6 @@ body[data-run="idle"] .params, body[data-run="starting"] .params { display: none
 .drawer .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .drawer .chips button, .chip-auto { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--text); font-size: 12.5px; font-weight: 700; }
 .drawer .chips button[aria-pressed="true"] { border-color: var(--amber); background: rgba(0, 163, 255, .16); color: #9bdcff; }
-.zoom-prog { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
-.zoom-points { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.zoom-point { display: grid; justify-items: center; gap: 2px; min-height: 54px; border: 1px solid var(--line-strong); border-radius: 12px; background: rgba(255, 255, 255, .05); color: var(--text); }
-.zoom-point b { color: var(--muted); font-size: 10px; letter-spacing: .1em; }
-.zoom-point span { font: 800 15px var(--mono); }
-.zoom-point:active { background: var(--amber); color: #00121f; }
-.zoom-save, .zoom-stop { min-height: 36px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--text); font-size: 12.5px; font-weight: 700; }
-.zoom-save[aria-pressed="true"] { border-color: #ffd60a; color: #ffd60a; }
-.zoom-stop:not(:disabled) { border-color: var(--pgm); color: #ffb3bf; }
-.zoom-stop:disabled { opacity: .45; }
 
 /* Lentes físicas: botões redondos e compactos, como nos apps de câmera. */
 .lens { min-width: 52px; height: 52px; min-height: 0; padding: 0 10px; border-radius: 26px; font: 800 13px var(--mono); }
@@ -460,12 +450,9 @@ body[data-drawer]:not([data-drawer=""]) .hud .status { display: none; }
   .param-value { font-size: 15px; }
   .drawer { max-height: 62dvh; }
 }
-.zoom-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 @media (orientation: landscape) {
   .drawer { gap: 8px; padding: 10px 12px 12px; max-height: calc(100dvh - 120px - var(--safe-b)); }
   .drawer-body { gap: 8px; }
-  .zoom-prog { gap: 6px; padding-top: 6px; }
-  .zoom-point { grid-auto-flow: column; align-items: center; gap: 6px; min-height: 40px; }
   .drawer .segmented button { min-height: 34px; font-size: 12px; }
   .drawer .slider input { min-height: 32px; }
   .drawer-hint { font-size: 11.5px; }
