@@ -70,48 +70,10 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
-      - name: Gerar instalador (assina se houver certificado configurado)
-        shell: pwsh
+      - name: Gerar instalador
+        run: npm run dist:win
         env:
-          # Nada disso é obrigatório: sem os segredos o instalador sai sem assinatura, como antes. Veja ASSINATURA.md.
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZ_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
-          AZ_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
-          AZ_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
-          WIN_PUBLISHER_NAME: ${{ secrets.WIN_PUBLISHER_NAME }}
-          WIN_PFX_BASE64: ${{ secrets.WIN_CSC_LINK }}
-          WIN_PFX_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: |
-          $extra = @(); $mode = 'none'
-          if ($env:AZ_SIGN_ENDPOINT -and $env:AZ_SIGN_ACCOUNT -and $env:AZ_SIGN_PROFILE -and $env:AZURE_CLIENT_ID) {
-            $mode = 'azure'
-            $extra += "-c.win.azureSignOptions.endpoint=$env:AZ_SIGN_ENDPOINT", "-c.win.azureSignOptions.codeSigningAccountName=$env:AZ_SIGN_ACCOUNT", "-c.win.azureSignOptions.certificateProfileName=$env:AZ_SIGN_PROFILE"
-            if ($env:WIN_PUBLISHER_NAME) { $extra += "-c.win.azureSignOptions.publisherName=$env:WIN_PUBLISHER_NAME" }
-            $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
-          } elseif ($env:WIN_PFX_BASE64) {
-            $mode = 'pfx'; $env:CSC_LINK = $env:WIN_PFX_BASE64; $env:CSC_KEY_PASSWORD = $env:WIN_PFX_PASSWORD
-          } else {
-            $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
-            Write-Host '::warning::Instalador SEM assinatura de código: o Windows mostrará "Editor desconhecido". Configure a assinatura (ASSINATURA.md).'
-          }
-          "SIGNING_MODE=$mode" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Modo de assinatura: $mode"
-          npm run dist:win -- @extra
-          if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar o instalador' }
-      - name: Conferir a assinatura e gerar as somas SHA-256
-        shell: pwsh
-        run: |
-          $files = Get-ChildItem dist\*.exe
-          foreach ($f in $files) {
-            $sig = Get-AuthenticodeSignature $f.FullName
-            Write-Host ("{0}: {1} {2}" -f $f.Name, $sig.Status, $sig.SignerCertificate.Subject)
-            if ($env:SIGNING_MODE -ne 'none' -and $sig.Status -ne 'Valid') { throw "Assinatura inválida em $($f.Name): $($sig.Status)" }
-          }
-          # Somas para o usuário conferir o arquivo baixado (certutil -hashfile <arquivo> SHA256).
-          Get-ChildItem dist\*.exe, dist\*.zip | ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } | Set-Content -Encoding ascii dist\SHA256SUMS.txt
-          Get-Content dist\SHA256SUMS.txt
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Abrir o programa empacotado e conferir a mesa
         shell: pwsh
         run: |
@@ -137,7 +99,6 @@ jobs:
           path: |
             dist/*.exe
             dist/*.zip
-            dist/SHA256SUMS.txt
             dist/smoke.json
             dist/smoke.png
           if-no-files-found: error
@@ -153,11 +114,11 @@ jobs:
           if (-not (Test-Path dist\*.exe) -or -not (Test-Path dist\*.zip)) { throw 'Instalador ou zip portátil ausente em dist/' }
           # O próprio gh expande o padrão; nada de listas do PowerShell (um item único virava letras soltas).
           gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' 'dist/*.zip' 'dist/SHA256SUMS.txt' --clobber }
+          if ($LASTEXITCODE -eq 0) { gh release upload $tag 'dist/*.exe' 'dist/*.zip' --clobber }
           else {
             # Notas da própria versão: 0.14.x -> ATUALIZACAO_014.md (sem o arquivo, o README).
             $parts = $version.Split('.'); $notes = 'ATUALIZACAO_{0}{1:D2}.md' -f $parts[0], [int]$parts[1]
             if (-not (Test-Path $notes)) { $notes = 'README.md' }
-            gh release create $tag 'dist/*.exe' 'dist/*.zip' 'dist/SHA256SUMS.txt' --title "Andrômeda Live $version" --notes-file $notes --target $env:GITHUB_SHA
+            gh release create $tag 'dist/*.exe' 'dist/*.zip' --title "Andrômeda Live $version" --notes-file $notes --target $env:GITHUB_SHA
           }
           if ($LASTEXITCODE -ne 0) { throw 'Falha ao publicar a versão' }

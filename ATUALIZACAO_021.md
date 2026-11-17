@@ -1,9 +1,5 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
-## 0.21.3
-- **Instalador pronto para ser assinado.** O CI assina o instalador, o desinstalador e o programa assim que houver credenciais de assinatura de código configuradas (Azure Artifact Signing ou certificado), confere se a assinatura ficou válida e não publica se ficou inválida. **Sem certificado o instalador continua sem assinatura**, e o Windows continua mostrando "Editor desconhecido": o certificado depende de verificação de identidade e pagamento e não pode ser criado pelo programa. O passo a passo está em [ASSINATURA.md](ASSINATURA.md).
-- **`SHA256SUMS.txt` em cada versão**, para conferir se o arquivo baixado é o original (`certutil -hashfile <arquivo> SHA256`).
-
 ## 0.21.2
 - **Botão PiP de volta** no painel Comandos (atalho F8). Na 0.21.1 ele foi retirado por engano: o que devia sair era a **janela do monitor "KEY 1 · PiP"** que ficava na mesa.
 - **Janela do KEY 1 (PiP) retirada da mesa.** O PiP continua funcionando normalmente (botão, F8 e *GC e efeitos*), só não há mais a janelinha de monitor, e a mesa deixa de desenhá-la a cada quadro.
