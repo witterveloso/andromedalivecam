@@ -15,6 +15,7 @@
   const { model } = B;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const clamp = ms => Math.max(-500, Math.min(500, Math.round(Number(ms) || 0)));
+  const key = () => (model.engineUsed === 'native' ? 'avSyncNativeMs' : 'avSyncMs'); // o valor é guardado por motor de envio
   const FLASHES = 8, FIRST = 1500, GAP = 1200;
   const cal = { running: false, last: null, onResult: null };
 
@@ -50,15 +51,15 @@
   const q = s => card.querySelector(s);
   const describe = ms => ms === 0 ? '0 ms (sem compensação)' : (ms > 0 ? '+' : '−') + Math.abs(ms) + ' ms · ' + (ms > 0 ? 'som atrasado para alinhar' : 'imagem atrasada para alinhar');
   function paint() {
-    const ms = clamp(model.avSyncMs), busy = typeof busyTx === 'function' && busyTx();
+    const ms = clamp(model[key()]), busy = typeof busyTx === 'function' && busyTx();
     q('#syncSlider').value = String(ms); q('#syncOut').textContent = (ms > 0 ? '+' : ms < 0 ? '−' : '') + Math.abs(ms) + ' ms';
     q('#syncState').textContent = 'Compensação: ' + describe(ms);
     for (const id of ['#syncCalibrate', '#syncSlider', '#syncZero']) q(id).disabled = busy || cal.running;
     q('#syncCalibrate').textContent = cal.running ? 'Calibrando…' : 'Calibrar automaticamente';
   }
   const note = text => { q('#syncNote').textContent = text; };
-  q('#syncSlider').oninput = () => { model.avSyncMs = clamp(q('#syncSlider').value); B.save(); paint(); note('Vale a partir da próxima transmissão ou gravação.'); };
-  q('#syncZero').onclick = () => { model.avSyncMs = 0; B.save(); paint(); note('Compensação zerada.'); };
+  q('#syncSlider').oninput = () => { model[key()] = clamp(q('#syncSlider').value); B.save(); paint(); note('Vale a partir da próxima transmissão ou gravação.'); };
+  q('#syncZero').onclick = () => { model[key()] = 0; B.save(); paint(); note('Compensação zerada.'); };
   setInterval(paint, 700);
 
   /* ---------- calibração ---------- */
@@ -95,7 +96,7 @@
     if (!r.reliable) { note('A medição ficou instável (' + r.pairs + ' pares, dispersão de ' + r.spreadMs + ' ms). Tente de novo, com o computador menos ocupado. Nada foi alterado.'); return; }
     // A imagem só tem resolução de um quadro (cerca de 33 ms): abaixo de 40 ms a diferença é ruído de medição e também está abaixo do que o olho percebe (ITU-R BT.1359: 45 ms com o som adiantado).
     const compensation = Math.abs(r.offsetMs) < 40 ? 0 : clamp(-r.offsetMs);
-    model.avSyncMs = compensation; B.save();
+    model[key()] = compensation; B.save();
     const how = r.offsetMs > 0 ? 'o som chegava ' + r.offsetMs + ' ms depois da imagem' : r.offsetMs < 0 ? 'o som chegava ' + Math.abs(r.offsetMs) + ' ms antes da imagem' : 'som e imagem alinhados';
     note(compensation === 0 ? 'Medido: ' + how + '. Dentro da margem de um quadro: nenhuma compensação necessária.' : 'Medido: ' + how + '. Compensação aplicada: ' + describe(compensation) + '. Precisão de cerca de ±17 ms.');
     try { window.andromedaAudit?.('info', 'sincronismo-calibrado', 'Sincronismo calibrado', { medidoMs: r.offsetMs, compensacaoMs: compensation, pares: r.pairs }); } catch { /* auditoria opcional */ }

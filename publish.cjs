@@ -13,8 +13,9 @@
  * Protocolo (WebSocket):
  *  - texto: {type:'start', destinations:[{…, aspect}], record:{dir, formats}, vertical:{resolution, bitrate}, channels}
  *           e {type:'stop'}.
- *  - binário: pedaços de WebM. Com channels=2, cada pedaço começa com 1 byte: 0 = 16:9, 1 = 9:16.
- *  - respostas: ready {groups}, ack, recording, sending, destination, recorded, error, stopped.
+ *  - binário: pedaços de WebM (motor padrão) ou de Matroska com H.264 e Opus (start.engine = 'native'). Com channels=2, cada pedaço começa com 1 byte: 0 = 16:9, 1 = 9:16.
+ *  - texto também: {type:'engine', reason} (o motor próprio falhou no navegador: o serviço passa ao codificador padrão).
+ *  - respostas: ready {groups}, ack, recording, sending, destination, recorded, error, stopped, engine {engine}.
  */
 const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
@@ -139,15 +140,33 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     const now = Date.now(), recent = (restarts.get(r.group.id) || []).filter(t => now - t < 120000);
     if (recent.length >= 3) { audit.error('transmissao', 'reinicio-esgotado', 'O codificador ' + r.group.aspect + ' caiu 3 vezes em 2 minutos: sem novas tentativas.'); return false; }
     recent.push(now); restarts.set(r.group.id, recent);
+    audit.warn('transmissao', 'reinicio', 'Codificador ' + r.group.aspect + ' reiniciado (tentativa ' + recent.length + ' de 3)', { formato: r.group.aspect });
+    const message = 'O codificador ' + r.group.aspect + ' foi reiniciado sozinho (tentativa ' + recent.length + ' de 3). A transmissão volta em instantes.';
+    relaunch(r); send({ type: 'restart', group: r.group.id, attempt: recent.length, message }); send({ type: 'notice', message });
+    return true;
+  }
+
+  // Sobe um FFmpeg novo para o formato, numa gravação nova (_p2, _p3…), e espera o cabeçalho novo do navegador.
+  function relaunch(r) {
     const group = { ...r.group }, n = (parts.get(group.id) || []).length + 1;
     if (group.record) group.record = { ...group.record, file: group.record.file.replace(/(_p\d+)?\.mkv$/, '_p' + n + '.mkv') };
-    audit.warn('transmissao', 'reinicio', 'Codificador ' + group.aspect + ' reiniciado (tentativa ' + recent.length + ' de 3)', { formato: group.aspect });
     launch(group, argsForGroup(broadcast, group), true);
     runners.get(group.id).awaitHeader = true; // descarta o que o gravador antigo ainda mandar até chegar o cabeçalho novo
     for (const d of group.destinations) send({ type: 'destination', id: d.id, state: 'retrying', reason: 'Codificador reiniciado' });
-    send({ type: 'restart', group: group.id, attempt: recent.length, message: 'O codificador ' + group.aspect + ' foi reiniciado sozinho (tentativa ' + recent.length + ' de 3). A transmissão volta em instantes.' });
-    send({ type: 'notice', message: 'O codificador ' + group.aspect + ' foi reiniciado sozinho (tentativa ' + recent.length + ' de 3). A transmissão volta em instantes.' });
-    return true;
+  }
+
+  // O motor próprio falhou no navegador: o serviço passa todos os formatos para o codificador padrão (WebM) sem encerrar a sessão.
+  function useStandardEngine(reason) {
+    if (!broadcast || stopping || broadcast.engine !== 'native') return;
+    broadcast.engine = 'webm'; audit.warn('transmissao', 'motor-padrao', 'Motor próprio desligado: ' + reason + '. Passando ao codificador padrão.', { motivo: reason });
+    for (const r of [...runners.values()]) {
+      if (r.failed || r.closed) continue;
+      r.dying = true; try { r.child.stdin.end(); } catch { /* já fechado */ }
+      r.killTimer = setTimeout(() => r.child?.kill('SIGKILL'), 3500); r.killTimer.unref?.();
+      relaunch(r);
+    }
+    const message = 'Motor próprio indisponível (' + reason + '). A transmissão continua com o codificador padrão.';
+    send({ type: 'engine', engine: 'webm', message }); send({ type: 'notice', message });
   }
 
   // Erro de escrita no pipe, fechamento do processo e entrada interrompida chegam em ordem imprevisível: o primeiro decide.
@@ -184,16 +203,19 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         const line = r.progress.slice(0, idx).trim(); r.progress = r.progress.slice(idx + 1);
         if (line.startsWith('dup_frames=')) { starving(r, Number(line.slice(11))); continue; }
         if (line.startsWith('out_time_us=')) { r.curOut = Number(line.slice(12)); continue; }
-        if (line === 'progress=continue') { load(r); continue; }
-        if (!line.startsWith('frame=')) continue;
-        const frames = Number(line.slice(6)); if (!(frames > r.lastFrame)) continue;
-        if (!r.lastFrame) audit.info('transmissao', 'enviando', 'Codificador ' + group.aspect + ' produzindo quadros');
-        r.lastProgress = Date.now(); r.lastFrame = frames;
-        // O primeiro formato da sessão é a referência de quadros mostrada ao operador.
-        if (!stopping && group.id === [...runners.keys()][0]) send({ type: 'sending', frames, groups: [...runners.keys()], message: broadcast ? 'Sinal sendo enviado. Confirme a recepção em cada plataforma.' : 'Sinal sendo enviado. Confirme a recepção no YouTube Studio.' });
-        for (const [id, t] of troubled) if (Date.now() - t.at > 12000) { troubled.delete(id); audit.info('transmissao', 'destino-recuperado', t.name + ' voltou a receber'); if (!stopping) send({ type: 'destination', id, state: 'sending' }); }
+        if (line === 'progress=continue') { load(r); if (broadcast?.engine === 'native' && Number.isFinite(r.curOut)) progressed(Math.round(r.curOut / 1e6 * 30)); continue; }
+        if (!line.startsWith('frame=') || broadcast?.engine === 'native') continue; // com o vídeo apenas copiado o FFmpeg não conta quadros: o tempo de saída (a 30 q/s) faz o papel
+        progressed(Number(line.slice(6)));
       }
     });
+    function progressed(frames) {
+      if (!(frames > r.lastFrame)) return;
+      if (!r.lastFrame) audit.info('transmissao', 'enviando', 'Codificador ' + group.aspect + ' produzindo quadros');
+      r.lastProgress = Date.now(); r.lastFrame = frames;
+      // O primeiro formato da sessão é a referência de quadros mostrada ao operador.
+      if (!stopping && group.id === [...runners.keys()][0]) send({ type: 'sending', frames, groups: [...runners.keys()], message: broadcast ? 'Sinal sendo enviado. Confirme a recepção em cada plataforma.' : 'Sinal sendo enviado. Confirme a recepção no YouTube Studio.' });
+      for (const [id, t] of troubled) if (Date.now() - t.at > 12000) { troubled.delete(id); audit.info('transmissao', 'destino-recuperado', t.name + ' voltou a receber'); if (!stopping) send({ type: 'destination', id, state: 'sending' }); }
+    }
     child.on('close', code => {
       clearTimeout(r.killTimer); r.closed = true;
       if (!stopping && !r.failed) {
@@ -227,6 +249,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     }
     let msg; try { msg = JSON.parse(data.toString()); } catch { fail('Comando inválido.'); return; }
     if (msg.type === 'stop') { stop(); return; }
+    if (msg.type === 'engine' && everStarted) { useStandardEngine(String(msg.reason || 'falha no navegador').slice(0, 160)); return; }
     if (msg.type !== 'start') { fail('Comando não suportado.'); return; }
     if (everStarted) { fail('Abra uma nova sessão para iniciar outra transmissão.'); return; }
     everStarted = true;
@@ -235,7 +258,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     if (msg.calibrate === true) {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-sync-'));
       calibrating = { dir };
-      msg = { type: 'start', resolution: '720p', bitrate: 3, encoder: 'libx264', destinations: [], record: { dir, formats: '16:9' }, channels: 1, avSyncMs: 0 };
+      msg = { type: 'start', resolution: '720p', bitrate: 3, encoder: 'libx264', destinations: [], record: { dir, formats: '16:9' }, channels: 1, avSyncMs: 0, engine: msg.engine };
     }
     const multi = Array.isArray(msg.destinations) || !!msg.record;
     let cfg, groups;
