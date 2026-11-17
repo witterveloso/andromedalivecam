@@ -316,7 +316,9 @@ async function makePeer(lane) {
     if (lane !== 'media') return;
     if (pc.connectionState === 'connected') { bitrate().catch(() => {}); say('Vídeo conectado à mesa. O tally indica o barramento PGM, não a confirmação do YouTube.', 'ok'); q('#ptt').disabled = false; }
     if (['failed', 'disconnected'].includes(pc.connectionState)) {
-      tally('offline'); say('Conexão interrompida. Reconectando…', 'warn'); ptt(false);
+      tally('offline'); ptt(false);
+      const relayed = (cam.ice || []).some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(u)));
+      say(pc.connectionState === 'failed' && !relayed ? 'A rede móvel bloqueou o caminho direto até a mesa. Peça para a mesa ativar "Rede móvel (4G/5G)" em Convites; enquanto isso, use Wi-Fi. Tentando de novo…' : 'Conexão interrompida. Reconectando…', 'warn');
       clearTimeout(cam.retry); cam.retry = setTimeout(() => { if (cam.running) cam.ws?.close(); }, 2000);
     }
   };

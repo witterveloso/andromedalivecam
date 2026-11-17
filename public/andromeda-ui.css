@@ -714,3 +714,16 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 
 /* Câmera de celular em segundo plano: o sistema do aparelho suspende a imagem. */
 .mv-cell[data-presence="background"]::after { content: "CÂMERA EM SEGUNDO PLANO"; position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: 8px; background: rgba(6, 8, 23, .72); color: #ffd60a; font: 700 11px var(--d-mono); letter-spacing: .08em; text-align: center; pointer-events: none; }
+
+/* Rede móvel (4G/5G): retransmissão TURN */
+.turn-box { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--d-line); border-radius: var(--d-r-sm); background: var(--d-inset); }
+.turn-box summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.turn-box summary::-webkit-details-marker { display: none; }
+.turn-box summary::after { content: '▾'; margin-left: auto; color: var(--d-faint); }
+.turn-box[open] summary::after { content: '▴'; }
+.turn-box label { display: grid; gap: 4px; margin-top: 8px; color: var(--d-muted); font-size: 12px; }
+.turn-state { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--d-line-2); color: var(--d-muted); font: 700 10.5px var(--d-display); letter-spacing: .08em; text-transform: uppercase; }
+.turn-state[data-tone="ok"] { border-color: var(--d-pvw); color: var(--d-pvw-text); }
+.turn-state[data-tone="warn"] { border-color: var(--d-amber); color: var(--d-amber); }
+.turn-state[data-tone="error"] { border-color: var(--d-pgm); color: var(--d-pgm-text); }
+.turn-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
