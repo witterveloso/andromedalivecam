@@ -7,11 +7,14 @@
  *
  * Cada ajuste usa o recurso do próprio aparelho quando o navegador o oferece; quando não oferece (Safari no
  * iPhone, por exemplo), é aplicado na imagem neste celular, antes do envio, em WebGL:
- *  - zoom digital (recorte), com movimento programado entre pontos 1–4 e velocidade escolhida;
+ *  - zoom digital (recorte) pela barra ou pela pinça, e reenquadramento (posição do recorte) pela mesa;
  *  - balanço de branco e exposição (ganhos de cor e brilho);
  *  - estabilização: mede o movimento da imagem quadro a quadro (correlação de blocos em baixa resolução),
  *    separa o tremor da intenção (caminho suavizado) e desloca uma janela de recorte para cancelar só o tremor.
  * Sem nenhum ajuste digital ativo, o vídeo da câmera vai direto, sem processamento.
+ *
+ * A mesa pode operar a câmera à distância: zoom, troca de lente e enquadramento (mensagem 'control'); o app informa
+ * o que o aparelho oferece (mensagem 'caps').
  *
  * Mesmo arquivo em docs/ (GitHub Pages) e public/cam/ (gateway); test/cam-sync.test.cjs compara as cópias.
  */
@@ -23,7 +26,6 @@
   const KELVIN = { min: 2500, max: 9000, step: 50 };
   const EV = { min: -2, max: 2, step: 0.1 };
   const WB_PRESETS = [['Tungstênio', 3200], ['Fluor.', 4000], ['Dia', 5600], ['Nublado', 6500], ['Sombra', 7500]];
-  const SPEEDS = [['Rápido', 1], ['Médio', 3], ['Lento', 6], ['Muito lento', 10]];
   const STAB = { off: 'Desligada', standard: 'Padrão', strong: 'Forte' };
   const STAB_TUNE = { standard: { margin: 0.07, smooth: 0.94 }, strong: { margin: 0.11, smooth: 0.972 } };
 
@@ -35,25 +37,26 @@
     wb: saved.wb === 'manual' ? 'manual' : 'auto', kelvin: num(saved.kelvin, 5600), tint: num(saved.tint, 0),
     exp: saved.exp === 'manual' ? 'manual' : 'auto', ev: num(saved.ev, 0),
     stab: STAB[saved.stab] ? saved.stab : 'standard',
-    points: Array.isArray(saved.points) && saved.points.length === 4 ? saved.points.map(p => Number.isFinite(p) ? p : null) : [1, null, null, null],
-    speed: num(saved.speed, 3),
+    // Enquadramento: posição do recorte (−1…1 em cada eixo), usado quando há zoom; a mesa ajusta à distância.
+    pan: { x: clamp(num(saved.pan?.x, 0), -1, 1), y: clamp(num(saved.pan?.y, 0), -1, 1) },
   };
-  let raw = null, caps = {}, proc = null, saveTimer = null, open = null, move = null;
+  let raw = null, caps = {}, proc = null, saveTimer = null, open = null;
   const store = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => prefs.set('optics', JSON.stringify(st)), 300); };
 
   /* ---------- o que o aparelho oferece ---------- */
   const range = c => c && Number.isFinite(c.min) && Number.isFinite(c.max) && c.max > c.min;
   // Estabilização do aparelho: nenhum navegador padroniza isso ainda; se algum expuser (nome com "stabiliz"), usamos.
   const nativeStabKey = () => Object.keys(caps).find(k => /stabiliz/i.test(k)) || null;
+  const framed = () => st.zoom > 1.001 && (Math.abs(st.pan.x) > 0.001 || Math.abs(st.pan.y) > 0.001);
   const native = () => ({
-    zoom: range(caps.zoom),
+    zoom: range(caps.zoom) && !framed(),
     wb: !!caps.whiteBalanceMode?.includes?.('manual') && range(caps.colorTemperature),
     exp: range(caps.exposureCompensation),
     stab: !!nativeStabKey(),
   });
-  const zoomRange = () => native().zoom ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.01 } : DIGITAL_ZOOM;
+  const zoomRange = () => range(caps.zoom) && !framed() ? { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.01 } : DIGITAL_ZOOM;
   const digitalStab = () => st.stab !== 'off' && !native().stab;
-  const needsDigital = () => { const n = native(); return (!n.zoom && st.zoom > 1.001) || (!n.wb && st.wb === 'manual') || (!n.exp && st.exp === 'manual' && Math.abs(st.ev) > 0.01) || digitalStab(); };
+  const needsDigital = () => { const n = native(); return framed() || (!n.zoom && st.zoom > 1.001) || (!n.wb && st.wb === 'manual') || (!n.exp && st.exp === 'manual' && Math.abs(st.ev) > 0.01) || digitalStab(); };
 
   /* ---------- controles do aparelho ---------- */
   let nativeBusy = false, nativeAgain = false;
@@ -64,6 +67,7 @@
     try {
       const n = native(), groups = [];
       if (n.zoom) groups.push({ zoom: clamp(st.zoom, caps.zoom.min, caps.zoom.max) });
+      else if (range(caps.zoom)) groups.push({ zoom: clamp(1, caps.zoom.min, caps.zoom.max) }); // recorte digital assume o zoom
       if (caps.whiteBalanceMode?.length) {
         if (st.wb === 'manual' && n.wb) groups.push({ whiteBalanceMode: 'manual', colorTemperature: clamp(st.kelvin, caps.colorTemperature.min, caps.colorTemperature.max) });
         else if (caps.whiteBalanceMode.includes('continuous')) groups.push({ whiteBalanceMode: 'continuous' });
@@ -159,6 +163,7 @@
       gain: !n.wb && st.wb === 'manual' ? wbGains(st.kelvin, st.tint) : [1, 1, 1],
       expo: !n.exp && st.exp === 'manual' ? Math.pow(2, clamp(st.ev, EV.min, EV.max)) : 1,
       stab: digitalStab() ? st.stab : 'off',
+      pan: { ...st.pan },
     };
   }
   function makeProcessor() {
@@ -196,7 +201,8 @@
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
         // Linhas da imagem descem; com a textura invertida, o deslocamento vertical troca de sinal.
-        gl.uniform1f(u.z, p.zoom * s.scale); gl.uniform2f(u.o, s.ox, -s.oy); gl.uniform3fv(u.g, p.gain); gl.uniform1f(u.e, p.expo);
+        const room = Math.max(0, .5 - .5 / Math.max(1, p.zoom * s.scale));
+        gl.uniform1f(u.z, p.zoom * s.scale); gl.uniform2f(u.o, s.ox + p.pan.x * room, -s.oy - p.pan.y * room); gl.uniform3fv(u.g, p.gain); gl.uniform1f(u.e, p.expo);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); frames++;
       }
       schedule();
@@ -226,36 +232,23 @@
   }
   function changed() { store(); applyNative(); route(); paintBar(); if (open) paintDrawer(); }
 
-  /* ---------- zoom: barra, pinça e movimento programado ---------- */
+  /* ---------- zoom: barra e pinça ---------- */
   function setZoom(value, quiet) {
     const r = zoomRange();
     st.zoom = Math.round(clamp(value, r.min, r.max) * 1000) / 1000;
-    store(); applyNative(); route(); paintBar(); if (!quiet && open === 'zoom') paintZoomLive();
+    if (st.zoom <= 1.001) st.pan = { x: 0, y: 0 };
+    store(); applyNative(); route(); paintBar(); if (!quiet && open === 'zoom') paintZoomLive(); notify();
   }
-  // Curva suave (começa e termina devagar), como um zoom servo de câmera de estúdio.
-  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  function zoomTo(target, seconds) {
-    stopMove();
-    const from = st.zoom, to = clamp(target, zoomRange().min, zoomRange().max), dur = Math.max(.2, seconds) * 1000, t0 = performance.now();
-    if (Math.abs(to - from) < 0.001) return;
-    // Interpolação em escala logarítmica: a velocidade aparente do zoom fica constante, como numa objetiva.
-    const lf = Math.log(from), lt = Math.log(to);
-    move = { to, raf: 0 };
-    const step = now => {
-      if (!move) return;
-      const k = clamp((now - t0) / dur, 0, 1);
-      setZoom(Math.exp(lf + (lt - lf) * ease(k)), false);
-      if (k < 1) move.raf = requestAnimationFrame(step); else { move = null; paintBar(); if (open === 'zoom') paintDrawer(); }
-    };
-    move.raf = requestAnimationFrame(step); paintBar(); if (open === 'zoom') paintDrawer();
+  function setPan(x, y) {
+    st.pan = { x: clamp(x, -1, 1), y: clamp(y, -1, 1) };
+    store(); applyNative(); route(); paintBar(); notify();
   }
-  function stopMove() { if (move) { cancelAnimationFrame(move.raf); move = null; } }
   // Pinça com dois dedos sobre a imagem.
   const touches = new Map(); let pinch = null;
   document.body.addEventListener('pointerdown', e => {
     if (!raw || e.pointerType === 'mouse' || e.target.closest('button,input,select,dialog,a,.drawer,.params')) return;
     touches.set(e.pointerId, [e.clientX, e.clientY]);
-    if (touches.size === 2) { stopMove(); const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom: st.zoom }; }
+    if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom: st.zoom }; }
   });
   document.body.addEventListener('pointermove', e => { if (!touches.has(e.pointerId)) return; touches.set(e.pointerId, [e.clientX, e.clientY]); if (pinch && touches.size === 2) { const [a, b] = [...touches.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch.d > 10) setZoom(pinch.zoom * d / pinch.d); } });
   for (const ev of ['pointerup', 'pointercancel']) document.body.addEventListener(ev, e => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; });
@@ -277,7 +270,7 @@
     const lensChip = $('#lensChips .lens[aria-checked="true"]'), lensOpt = $('#lens')?.selectedOptions?.[0];
     set('lens', lensChip?.textContent || (lensOpt && typeof lensInfo === 'function' ? lensInfo(lensOpt.text, 0).name : '—'), false);
     set('format', s.height ? Math.min(s.width, s.height) + 'p · ' + Math.round(s.frameRate || 0) : '—', false);
-    set('zoom', (move ? '▸ ' : '') + fmtZoom(st.zoom) + (n.zoom || st.zoom <= 1.001 ? '' : ' dig'), false);
+    set('zoom', (framed() ? '⌖ ' : '') + fmtZoom(st.zoom) + (n.zoom || st.zoom <= 1.001 ? '' : ' dig'), false);
     set('wb', st.wb === 'manual' ? Math.round(st.kelvin) + 'K' : (s.colorTemperature ? Math.round(s.colorTemperature) + 'K' : 'Auto'), st.wb !== 'manual');
     set('exp', st.exp === 'manual' ? fmtEV(st.ev) : (Number.isFinite(s.exposureCompensation) ? fmtEV(s.exposureCompensation) : '0.0'), st.exp !== 'manual');
     set('stab', st.stab === 'off' ? 'OFF' : STAB[st.stab] + (n.stab ? '' : ''), false);
@@ -329,29 +322,9 @@
     } else if (open === 'zoom') {
       const r = zoomRange();
       dTitle.textContent = 'Zoom'; dSource.textContent = n.zoom ? 'óptico/da lente' : 'digital · recorte';
-      zoomLive = slider(r, st.zoom, v => { stopMove(); setZoom(v, true); }, fmtZoom, 'Zoom');
+      zoomLive = slider(r, st.zoom, v => setZoom(v, true), fmtZoom, 'Zoom');
       zoomLive.row.classList.add('zoom-slider');
-      dBody.append(zoomLive.row);
-      // Movimento programado: pontos 1–4 e velocidade.
-      const prog = make('div', 'zoom-prog'), pts = make('div', 'zoom-points'), saving = make('button', 'zoom-save', 'Gravar ponto');
-      saving.type = 'button'; saving.setAttribute('aria-pressed', 'false');
-      saving.onclick = () => saving.setAttribute('aria-pressed', String(saving.getAttribute('aria-pressed') !== 'true'));
-      st.points.forEach((v, i) => {
-        const b = make('button', 'zoom-point'); b.type = 'button';
-        b.append(make('b', '', String(i + 1)), make('span', '', v ? fmtZoom(v) : '—'));
-        b.setAttribute('aria-label', 'Ponto ' + (i + 1) + (v ? ' · ' + fmtZoom(v) : ' vazio'));
-        b.onclick = () => {
-          if (saving.getAttribute('aria-pressed') === 'true' || st.points[i] === null) { st.points[i] = st.zoom; store(); saving.setAttribute('aria-pressed', 'false'); paintDrawer(); say('Ponto ' + (i + 1) + ' gravado em ' + fmtZoom(st.zoom) + '.', 'ok'); return; }
-          zoomTo(st.points[i], st.speed);
-        };
-        pts.append(b);
-      });
-      const speeds = segmented('Velocidade do movimento', SPEEDS.map(([t, s]) => [String(s), t + ' · ' + s + ' s']), String(st.speed), v => { st.speed = Number(v); store(); paintDrawer(); });
-      const custom = slider({ min: 0.5, max: 20, step: 0.5 }, st.speed, v => { st.speed = v; store(); }, v => v.toFixed(1) + ' s', 'Duração do movimento');
-      const stopB = make('button', 'zoom-stop', move ? 'Parar movimento' : 'Movimento parado'); stopB.type = 'button'; stopB.disabled = !move; stopB.onclick = () => { stopMove(); paintBar(); paintDrawer(); };
-      const actions = make('div', 'zoom-actions'); actions.append(saving, stopB);
-      prog.append(make('span', 'drawer-label', 'Movimento programado · toque num ponto'), pts, actions, speeds, custom.row);
-      dBody.append(prog, make('p', 'drawer-hint', 'Toque num ponto para ir até ele com a velocidade escolhida, em curva suave. Para mudar um ponto: "Gravar ponto" e toque nele. Pinça com dois dedos também dá zoom.' + (n.zoom ? '' : ' Zoom digital perde nitidez; para aproximar sem perda, prefira a lente Tele.')));
+      dBody.append(zoomLive.row, make('p', 'drawer-hint', 'Arraste a barra ou use a pinça com dois dedos na imagem.' + (n.zoom ? '' : ' Zoom digital perde nitidez; para aproximar sem perda, prefira a lente Tele.') + (framed() ? ' Enquadramento ajustado pela mesa.' : '')));
     } else if (open === 'wb') {
       dTitle.textContent = 'Balanço de branco'; dSource.textContent = source(n.wb);
       dBody.append(segmented('Modo', [['auto', 'Automático'], ['manual', 'Manual']], st.wb, v => { st.wb = v; changed(); }));
@@ -409,6 +382,29 @@
     if (!document.body.contains(drawer)) document.body.append(drawer);
     const tele = $('.telemetry'); if (tele && !tele.contains(badge)) tele.append(badge);
   }
+  // Relatório para a mesa (lentes, zoom, enquadramento), no máximo 4 por segundo.
+  let notifyTimer = null, lastCaps = '';
+  function notify() {
+    if (notifyTimer) return;
+    notifyTimer = setTimeout(() => {
+      notifyTimer = null;
+      if (!raw || typeof send !== 'function') return;
+      const r = zoomRange(), select = $('#lens');
+      const lenses = select ? [...select.options].map((o, i) => ({ o, info: lensInfo(o.text, i) })).filter(x => !x.info.virtual).sort((a, b) => a.info.rank - b.info.rank).map(({ o, info }) => ({ id: o.value, name: info.name, kind: info.kind, active: o.value === select.value })) : [];
+      const msg = { type: 'caps', lenses, zoom: { min: r.min, max: r.max, value: st.zoom, native: native().zoom }, pan: st.pan, model: deviceModel };
+      const text = JSON.stringify(msg); if (text === lastCaps) return; lastCaps = text; send(msg);
+    }, 250);
+  }
+  let deviceModel = '';
+  navigator.userAgentData?.getHighEntropyValues?.(['model']).then(v => { deviceModel = v.model || ''; notify(); }).catch(() => {});
+  // Comandos da mesa: zoom, lente e enquadramento.
+  function remote(m) {
+    if (!raw) return;
+    if (typeof m.lens === 'string') { const select = $('#lens'); if (select && [...select.options].some(o => o.value === m.lens) && select.value !== m.lens) { select.value = m.lens; select.onchange?.(); say('A mesa trocou a lente.', 'info'); } }
+    if (Number.isFinite(m.zoom)) setZoom(m.zoom);
+    if (m.center) setPan(0, 0);
+    else if (m.pan && Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y)) setPan(m.pan.x, m.pan.y);
+  }
   mount(); paintBar();
   window.AndromedaOptics = {
     // Câmera nova (início ou troca de lente): lê o que o aparelho oferece e reaplica os ajustes.
@@ -416,13 +412,13 @@
       raw = track; caps = track.getCapabilities?.() || {};
       const r = zoomRange(); st.zoom = clamp(st.zoom, r.min, r.max);
       if (proc) { proc.stop(); proc = null; }
-      mount(); applyNative(); route(); paintBar(); if (open) paintDrawer();
+      mount(); applyNative(); route(); paintBar(); if (open) paintDrawer(); lastCaps = ''; notify();
     },
     output: () => output(),
-    reset() { stopMove(); if (proc) { proc.stop(); proc = null; } raw = null; caps = {}; if (open) toggle(null); paintBar(); },
+    reset() { if (proc) { proc.stop(); proc = null; } raw = null; caps = {}; if (open) toggle(null); paintBar(); },
     lensBar() { paintBar(); },
-    zoomTo, open: id => { if (open !== id) toggle(id); }, close: () => { if (open) toggle(null); },
-    state: () => ({ ...st, native: native(), digital: !!proc, frames: proc?.frames() || 0, shake: proc?.shake() || 0, moving: !!move, drawer: open }),
+    remote, notify, setZoom, setPan, open: id => { if (open !== id) toggle(id); }, close: () => { if (open) toggle(null); },
+    state: () => ({ ...st, native: native(), digital: !!proc, frames: proc?.frames() || 0, shake: proc?.shake() || 0, framed: framed(), drawer: open }),
     set(next) { Object.assign(st, next); changed(); },
   };
 })();

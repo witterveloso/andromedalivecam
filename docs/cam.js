@@ -141,12 +141,13 @@ q('#hear').onclick = () => q('#returnAudio').play()
 // virtuais que trocam de lente sozinhas. Elas ficam fora dos botões; só aparecem as lentes físicas.
 function lensInfo(label, index) {
   const l = String(label || '').toLowerCase();
-  if (/triple|tripla|dual|dupla/.test(l)) return { name: 'Auto', rank: 7, virtual: true };
-  if (/front|frontal|user|selfie|truedepth/.test(l)) return { name: 'Frontal', rank: 9 };
-  if (/ultra/.test(l)) return { name: '0,5×', rank: 1 };
-  if (/tele/.test(l)) return { name: 'Tele', rank: 3 };
-  if (/back|rear|traseira|environment|facing back|principal|main/.test(l)) return { name: '1×', rank: 2 };
-  return { name: 'Câm ' + (index + 1), rank: 8 };
+  if (/triple|tripla|dual|dupla/.test(l)) return { name: 'Auto', kind: 'Virtual', rank: 7, virtual: true };
+  if (/front|frontal|user|selfie|truedepth/.test(l)) return { name: 'Frontal', kind: /truedepth/.test(l) ? 'Frontal TrueDepth' : 'Frontal (selfie)', rank: 9 };
+  if (/ultra/.test(l)) return { name: '0,5×', kind: 'Ultra-angular', rank: 1 };
+  if (/tele/.test(l)) return { name: 'Tele', kind: 'Teleobjetiva', rank: 3 };
+  if (/macro/.test(l)) return { name: 'Macro', kind: 'Macro', rank: 4 };
+  if (/back|rear|traseira|environment|facing back|principal|main/.test(l)) return { name: '1×', kind: 'Grande-angular (principal)', rank: 2 };
+  return { name: 'Câm ' + (index + 1), kind: 'Câmera', rank: 8 };
 }
 function lensName(label, index) { return lensInfo(label, index).name; }
 function renderLenses() {
@@ -162,11 +163,12 @@ function renderLenses() {
     chip.textContent = info.name + (seen[info.name] > 1 ? ' ' + seen[info.name] : '');
     chip.setAttribute('role', 'radio');
     chip.setAttribute('aria-checked', String(option.value === select.value));
-    chip.setAttribute('title', option.text || info.name);
+    chip.setAttribute('title', info.kind + (option.text ? ' · ' + option.text : ''));
+    chip.setAttribute('aria-label', info.name + ', ' + info.kind);
     chip.onclick = () => { if (select.value === option.value) return; select.value = option.value; select.onchange(); };
     box.append(chip);
   });
-  if (cam.stream) window.AndromedaOptics?.lensBar(box);
+  if (cam.stream) { window.AndromedaOptics?.lensBar(box); window.AndromedaOptics?.notify(); }
 }
 // O navegador às vezes abre uma câmera virtual (Dupla/Tripla) ao pedir "traseira": troca uma vez pela 1× física.
 let leftVirtual = false;
@@ -331,6 +333,7 @@ async function message(m) {
   if (m.type === 'negotiate') { cleanPeers(); cam.ice = m.iceServers; await makePeer('media'); await makePeer('intercom'); return; }
   if (m.type === 'desk-offline') { cleanPeers(); tally('offline'); say('Mesa desconectada. Aguardando o operador abrir a mesa.', 'warn'); return; }
   if (m.type === 'tally') { cam.lastTally = Date.now(); tally(m.state); return; }
+  if (m.type === 'control') { window.AndromedaOptics?.remote(m); return; }
   if (m.type === 'signal') {
     const p = cam.pcs.get(m.lane); if (!p) return;
     if (m.signal.description) {
