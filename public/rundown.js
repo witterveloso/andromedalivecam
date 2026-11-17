@@ -134,7 +134,7 @@ for (const type of ['focusin', 'pointerdown', 'input']) cdCard.addEventListener(
 // Cada reprodutor alimenta uma fonte. Começa quando a fonte entra no AR, para quando sai, e segue a transição no áudio.
 const players = new Map();
 function makePlayer(source, label) {
-  const p = { source, label, item: null, running: false, end: 'return', transition: 'mix', volume: .9, gain: null, analyser: null, onEnd: null };
+  const p = { source, label, item: null, running: false, end: 'return', transition: 'mix', loop: false, volume: .9, gain: null, analyser: null, onEnd: null };
   players.set(source, p);
   return p;
 }
@@ -167,7 +167,7 @@ async function startPlayer(p) {
   const item = p.item; if (!item || item.error) return;
   p.running = true; p.paused = false; item.played = true;
   await connectAudio(p, item);
-  item.el.currentTime = 0;
+  item.el.currentTime = 0; item.el.loop = !!p.loop;
   try { await item.el.play(); } catch (e) { p.running = false; log(p.label + ' não iniciou: ' + e.message); return; }
   sources[p.source] = p.label + ' · ' + item.name;
   log(p.label + ' no AR: ' + item.name); audit('info', p.label.toLowerCase() + '-no-ar', p.label + ' no AR: ' + item.name, { duracao: Math.round(item.duration || 0) });
@@ -181,7 +181,7 @@ function stopPlayer(p) {
 }
 // Ao terminar no AR: volta para a câmera que está no PREVIEW (a que estava no AR antes do VT), dispara o próximo ou congela.
 function playerEnded(p) {
-  if (!p.running || state.pgm !== p.source) return;
+  if (!p.running || state.pgm !== p.source || p.loop) return;
   if (p.end === 'hold') { log(p.label + ' terminou: último quadro congelado no AR'); return; }
   if (p.onEnd?.()) return;
   if (state.busy || state.progress > 0) return;
@@ -385,6 +385,14 @@ function setVinheta(file) {
   log('Vinheta carregada: ' + item.name); try { sync(); } catch { /* antes da mesa pronta */ }
   return true;
 }
+// Loop: a vinheta repete direto, sem fim, até o operador tirá-la do AR. Vale na hora, mesmo com ela no ar.
+function setVinhetaLoop(on) {
+  vinhetaPlayer.loop = !!on; if (vinhetaPlayer.item) vinhetaPlayer.item.el.loop = vinhetaPlayer.loop;
+  try { localStorage.setItem('andromeda.vinheta.loop.v1', JSON.stringify(vinhetaPlayer.loop)); } catch { /* sem armazenamento */ }
+  log(vinhetaPlayer.loop ? 'Vinheta em LOOP: repete até sair do AR' : 'Vinheta sem loop: toca uma vez');
+  window.andromedaCommands?.paint();
+}
+try { vinhetaPlayer.loop = JSON.parse(localStorage.getItem('andromeda.vinheta.loop.v1')) === true; } catch { /* sem armazenamento */ }
 function vinhetaToPreview() {
   if (!vinhetaPlayer.item) { log('Vinheta: carregue o vídeo com duplo clique em VINHETA.'); return false; }
   audioMixer.enable().catch(() => {}); vinhetaPlayer.item.el.currentTime = 0;
@@ -443,5 +451,5 @@ const rundownBaseInspection = inspectionSettings;
 inspectionSettings = function () { return inspecting === 'countdown' ? structuredClone(fx.draft) : rundownBaseInspection(); };
 
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
-window.andromedaRundown = { countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
+window.andromedaRundown = { setVinhetaLoop, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
   addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };

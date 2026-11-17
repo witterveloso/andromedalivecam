@@ -58,11 +58,21 @@ assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
 const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vinheta','black','vt','vtnext','vtpause','vtstop','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
+// Botões personalizáveis: ordem, tamanho, por linha e largo; a barra de ajuste só aparece no Personalizar.
+{const grid=q('[data-tool=bus] .cmd-grid'),tools=q('[data-tool=bus] .cmd-tools');assert(tools&&tools.querySelector('input[type=range]')&&tools.querySelector('select'),'size bar and buttons-per-row in the commands panel');
+cmd.moveCommand('bars','gc0');assert.equal(grid.firstElementChild.dataset.cmd,'bars','a command can be moved to another place');assert.equal(grid.dataset.custom,'true');
+cmd.setSize(150);assert.equal(grid.style.getPropertyValue('--cmd-scale'),'1.5');assert.equal(tools.querySelector('output').textContent,'150%');cmd.setSize(999);assert.equal(cmd.layout().size,200,'size is limited to 200%');
+cmd.setCols(3);assert.equal(grid.style.getPropertyValue('--cmd-cols'),'3');cmd.setWide('black',true);assert.equal(q('.cmd-btn[data-cmd=black]').dataset.wide,'true');
+assert.equal(JSON.parse(w.localStorage.getItem('andromeda.commands.v1')).size,200,'the look is saved');
+cmd.resetLook();assert.deepEqual([...grid.children].map(b=>b.dataset.cmd),cmds,'Restaurar brings back the standard order');assert.equal(cmd.layout().size,100);assert.equal(q('.cmd-btn[data-cmd=black]').dataset.wide,'false');}
 assert(q('.cmd-btn[data-cmd=pip]'),'the PiP command is on the desk');assert(!q('[data-tool=bus] .key-panel'),'the KEY 1 (PiP) monitor window is not on the desk any more');assert(q('.key-panel').hidden,'and the panel stays hidden wherever else it was attached');
 // Regressiva direto no AR; tempo no ajuste (duplo clique).
 rd.cdRow.querySelector('#cdTime').value='2:30';rd.cdRow.querySelector('#cdTime').dispatchEvent(new w.Event('change'));assert.equal(rd.countdown.seconds,150);rd.cdRow.querySelector('#cdPlus').click();assert.equal(rd.countdown.seconds,180);
 q('.cmd-btn[data-cmd=countdown]').click();assert(rd.countdown.on,'REGRESSIVA goes straight to air');assert(rd.cdRow.querySelector('#cdTime').disabled,'time locked while on air');q('.cmd-btn[data-cmd=countdown]').click();assert(!rd.countdown.on);
 q('.cmd-btn[data-cmd=countdown]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(!q('.cmd-pop').hidden&&q('.cmd-pop').contains(rd.cdRow),'double click opens the countdown settings');q('.cmd-pop-close').click();assert(q('.cmd-pop').hidden);
+// VINHETA em LOOP: guarda a escolha e o ajuste mostra a opção.
+rd.setVinhetaLoop(true);assert(rd.vinhetaPlayer.loop);assert.equal(w.localStorage.getItem('andromeda.vinheta.loop.v1'),'true');assert(q('.cmd-btn[data-cmd=vinheta] .cmd-sub').textContent.startsWith('↻'),'the VINHETA button shows the loop');
+q('.cmd-btn[data-cmd=vinheta]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#vinhetaLoop').checked,'loop option in the vinheta settings');q('.cmd-pop-close').click();rd.setVinhetaLoop(false);assert(!rd.vinhetaPlayer.loop);
 // VT e VINHETA vão ao PREVIEW; ao AR com CUT. Câmeras AFV saem do áudio porque não estão no AR.
 assert.equal(rd.vtToPreview(),false,'empty playlist: nothing goes to preview');
 rd.vt.items.push({name:'Abertura',el:{currentTime:0,ended:false,pause(){},play:()=>Promise.resolve()},duration:12});rd.cue(0);q('.cmd-btn[data-cmd=vt]').click();
@@ -102,7 +112,7 @@ assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera an
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
 q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,12,'and hidden');
-console.log('PASS: commands panel (GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
+console.log('PASS: commands panel (custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');
 assert.deepEqual([...q('#pfPreset').options].map(o=>o.value),['veryfast','superfast','ultrafast']);
