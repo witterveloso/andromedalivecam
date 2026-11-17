@@ -16,6 +16,18 @@
     linkedin:  { name: 'LinkedIn',     server: '',                                            help: 'Evento ao vivo → transmitir com software (RTMP personalizado). Copie a URL e a chave.' },
     custom:    { name: 'RTMP próprio', server: '',                                            help: 'Qualquer servidor RTMP/RTMPS: informe a URL do servidor e a chave (nome do stream).' },
   };
+  // Marca de cada plataforma (24×24), desenhada sobre o bloco colorido do destino. Texto fixo do programa, sem dados de fora.
+  const svg = body => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' + body + '</svg>';
+  const LOGOS = {
+    youtube: svg('<path fill="#fff" fill-rule="evenodd" d="M5 6.5A2.5 2.5 0 0 0 2.5 9v6A2.5 2.5 0 0 0 5 17.5h14a2.5 2.5 0 0 0 2.5-2.5V9A2.5 2.5 0 0 0 19 6.5H5zM10 9.3v5.4l4.8-2.7L10 9.3z"/>'),
+    facebook: svg('<path fill="#fff" d="M13.5 21v-7.5h2.6l.4-3h-3V8.6c0-.9.3-1.4 1.5-1.4h1.6V4.5c-.3 0-1.2-.1-2.3-.1-2.3 0-3.8 1.4-3.8 3.9v2.2H8v3h2.5V21h3z"/>'),
+    instagram: svg('<rect x="4" y="4" width="16" height="16" rx="4.5" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="3.6" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="16.8" cy="7.2" r="1.1" fill="#fff"/>'),
+    twitch: svg('<path fill="#fff" fill-rule="evenodd" d="M5 3L3.5 6.5v11H8v3l3-3h3.5l6-6V3H5zM10.5 7.5v5h1.7v-5h-1.7zm4.5 0v5h1.7v-5H15z"/>'),
+    kick: svg('<rect x="4.5" y="4" width="4.2" height="16" fill="#06130a"/><polygon points="9,12 15,4 20,4 13.5,12" fill="#06130a"/><polygon points="9,12 13.5,12 20,20 15,20" fill="#06130a"/>'),
+    tiktok: svg('<g transform="translate(-.7 -.5)"><path fill="#25f4ee" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/></g><path transform="translate(.7 .5)" fill="#fe2c55" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/><path fill="#fff" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/>'),
+    linkedin: svg('<rect x="4.5" y="9.5" width="3.2" height="10" fill="#fff"/><circle cx="6.1" cy="5.9" r="1.9" fill="#fff"/><path fill="#fff" d="M10 9.5h3v1.4c.5-.9 1.6-1.7 3.2-1.7 3 0 3.6 2 3.6 4.6v5.7h-3.2v-5c0-1.2-.02-2.6-1.7-2.6-1.7 0-2 1.3-2 2.6v5H10v-10z"/>'),
+    custom: svg('<circle cx="12" cy="12" r="2" fill="#fff"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" stroke="#fff" fill="none" stroke-width="1.7" stroke-linecap="round"/>'),
+  };
   const STORE = 'andromeda.broadcast.v1';
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const uid = () => Math.random().toString(36).slice(2, 9);
@@ -81,7 +93,8 @@
   function render() {
     list.replaceChildren(...model.destinations.map(d => {
       const p = PRESETS[d.platform], card = make('article', 'dest'); card.dataset.id = d.id; card.dataset.platform = d.platform;
-      const head = make('header'), badge = make('span', 'dest-badge', p.name.slice(0, 2).toUpperCase()), title = make('input', 'dest-name');
+      const head = make('header'), badge = make('span', 'dest-badge'), title = make('input', 'dest-name');
+      badge.innerHTML = LOGOS[d.platform] || LOGOS.custom; badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', p.name);
       title.value = d.name; title.maxLength = 40; title.setAttribute('aria-label', 'Nome do destino');
       const toggle = make('label', 'dest-toggle'), box = make('input'); box.type = 'checkbox'; box.checked = d.enabled; toggle.append(box, 'Ativo');
       const pill = make('span', 'dest-state'), remove = make('button', 'dest-remove', 'Remover'); remove.type = 'button';

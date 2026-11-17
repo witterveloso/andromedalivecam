@@ -165,7 +165,7 @@ const entering = source => state.pgm === source || (state.prv === source && (sta
 
 async function startPlayer(p) {
   const item = p.item; if (!item || item.error) return;
-  p.running = true; item.played = true;
+  p.running = true; p.paused = false; item.played = true;
   await connectAudio(p, item);
   item.el.currentTime = 0;
   try { await item.el.play(); } catch (e) { p.running = false; log(p.label + ' não iniciou: ' + e.message); return; }
@@ -174,7 +174,7 @@ async function startPlayer(p) {
 }
 function stopPlayer(p) {
   if (!p.running) return;
-  p.running = false; p.item?.el.pause();
+  p.running = false; p.paused = false; p.item?.el.pause();
   if (p.item) p.item.el.currentTime = 0;
   p.onStop?.();
 }
@@ -220,6 +220,19 @@ function drawPlayer(ctx, w, h, source, clean) {
 }
 
 /* ---------- VT · playlist ---------- */
+// Sinais dos botões do VT (formas simples, no tamanho do texto).
+const ICONS = {
+  pause: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="2" y="1.5" width="2.8" height="9" rx=".6" fill="currentColor"/><rect x="7.2" y="1.5" width="2.8" height="9" rx=".6" fill="currentColor"/></svg>',
+  play: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M3 1.4v9.2L10.4 6z" fill="currentColor"/></svg>',
+  stop: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1" fill="currentColor"/></svg>',
+  next: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M1.5 1.6v8.8L7.4 6z" fill="currentColor"/><rect x="8.2" y="1.6" width="2.4" height="8.8" rx=".5" fill="currentColor"/></svg>',
+};
+// Rótulo com o sinal antes do nome. Só mexe no botão quando muda, para não refazer o desenho a cada tique.
+function iconLabel(el, icon, text) {
+  const sig = icon + '|' + text; if (el.dataset.label === sig) return; el.dataset.label = sig;
+  const span = document.createElement('span'); span.className = 'cmd-ico'; span.innerHTML = ICONS[icon] || '';
+  el.replaceChildren(span, document.createTextNode(text));
+}
 const vt = { items: [], cue: 0, player: vtPlayer };
 vtPlayer.end = 'return';
 const cueItem = () => vt.items[vt.cue] || null;
@@ -238,12 +251,17 @@ vtPlayer.onEnd = () => {
   return true;
 };
 // Saiu do AR: o próximo da lista fica preparado.
-vtPlayer.onStop = () => { const at = vt.items.indexOf(vtPlayer.item); if (at >= 0 && at === vt.cue && at < vt.items.length - 1) vt.cue = at + 1; cue(vt.cue); };
+vtPlayer.onStop = () => {
+  const at = vt.items.indexOf(vtPlayer.item);
+  // PARAR: o mesmo VT fica pronto para começar de novo; fim normal: o próximo da lista fica preparado.
+  if (vt.holdCue && vt.holdCue === vtPlayer.item) { vt.holdCue = null; vt.cue = at; cue(at); return; }
+  if (at >= 0 && at === vt.cue && at < vt.items.length - 1) vt.cue = at + 1; cue(vt.cue);
+};
 
 const vtPanel = rundownEl('section', 'vt-panel'); vtPanel.setAttribute('aria-label', 'VT · playlist');
 vtPanel.innerHTML = '<div class="vt-top"><div class="vt-now"><span class="vt-state" id="vtState">VT PARADO</span><strong id="vtTitle">Nenhum VT no AR</strong></div><output class="vt-clock" id="vtClock" aria-live="off">--:--</output></div>' +
   '<div class="vt-bar"><i id="vtProgress"></i></div>' +
-  '<div class="vt-actions"><button type="button" id="vtFire" class="vt-fire">VT → PREVIEW</button><button type="button" id="vtStop" class="vt-stop" disabled>■ TIRAR VT DO AR</button><label class="vt-add">+ Adicionar VTs<input id="vtFiles" type="file" accept="video/*" multiple></label></div>' +
+  '<div class="vt-actions"><button type="button" id="vtFire" class="vt-fire">VT → PREVIEW</button><button type="button" id="vtPause" class="vt-pause" disabled><span class="cmd-ico">'+ICONS.pause+'</span>PAUSAR VT</button><button type="button" id="vtStop" class="vt-stop" disabled title="Para o VT, tira do ar e deixa o mesmo VT pronto para começar de novo"><span class="cmd-ico">'+ICONS.stop+'</span>PARAR VT</button><label class="vt-add">+ Adicionar VTs<input id="vtFiles" type="file" accept="video/*" multiple></label></div>' +
   '<ol class="vt-list" id="vtList" aria-label="Playlist de VTs"></ol>' +
   '<div class="vt-options"><label>Ao terminar<select id="vtEnd"><option value="return">Voltar para a câmera</option><option value="next">Disparar o próximo VT</option><option value="hold">Congelar no último quadro</option></select></label><label>Volta com<select id="vtTransition"><option value="mix">AUTO (transição escolhida)</option><option value="cut">CUT seco</option></select></label><label class="vt-vol">Volume do VT<input id="vtVolume" type="range" min="0" max="100" value="90"><meter id="vtMeter" min="0" max="1" value="0" aria-label="Nível do áudio do VT"></meter></label></div>' +
   '<p class="vt-note">Arraste vídeos para cá ou use Adicionar VTs (MP4 H.264 ou WebM). Clique num VT para deixá-lo como próximo e em <b>VT → PREVIEW</b> (ou no comando VT). Ele começa a tocar quando você leva ao AR com CUT ou AUTO e, no fim, a mesa volta sozinha para a câmera que estava no AR. Os arquivos ficam carregados enquanto a mesa estiver aberta.</p>';
@@ -295,9 +313,42 @@ function vtToPreview() {
   audioMixer.enable().catch(() => {});
   select('prv', VT_SOURCE); return true;
 }
-function vtOff() { if (state.pgm === VT_SOURCE && !state.busy && state.progress === 0) { if (vtPlayer.transition === 'cut') cut(); else auto(); } }
+// Comando VT PRÓXIMO: dispara o próximo VT da playlist sem abrir o painel.
+// Com um VT tocando no AR, troca já para o seguinte (sem sair do AR); sem VT no AR, leva o próximo ao PREVIEW, como o botão VT.
+function vtNext() {
+  if (!vt.items.length) { log('VT: adicione vídeos na playlist (painel VT · Playlist).'); return false; }
+  if (!(state.pgm === VT_SOURCE && vtPlayer.running)) return vtToPreview();
+  const next = vt.items.indexOf(vtPlayer.item) + 1, item = vt.items[next];
+  if (!item) { log('VT: este é o último da playlist.'); return false; }
+  if (item.error) { log('VT: o próximo ("' + item.name + '") não pode ser exibido: ' + item.error); return false; }
+  vtPlayer.running = false; vtPlayer.item.el.pause(); vt.cue = next; vtPlayer.item = item; startPlayer(vtPlayer); paintVTList();
+  audit('info', 'vt-proximo', 'VT PRÓXIMO disparado: ' + item.name); return true;
+}
+// Texto do botão: qual VT será disparado (e a posição na playlist).
+function vtNextLabel() {
+  if (!vt.items.length) return 'playlist vazia';
+  const onAir = state.pgm === VT_SOURCE && vtPlayer.running, at = onAir ? vt.items.indexOf(vtPlayer.item) + 1 : vt.cue, item = vt.items[at];
+  if (!item) return 'último VT';
+  return (at + 1) + '/' + vt.items.length + ' · ' + item.name;
+}
+function vtOff() { if (state.pgm === VT_SOURCE && !state.busy && state.progress === 0) { if (vtPlayer.transition === 'cut') cut(); else auto(); return true; } return false; }
+// PAUSAR / CONTINUAR: congela o VT no AR (imagem parada e sem som) e retoma do mesmo ponto.
+function vtPause() {
+  if (!(vtPlayer.running && vtPlayer.item)) { log('VT: nenhum VT tocando para pausar.'); return false; }
+  const el = vtPlayer.item.el;
+  if (vtPlayer.paused) { vtPlayer.paused = false; Promise.resolve(el.play()).catch(e => { vtPlayer.paused = true; log('VT não continuou: ' + e.message); }); audit('info', 'vt-continuar', 'VT continuado: ' + vtPlayer.item.name); }
+  else { vtPlayer.paused = true; el.pause(); audit('info', 'vt-pausa', 'VT pausado: ' + vtPlayer.item.name); }
+  return true;
+}
+// PARAR: tira o VT do AR (com a transição de volta configurada) e deixa o MESMO VT pronto para começar de novo.
+function vtStop() {
+  if (state.pgm !== VT_SOURCE || !vtPlayer.item) { log('VT: nenhum VT no AR para parar.'); return false; }
+  const item = vtPlayer.item; if (!vtOff()) { log('VT: espere a transição terminar para parar o VT.'); return false; }
+  vt.holdCue = item; audit('info', 'vt-parar', 'VT parado: ' + item.name); return true;
+}
 $('#vtFire').onclick = () => vtToPreview();
-$('#vtStop').onclick = () => vtOff();
+$('#vtPause').onclick = () => vtPause();
+$('#vtStop').onclick = () => vtStop();
 $('#vtEnd').onchange = e => { vt.end = e.target.value; vtPlayer.end = e.target.value === 'hold' ? 'hold' : 'return'; };
 $('#vtTransition').onchange = e => { vtPlayer.transition = e.target.value === 'cut' ? 'cut' : 'mix'; };
 $('#vtVolume').oninput = e => { vtPlayer.volume = Number(e.target.value) / 100; };
@@ -306,12 +357,13 @@ vt.end = 'return';
 function paintVTClock() {
   const item = vtPlayer.item, el = item?.el, cued = cueItem(), air = vtPlayer.running;
   const left = air && item?.duration ? Math.max(0, item.duration - el.currentTime) : 0;
-  $('#vtState').textContent = air ? (el.ended ? 'VT NO AR · ÚLTIMO QUADRO' : 'VT NO AR') : state.prv === VT_SOURCE ? 'VT NO PREVIEW' : 'VT PARADO';
+  $('#vtState').textContent = air ? (vtPlayer.paused ? 'VT PAUSADO' : el.ended ? 'VT NO AR · ÚLTIMO QUADRO' : 'VT NO AR') : state.prv === VT_SOURCE ? 'VT NO PREVIEW' : 'VT PARADO';
   $('#vtTitle').textContent = air ? item.name : cued ? 'Próximo: ' + cued.name : 'Nenhum VT na playlist';
   $('#vtClock').textContent = air ? '−' + formatClock(left) : cued?.duration ? formatClock(Math.round(cued.duration)) : '--:--';
   $('#vtProgress').style.width = (air && item.duration ? Math.min(100, el.currentTime / item.duration * 100) : 0) + '%';
   vtPanel.dataset.state = air ? (left <= 10 ? 'last' : 'air') : state.prv === VT_SOURCE ? 'prv' : 'idle';
   $('#vtStop').disabled = !(state.pgm === VT_SOURCE);
+  $('#vtPause').disabled = !air; iconLabel($('#vtPause'), vtPlayer.paused ? 'play' : 'pause', vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT');
   if (vtPlayer.analyser && audioMixer.context) $('#vtMeter').value = meterValue(vtPlayer.analyser);
 }
 paintVTList(); paintCountdown();
@@ -385,4 +437,4 @@ inspectionSettings = function () { return inspecting === 'countdown' ? structure
 
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
 window.andromedaRundown = { countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
-  addFiles, cue, vtToPreview, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };
+  addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };
