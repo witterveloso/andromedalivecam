@@ -107,7 +107,7 @@
   }
   async function start(link, s) {
     s.state = 'connecting'; paint();
-    const pc = new RTCPeerConnection({ iceServers: net?.iceServers || [] }); s.pc = pc;
+    const ice = await currentIce(); const pc = new RTCPeerConnection({ iceServers: ice }); s.pc = pc;
     const out = tracks(s.kind), ids = {};
     for (const [name, stream] of Object.entries(out)) { ids[name] = stream.id; for (const track of stream.getTracks()) pc.addTrack(track, stream); }
     const dc = pc.createDataChannel('ctl', { ordered: true }); s.dc = dc;
@@ -127,7 +127,7 @@
     if (s.ended) return;
     // Retorno mais leve que o envio principal: o upload é dividido entre quem assiste.
     for (const sender of pc.getSenders()) { if (sender.track?.kind !== 'video') continue; const prv = out.prv?.getVideoTracks().includes(sender.track); const p = sender.getParameters(); p.encodings = p.encodings?.length ? p.encodings : [{}]; p.encodings[0].maxBitrate = prv ? 900000 : s.kind === 'control' ? 1800000 : 2500000; p.degradationPreference = 'maintain-resolution'; sender.setParameters(p).catch(() => {}); }
-    s.offer = { type: 'offer', sdp: pc.localDescription.sdp, streams: ids, ice: net?.iceServers || [] };
+    s.offer = { type: 'offer', sdp: pc.localDescription.sdp, streams: ids, ice };
     sendRelay(link, s.sid, s.offer);
   }
   function handle(kind, link, env) {
@@ -244,8 +244,13 @@
     const now = Date.now();
     for (const link of Object.values(links)) for (const s of [...(link?.sessions.values() || [])]) if (now - s.seen > (s.state === 'pending' ? 120000 : IDLE_MS)) endSession(link, s, 4004, 'Sem resposta');
   }, 400);
+  // STUN + TURN (credenciais temporárias) para os aparelhos remotos; sem serviço, só STUN público.
+  async function currentIce() {
+    try { const session = window.liveTx?.session || await (await fetch('/api/session')).json(); const r = await fetch('/api/ice', { cache: 'no-store', headers: { 'X-Andromeda-Token': session.token } }); if (r.ok) { const out = await r.json(); if (Array.isArray(out.iceServers)) return out.iceServers; } } catch { /* serviço fechado */ }
+    return [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+  }
   async function refresh() {
-    try { const r = await fetch('/api/cam/status', { cache: 'no-store' }); if (!r.ok) return; const s = await r.json(); if (!s.page) return; const first = !net; net = { page: s.page, relayBrokers: s.relayBrokers, iceServers: s.iceServers }; if (first) { open('view'); open('control'); } paint(); } catch { /* serviço fechado */ }
+    try { const r = await fetch('/api/cam/status', { cache: 'no-store' }); if (!r.ok) return; const s = await r.json(); if (!s.page) return; const first = !net; net = { page: s.page, relayBrokers: s.relayBrokers }; if (first) { open('view'); open('control'); } paint(); } catch { /* serviço fechado */ }
   }
   refresh(); setInterval(() => { if (!net) refresh(); }, 5000);
   window.addEventListener('pagehide', () => { close('view', 1001, 'Mesa fechada'); close('control', 1001, 'Mesa fechada'); });

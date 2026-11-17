@@ -62,6 +62,10 @@ test('4G/5G relay: the desk API shows the state and only accepts changes with th
     const { token } = await (await fetch(base + '/api/session')).json();
     const r = await fetch(base + '/api/turn', { method: 'POST', headers: { 'X-Andromeda-Token': token }, body: JSON.stringify({ provider: 'custom', urls: 'turn:turn.example.test:3478', username: 'u', credential: 'p' }) });
     assert.equal(r.status, 200); assert.equal((await r.json()).provider, 'custom');
+    assert.equal((await fetch(base + '/api/ice')).status, 403, 'TURN credentials only with the session token');
+    const ice = await (await fetch(base + '/api/ice', { headers: { 'X-Andromeda-Token': token } })).json();
+    assert(ice.iceServers.some(s => s.urls.includes('turn:turn.example.test:3478') && s.credential === 'p'), 'the cloud desk links get STUN + TURN');
+    assert(ice.iceServers.some(s => s.urls.some(u => u.startsWith('stun:'))));
     const status = await (await fetch(base + '/api/cam/status')).json();
     assert.equal(status.turn.provider, 'custom'); assert(!JSON.stringify(status).includes('"p"'), 'no TURN password in the camera status');
   } finally { bridge.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); }
