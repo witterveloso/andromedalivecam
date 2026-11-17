@@ -872,3 +872,24 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .cmd-pop-qr { width: 168px; max-width: 100%; justify-self: center; padding: 6px; border-radius: 8px; background: #fff; }
 .cmd-pop-qr svg { display: block; width: 100%; height: auto; }
 .cmd-pop-url { width: 100%; font: 500 12px var(--d-mono); }
+
+/* ---------- Sincronismo de som e imagem ---------- */
+.sync-card { display: grid; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid var(--d-line); border-radius: var(--d-r-sm); background: var(--d-inset); }
+.sync-card h4 { margin: 0; color: var(--d-text); font: 800 12px var(--d-display); letter-spacing: .12em; text-transform: uppercase; }
+.sync-help { margin: 0; color: var(--d-muted); font-size: 12px; }
+.sync-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.sync-state { color: var(--d-text); font: 600 12px var(--d-mono); }
+.sync-fine { display: grid; grid-template-columns: auto minmax(0, 1fr) 72px; align-items: center; gap: 10px; color: var(--d-muted); font-size: 12px; }
+.sync-fine output { color: var(--d-text); font: 700 12px var(--d-mono); text-align: right; }
+.sync-card small { color: var(--d-muted); }
+
+/* ---------- Este computador (pré-voo) ---------- */
+.pf-card { display: grid; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid var(--d-line); border-radius: var(--d-r-sm); background: var(--d-inset); }
+.pf-card h4 { margin: 0; color: var(--d-text); font: 800 12px var(--d-display); letter-spacing: .12em; text-transform: uppercase; }
+.pf-help, .pf-note { margin: 0; color: var(--d-muted); font-size: 12px; }
+.pf-note:empty { display: none; }
+.pf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-state { color: var(--d-text); font: 600 12px var(--d-mono); }
+.pf-field { display: grid; gap: 4px; color: var(--d-muted); font-size: 12px; }
+.pf-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--d-muted); font: 500 11.5px var(--d-mono); }
+.pf-list:empty { display: none; }

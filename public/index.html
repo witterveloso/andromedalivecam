@@ -597,8 +597,12 @@ function source(ctx,i,t,clean=false){const w=ctx.canvas.width,h=ctx.canvas.heigh
 const overlay=document.createElement('canvas');overlay.width=960;overlay.height=540;
 /* Motor de desenho: requestAnimationFrame enquanto a janela está à vista; se ela for minimizada ou ficar atrás de outra
    (o navegador suspende o rAF), um relógio num Worker continua desenhando a 30 quadros/s e a transmissão não fica sem vídeo. */
-let last=0,renderPending=false,renderAt=0,rafAt=0,renderLean=false;function scheduleRender(){if(renderPending)return;renderPending=true;requestAnimationFrame(t=>{renderPending=false;rafAt=performance.now();render(t)})}
-function render(t){renderAt=performance.now();if(t-last>32){last=t;if(!renderLean){$$('.mv-cell canvas').forEach((c,i)=>source(c.getContext('2d'),i,t));source($('#monPreview canvas').getContext('2d'),state.prv,t);}const ctx=$('#monProgram canvas').getContext('2d'),w=ctx.canvas.width,h=ctx.canvas.height,p=state.progress;source(ctx,state.pgm,t,true);if(p>0){const oc=overlay.getContext('2d');source(oc,state.prv,t,true);ctx.save();if(state.type==='MIX'){ctx.globalAlpha=p;ctx.drawImage(overlay,0,0)}else if(state.type==='WIPE'){ctx.beginPath();ctx.rect(0,0,w*p,h);ctx.clip();ctx.drawImage(overlay,0,0)}else if(state.type==='DIP'){if(p>=.5)ctx.drawImage(overlay,0,0);ctx.fillStyle='rgba(0,0,0,'+(1-Math.abs(2*p-1))+')';ctx.fillRect(0,0,w,h)}else{if(p>=.5)ctx.drawImage(overlay,0,0);const x=(p*3-1)*w;ctx.fillStyle='#6b40e8';ctx.fillRect(x,0,w,h);ctx.fillStyle='white';ctx.font='bold 48px sans-serif';ctx.fillText('ANDROMEDA LIVE',x+80,h/2)}ctx.restore()}
+let last=0,renderPending=false,renderAt=0,rafAt=0,renderLean=false,rf=0;function scheduleRender(){if(renderPending)return;renderPending=true;requestAnimationFrame(t=>{renderPending=false;rafAt=performance.now();render(t)})}
+function render(t){renderAt=performance.now();if(t-last>32){last=t;/* Só o AR (programOutput) precisa de 30 q/s: miniaturas a 10 q/s, preview a 15 q/s, e nada disso quando a página não está à vista. */
+ rf++;const watching=!renderLean&&typeof operation!=='undefined'&&!operation.hidden;
+ const k=window.andromedaLight?3:1;
+ if(watching&&rf%(3*k)===0)$$('.mv-cell canvas').forEach((c,i)=>{if(!c.parentElement.hidden)source(c.getContext('2d'),i,t)});
+ if(watching&&rf%(2*k)===0)source($('#monPreview canvas').getContext('2d'),state.prv,t);const ctx=$('#monProgram canvas').getContext('2d'),w=ctx.canvas.width,h=ctx.canvas.height,p=state.progress;source(ctx,state.pgm,t,true);if(p>0){const oc=overlay.getContext('2d');source(oc,state.prv,t,true);ctx.save();if(state.type==='MIX'){ctx.globalAlpha=p;ctx.drawImage(overlay,0,0)}else if(state.type==='WIPE'){ctx.beginPath();ctx.rect(0,0,w*p,h);ctx.clip();ctx.drawImage(overlay,0,0)}else if(state.type==='DIP'){if(p>=.5)ctx.drawImage(overlay,0,0);ctx.fillStyle='rgba(0,0,0,'+(1-Math.abs(2*p-1))+')';ctx.fillRect(0,0,w,h)}else{if(p>=.5)ctx.drawImage(overlay,0,0);const x=(p*3-1)*w;ctx.fillStyle='#6b40e8';ctx.fillRect(x,0,w,h);ctx.fillStyle='white';ctx.font='bold 48px sans-serif';ctx.fillText('ANDROMEDA LIVE',x+80,h/2)}ctx.restore()}
  routeProgramOutput();const vals=currentAudioValues(t,p);$$('.ach-fill').forEach((el,i)=>el.style.height=vals[i]+'%')}
  scheduleRender()}
 (()=>{try{const clock=new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),33)'],{type:'text/javascript'})));clock.onmessage=()=>{const now=performance.now();if(now-rafAt>120){renderLean=true;try{render(now)}finally{renderLean=false}}};window.andromedaRenderClock=clock}catch{/* sem Worker: só o rAF */}})();
@@ -665,5 +669,7 @@ log('Saída fixada no PROGRAM (AR). Preview reservado à preparação.');
 <script src="/rundown.js"></script>
 <script src="/camctl.js"></script><link rel="stylesheet" href="/workspace-custom.css"><script src="/cam/relay.js"></script><script src="/remote-desk.js"></script><script src="/workspace-custom.js"></script>
 <script src="/stage.js"></script>
-<script src="/commands.js"></script><script src="/vertical.js"></script><script src="/broadcast.js"></script><script src="/diagnostics.js"></script>
+<script src="/commands.js"></script><script src="/vertical.js"></script><script src="/broadcast.js"></script>
+<script src="/syncprobe.js"></script>
+<script src="/preflight.js"></script><script src="/diagnostics.js"></script>
 <link rel="stylesheet" href="/andromeda-ui.css"><script src="/vendor/qrcode.js"></script><script src="/andromeda-ui.js"></script><script src="/cam-connect.js"></script></body></html>

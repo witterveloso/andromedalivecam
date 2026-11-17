@@ -35,7 +35,7 @@
   const streaming = () => model.mode !== 'record';
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '' })) })); } catch { /* sem armazenamento */ } };
   const live = { states: new Map(), recording: null, recorded: null, files: [], storage: null, checked: null };
-  window.andromedaBroadcast = { model, live };
+  window.andromedaBroadcast = { model, live, save };
 
   const active = () => model.destinations.filter(d => d.enabled && d.server.trim() && d.key.trim());
   const pending = () => model.destinations.filter(d => d.enabled && !(d.server.trim() && d.key.trim()));
@@ -234,6 +234,8 @@
       if (!session?.ffmpegReady) throw Error('Codificador indisponível. Execute INSTALAR.bat e INICIAR.bat.');
       if (session.busy) throw Error('Outra aba já está transmitindo. Encerre-a antes de continuar.');
       if (session.license && !session.license.valid) throw Error(session.license.message);
+      window.andromedaLight = false;
+      { const pf = await window.andromedaPreflight?.(targets); if (epoch !== liveTx.epoch) return; if (pf?.block) throw Error(pf.block); if (pf?.warn) { log('Pré-voo: ' + pf.warn); txStatus('Pré-voo: ' + pf.warn); } }
       if (model.record && !(await checkDir())) throw Error('Pasta de gravação indisponível: ' + (recStatus.textContent || 'confira a unidade.'));
       const ac = await window.audioMixer.enable(); liveTx.audioContext = ac; if (epoch !== liveTx.epoch) return;
       const destination = window.audioMixer.destination;
@@ -255,12 +257,13 @@
       const video = programOutput.captureStream(30); liveTx.videoStream = video;
       const stream = new MediaStream([...video.getVideoTracks(), ...destination.stream.getAudioTracks()]);
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.min(24, model.bitrate * 1.6) * 1e6, audioBitsPerSecond: 160000 }); liveTx.recorder = recorder;
-      let recorderV = null;
+      const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6, makeRecorder = (media, bits) => new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: bits, audioBitsPerSecond: 160000 });
+      let recorder = makeRecorder(stream, hBits); liveTx.recorder = recorder;
+      let recorderV = null, vStream = null;
       if (needV) {
         window.andromedaVertical.setLive(true);
         const vVideo = window.andromedaVertical.canvas.captureStream(30); liveTx.verticalStream = vVideo;
-        recorderV = new MediaRecorder(new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]), { mimeType: mime, videoBitsPerSecond: Math.min(16, window.andromedaVertical.settings.bitrate * 1.6) * 1e6, audioBitsPerSecond: 160000 });
+        vStream = new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]); recorderV = makeRecorder(vStream, vBits);
         liveTx.recorderV = recorderV;
       }
       const dual = needV;
@@ -280,11 +283,21 @@
         rec.onerror = () => finishTransport('O navegador interrompeu a captura de vídeo. Reinicie o envio.');
       };
       pipe(recorder, 0); if (recorderV) pipe(recorderV, 1);
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1 })); };
+      // Autorrecuperação: o codificador de um formato foi reiniciado no serviço e precisa de um gravador novo (o WebM só tem
+      // cabeçalho no começo de cada gravador). O antigo é solto sem enviar mais nada.
+      const reopen = group => {
+        const vertical = group === 'v' && recorderV, old = vertical ? recorderV : recorder; if (!old || (group === 'v' && !recorderV)) return;
+        old.ondataavailable = null; old.onerror = null; try { if (old.state !== 'inactive') old.stop(); } catch { /* já parado */ }
+        const fresh = vertical ? makeRecorder(vStream, vBits) : makeRecorder(stream, hBits);
+        if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
+        pipe(fresh, vertical ? 1 : 0); fresh.start(100);
+      };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : (model.avSyncMs || 0), preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === 'ready') { const groups = msg.groups || ['h']; if (groups.includes('h') || !dual) recorder.start(250); else liveTx.recorder = null; if (recorderV && groups.includes('v')) recorderV.start(250); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
+        if (msg.type === 'ready') { const groups = msg.groups || ['h']; if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
+        else if (msg.type === 'avsync') window.andromedaSync?.onResult(msg);
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
         else if (msg.type === 'recorded') { live.recorded = msg; live.files.push(msg); log('Gravação ' + (msg.format || '') + ' salva: ' + msg.file); summary(); }
         else if (msg.type === 'destination') {
@@ -298,11 +311,13 @@
             for (const [id, s] of live.states) if (s.state === 'connecting') live.states.set(id, { state: 'sending' });
             log(targets.length ? 'No ar: ' + targets.map(d => d.name).join(', ') + (model.record ? ' + gravação' : '') : 'Gravação iniciada');
           }
-          liveTx.phase = 'sending'; state.live = true; liveTx.frames = msg.frames; sync();
+          liveTx.phase = 'sending'; if (!liveTx.calibrating) state.live = true; liveTx.frames = msg.frames; sync();
           const trouble = [...live.states.values()].filter(s => s.state === 'retrying').length;
           txStatus((liveTx.notice ? liveTx.notice + ' — ' : '') + (targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
         }
-        else if (msg.type === 'notice') { log(msg.message); liveTx.notice = msg.message; txStatus(msg.message); }
+        else if (msg.type === 'health') { liveTx.health = msg; }
+        else if (msg.type === 'restart') { reopen(msg.group); log(msg.message); }
+        else if (msg.type === 'notice') { if (msg.overload) window.andromedaLight = true; log(msg.message); liveTx.notice = msg.message; txStatus(msg.message); }
         else if (msg.type === 'error') finishTransport(msg.message);
         else if (msg.type === 'stopped') finishTransport();
       };
