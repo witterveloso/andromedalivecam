@@ -1,5 +1,8 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.1
+- **Logo de cada plataforma nos destinos** (Transmissão): YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn e RTMP próprio. O logo aparece no bloco colorido de cada destino, no lugar das duas letras. Marcas desenhadas pelo próprio programa (sem imagens externas), com o nome da plataforma como texto de acessibilidade. O contorno azul do bloco continua marcando os destinos verticais 9:16.
+
 Até a 0.20 o caminho do vídeo era: **navegador codifica VP8 → serviço decodifica → x264 codifica de novo → plataforma**. São duas codificações e uma decodificação por quadro, mais um gravador do navegador que entrega pedaços de 100 ms. É o que pesa em computadores comuns e o que acumula atraso.
 
 A 0.21 traz um caminho novo, **nosso**, que codifica **uma vez só**:
