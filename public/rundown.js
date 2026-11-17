@@ -174,9 +174,10 @@ async function startPlayer(p) {
 }
 function stopPlayer(p) {
   if (!p.running) return;
-  p.running = false; p.paused = false; p.item?.el.pause();
-  if (p.item) p.item.el.currentTime = 0;
-  p.onStop?.();
+  const el = p.item?.el, finished = !!el && (el.ended || (p.item.duration > 0 && el.currentTime >= p.item.duration - 0.3));
+  p.running = false; p.paused = false; el?.pause();
+  if (el) el.currentTime = 0;
+  p.onStop?.(finished);
 }
 // Ao terminar no AR: volta para a câmera que está no PREVIEW (a que estava no AR antes do VT), dispara o próximo ou congela.
 function playerEnded(p) {
@@ -251,11 +252,13 @@ vtPlayer.onEnd = () => {
   return true;
 };
 // Saiu do AR: o próximo da lista fica preparado.
-vtPlayer.onStop = () => {
+vtPlayer.onStop = finished => {
   const at = vt.items.indexOf(vtPlayer.item);
-  // PARAR: o mesmo VT fica pronto para começar de novo; fim normal: o próximo da lista fica preparado.
-  if (vt.holdCue && vt.holdCue === vtPlayer.item) { vt.holdCue = null; vt.cue = at; cue(at); return; }
-  if (at >= 0 && at === vt.cue && at < vt.items.length - 1) vt.cue = at + 1; cue(vt.cue);
+  // Fim normal: a playlist já arma o próximo da lista. VT interrompido (PARAR, CUT ou AUTO antes do fim): nada avança sozinho;
+  // o mesmo VT continua armado e o operador arma o próximo à mão (clique na lista ou PRÓXIMO VT).
+  if (finished && at >= 0 && at === vt.cue && at < vt.items.length - 1) vt.cue = at + 1;
+  if (!finished) log('VT interrompido: ' + (vtPlayer.item?.name || '') + '. Arme o próximo VT manualmente.');
+  cue(vt.cue);
 };
 
 const vtPanel = rundownEl('section', 'vt-panel'); vtPanel.setAttribute('aria-label', 'VT · playlist');
@@ -264,7 +267,7 @@ vtPanel.innerHTML = '<div class="vt-top"><div class="vt-now"><span class="vt-sta
   '<div class="vt-actions"><button type="button" id="vtFire" class="vt-fire">VT → PREVIEW</button><button type="button" id="vtPause" class="vt-pause" disabled><span class="cmd-ico">'+ICONS.pause+'</span>PAUSAR VT</button><button type="button" id="vtStop" class="vt-stop" disabled title="Para o VT, tira do ar e deixa o mesmo VT pronto para começar de novo"><span class="cmd-ico">'+ICONS.stop+'</span>PARAR VT</button><label class="vt-add">+ Adicionar VTs<input id="vtFiles" type="file" accept="video/*" multiple></label></div>' +
   '<ol class="vt-list" id="vtList" aria-label="Playlist de VTs"></ol>' +
   '<div class="vt-options"><label>Ao terminar<select id="vtEnd"><option value="return">Voltar para a câmera</option><option value="next">Disparar o próximo VT</option><option value="hold">Congelar no último quadro</option></select></label><label>Volta com<select id="vtTransition"><option value="mix">AUTO (transição escolhida)</option><option value="cut">CUT seco</option></select></label><label class="vt-vol">Volume do VT<input id="vtVolume" type="range" min="0" max="100" value="90"><meter id="vtMeter" min="0" max="1" value="0" aria-label="Nível do áudio do VT"></meter></label></div>' +
-  '<p class="vt-note">Arraste vídeos para cá ou use Adicionar VTs (MP4 H.264 ou WebM). Clique num VT para deixá-lo como próximo e em <b>VT → PREVIEW</b> (ou no comando VT). Ele começa a tocar quando você leva ao AR com CUT ou AUTO e, no fim, a mesa volta sozinha para a câmera que estava no AR. Os arquivos ficam carregados enquanto a mesa estiver aberta.</p>';
+  '<p class="vt-note">Arraste vídeos para cá ou use Adicionar VTs (MP4 H.264 ou WebM). Clique num VT para deixá-lo como próximo e em <b>VT → PREVIEW</b> (ou no comando VT). Ele começa a tocar quando você leva ao AR com CUT ou AUTO e, no fim, a mesa volta sozinha para a câmera que estava no AR e já arma o próximo da lista. Se o VT for interrompido (PARAR, CUT ou AUTO antes do fim), nada avança sozinho: arme o próximo na lista ou com PRÓXIMO VT. Os arquivos ficam carregados enquanto a mesa estiver aberta.</p>';
 operation.append(vtPanel);
 
 function addFiles(files) {
@@ -317,7 +320,11 @@ function vtToPreview() {
 // Com um VT tocando no AR, troca já para o seguinte (sem sair do AR); sem VT no AR, leva o próximo ao PREVIEW, como o botão VT.
 function vtNext() {
   if (!vt.items.length) { log('VT: adicione vídeos na playlist (painel VT · Playlist).'); return false; }
-  if (!(state.pgm === VT_SOURCE && vtPlayer.running)) return vtToPreview();
+  if (!(state.pgm === VT_SOURCE && vtPlayer.running)) {
+    // Sem VT no AR: arma o VT seguinte ao armado agora. Quem leva ao PREVIEW é o botão VT.
+    if (vt.cue >= vt.items.length - 1) { log('VT: o armado já é o último da playlist.'); return false; }
+    cue(vt.cue + 1); log('VT armado: ' + (cueItem()?.name || '')); return true;
+  }
   const next = vt.items.indexOf(vtPlayer.item) + 1, item = vt.items[next];
   if (!item) { log('VT: este é o último da playlist.'); return false; }
   if (item.error) { log('VT: o próximo ("' + item.name + '") não pode ser exibido: ' + item.error); return false; }
@@ -327,9 +334,9 @@ function vtNext() {
 // Texto do botão: qual VT será disparado (e a posição na playlist).
 function vtNextLabel() {
   if (!vt.items.length) return 'playlist vazia';
-  const onAir = state.pgm === VT_SOURCE && vtPlayer.running, at = onAir ? vt.items.indexOf(vtPlayer.item) + 1 : vt.cue, item = vt.items[at];
+  const onAir = state.pgm === VT_SOURCE && vtPlayer.running, at = (onAir ? vt.items.indexOf(vtPlayer.item) : vt.cue) + 1, item = vt.items[at];
   if (!item) return 'último VT';
-  return (at + 1) + '/' + vt.items.length + ' · ' + item.name;
+  return (onAir ? '' : 'armar ') + (at + 1) + '/' + vt.items.length + ' · ' + item.name;
 }
 function vtOff() { if (state.pgm === VT_SOURCE && !state.busy && state.progress === 0) { if (vtPlayer.transition === 'cut') cut(); else auto(); return true; } return false; }
 // PAUSAR / CONTINUAR: congela o VT no AR (imagem parada e sem som) e retoma do mesmo ponto.
@@ -340,11 +347,11 @@ function vtPause() {
   else { vtPlayer.paused = true; el.pause(); audit('info', 'vt-pausa', 'VT pausado: ' + vtPlayer.item.name); }
   return true;
 }
-// PARAR: tira o VT do AR (com a transição de volta configurada) e deixa o MESMO VT pronto para começar de novo.
+// PARAR: tira o VT do ar (com a transição de volta configurada). Como todo VT interrompido, ele continua armado.
 function vtStop() {
   if (state.pgm !== VT_SOURCE || !vtPlayer.item) { log('VT: nenhum VT no AR para parar.'); return false; }
   const item = vtPlayer.item; if (!vtOff()) { log('VT: espere a transição terminar para parar o VT.'); return false; }
-  vt.holdCue = item; audit('info', 'vt-parar', 'VT parado: ' + item.name); return true;
+  audit('info', 'vt-parar', 'VT parado: ' + item.name); return true;
 }
 $('#vtFire').onclick = () => vtToPreview();
 $('#vtPause').onclick = () => vtPause();

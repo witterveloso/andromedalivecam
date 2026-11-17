@@ -1,5 +1,16 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.3
+- **Mesa no Padrão novo: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.** Quem estava com o Padrão antigo passa ao novo sozinho; um layout mexido pelo operador fica como está (e o Padrão novo pode ser escolhido em *Personalizar → Modelo*).
+- **PREVIEW e PGM iguais e alinhados:** o PGM ganhou a mesma faixa de informação embaixo da imagem (fonte no ar e estado do sinal; com VT no ar mostra o nome e NO AR ou PAUSADO). Antes só o PREVIEW tinha a faixa e a imagem do PGM ficava 22 px mais baixa.
+- **Comandos do VT na mesma linha:** VT, PRÓXIMO VT, PAUSAR VT e PARAR VT ficam sempre juntos numa linha; os comandos ocupam o painel inteiro, sem rolar, e nomes longos quebram em duas linhas em vez de serem cortados.
+- **Playlist do VT:**
+  - **Fim natural:** a mesa volta para a câmera e o **próximo da lista já fica armado**.
+  - **VT interrompido** (PARAR, CUT ou AUTO antes do fim): **nada avança sozinho**; o mesmo VT continua armado e o operador arma o próximo à mão (clique na lista ou **PRÓXIMO VT**). O registro avisa.
+  - **VT** leva o VT armado ao **PREVIEW**; ele toca quando vai ao AR com CUT ou AUTO.
+  - **PRÓXIMO VT** sem VT no AR **arma o seguinte** da lista (o botão mostra qual, por exemplo `armar 3/5 · Encerramento`) sem mexer no PREVIEW; com VT no AR continua trocando na hora para o seguinte.
+- **VUs modernos (LED)** em verde, amarelo e vermelho (verde até −18 dBFS, amarelo de −18 a −6, vermelho de −6 a 0), com os segmentos apagados à vista, brilho no nível e marca de pico branca. No áudio master (à direita) o L e o R ficam em barras verticais.
+
 ## 0.21.2
 - **Botão PiP de volta** no painel Comandos (atalho F8). Na 0.21.1 ele foi retirado por engano: o que devia sair era a **janela do monitor "KEY 1 · PiP"** que ficava na mesa.
 - **Janela do KEY 1 (PiP) retirada da mesa.** O PiP continua funcionando normalmente (botão, F8 e *GC e efeitos*), só não há mais a janelinha de monitor, e a mesa deixa de desenhá-la a cada quadro.

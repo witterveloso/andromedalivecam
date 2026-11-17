@@ -851,6 +851,13 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .cmd-order-row button { min-height: 30px; padding: 0; }
 @media (prefers-reduced-motion: reduce) { .flash { animation: none; outline: 3px solid var(--d-accent); } }
 .me-bus:has(> .cmd-grid) { padding: 0; gap: 0; }
+/* Comandos na mesa livre: 4 colunas que ocupam a altura do painel. Os quatro comandos do VT (VT, PRÓXIMO, PAUSAR, PARAR)
+   ficam sempre juntos numa linha só: o VT começa uma linha nova. Nomes longos quebram em duas linhas em vez de serem cortados. */
+.free-grid > .dock-panel[data-tool="bus"] > .me-bus:not(.dock-handle):not(.free-resize):not(.mon-fit) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-grid { flex: 1 1 0; min-height: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(42px, 1fr); align-content: stretch; gap: 6px; padding: 8px 10px; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-btn { min-height: 0; padding: 4px 5px; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-name { white-space: normal; overflow-wrap: normal; line-height: 1.15; letter-spacing: .02em; }
+.cmd-btn[data-cmd="vt"] { grid-column-start: 1; }
 
 /* ---------- Controle de câmera ---------- */
 .camctl { display: grid; gap: 10px; padding: 12px; }
@@ -900,3 +907,31 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .pf-field { display: grid; gap: 4px; color: var(--d-muted); font-size: 12px; }
 .pf-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--d-muted); font: 500 11.5px var(--d-mono); }
 .pf-list:empty { display: none; }
+
+/* ---------- VUs modernos (LED): verde até −18 dBFS, amarelo de −18 a −6, vermelho de −6 a 0 ----------
+   A escala é a do medidor (−60 a 0 dBFS, linear em dB): −18 = 70% e −6 = 90%. Os segmentos apagados ficam à vista,
+   os acesos brilham, e a marca de pico (retenção de 1 s) é um segmento branco. */
+.vu-widget { --vu-green: #1fe07a; --vu-yellow: #ffcf33; --vu-red: #ff3355; --vu-gap: #04060a; }
+.vu-track { position: relative; height: 12px; padding: 0; background: var(--vu-gap); border: 1px solid #1c2433; border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .6); }
+.vu-track::before, .vu-lit { content: ""; position: absolute; inset: 2px; border-radius: 2px;
+  background: repeating-linear-gradient(90deg, transparent 0 5px, var(--vu-gap) 5px 7px), linear-gradient(90deg, var(--vu-green) 0 70%, var(--vu-yellow) 70% 90%, var(--vu-red) 90%); }
+.vu-track::before { opacity: .16; }
+.vu-lit { clip-path: inset(0 calc(100% - var(--vu-level)) 0 0); filter: drop-shadow(0 0 3px rgba(31, 224, 122, .55)) saturate(1.15); }
+.vu-peak { top: 2px; bottom: 2px; height: auto; width: 3px; border-radius: 1px; background: #fff; opacity: .95; box-shadow: 0 0 6px rgba(255, 255, 255, .8); }
+.vu-widget.clipping .vu-track { border-color: var(--vu-red); box-shadow: 0 0 10px rgba(255, 51, 85, .55), inset 0 1px 3px rgba(0, 0, 0, .6); }
+.vu-widget.clipping .vu-clip { background: var(--vu-red); color: #fff; }
+
+/* Áudio master (coluna da direita): L e R em barras verticais; o número de pico fica embaixo de cada barra. */
+.master-meters .pgm-audio-channels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; min-height: 0; height: 100%; }
+.master-meters .pgm-audio-channels > div { display: grid; grid-template-rows: auto minmax(0, 1fr); justify-items: center; gap: 4px; margin: 0; min-height: 0; }
+.master-meters .pgm-audio-channels > div > b { color: var(--d-muted); font: 700 11px var(--d-mono); }
+.master-meters .vu-widget { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 6px; width: 100%; min-width: 0; height: 100%; }
+.master-meters .vu-track { width: 26px; height: auto; min-height: 66px; }
+.master-meters .vu-track::before, .master-meters .vu-lit {
+  background: repeating-linear-gradient(0deg, transparent 0 5px, var(--vu-gap) 5px 7px), linear-gradient(0deg, var(--vu-green) 0 70%, var(--vu-yellow) 70% 90%, var(--vu-red) 90%); }
+.master-meters .vu-lit { clip-path: inset(calc(100% - var(--vu-level)) 0 0 0); }
+.master-meters .vu-peak { left: 2px; right: 2px; top: auto; width: auto; height: 3px; bottom: clamp(2px, var(--vu-hold), calc(100% - 5px)); }
+.master-meters .vu-scale { display: none; }
+.master-meters .vu-caption { display: grid; justify-items: center; gap: 3px; min-width: 0; margin: 0; font-size: 9.5px; }
+.free-grid > .dock-panel[data-tool="layers"] .master-panel { flex: 1 1 auto; grid-template-rows: auto minmax(96px, 1fr) auto auto auto; min-height: 0; gap: 6px; padding: 8px 12px; }
+.free-grid > .dock-panel[data-tool="layers"] .master-meters { min-height: 0; display: grid; }

@@ -16,7 +16,8 @@
  const definitions=[['preview','Preview',$('#monPreview'),'operation','half'],['program','PGM / AR',programCard,'operation','half'],['cameras','Câmeras',multiview,'operation','full'],['cut','Corte e transições',controls,'operation','full'],['bus','Comandos',bus,'operation','full'],['layers','Áudio master',fxQuick,'operation','full'],['vt','VT · Playlist',typeof vtPanel!=='undefined'?vtPanel:null,'operation','full'],['camctl','Controle de câmera',typeof camCtlPanel!=='undefined'?camCtlPanel:null,'operation','full'],['intercom','Intercom',intercom,'operation','full'],['audio','Mixer de áudio',audioPanel,'operation','full'],['camera-links','Convites Andromeda Cam',camSettings,'configuration','full'],['blackmagic','Entradas Blackmagic',bmPanel,'configuration','full'],['transport','Codificador',transportPanel,'transmission','full'],['destinations','Destinos',$('.stream-panel'),'transmission','full'],['events','Eventos',$('.events'),'configuration','full'],['fx-editor','Ajustes GC / PiP',$('.effects-editor'),'effects','half'],['fx-preview','Prévia dos efeitos',$('.effects-preview'),'effects','half'],['remote','Mesa na nuvem',$('.remote-panel'),'configuration','full']];
  // [coluna, linha, largura, altura] na grade de 48 × 48 (uma tela).
  const PRESETS={
-  padrao:{name:'Padrão · monitores menores',rects:{preview:[0,0,16,22],program:[16,0,16,22],bus:[32,0,16,11],layers:[32,11,16,11],cameras:[0,22,48,17],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
+  // Padrão: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.
+  padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
   cameras:{name:'Câmeras em destaque',rects:{cameras:[0,0,30,28],preview:[30,0,18,14],program:[30,14,18,14],cut:[0,28,48,9],bus:[0,37,24,11],layers:[24,37,24,11],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
   grandes:{name:'Monitores grandes',rects:{preview:[0,0,24,26],program:[24,0,24,26],cameras:[0,26,48,13],cut:[0,39,48,9],bus:[0,48,24,11],layers:[24,48,24,11],audio:[0,59,28,18],intercom:[28,59,20,18],vt:[0,77,30,16],camctl:[30,77,18,16]}},
  };
@@ -135,7 +136,10 @@
  $('#layoutExport').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'}));const a=make('a');a.href=url;a.download='andromeda-layout.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
  $('#layoutImport').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>50000)throw Error('Arquivo muito grande');load(JSON.parse(await f.text()));render();save()}catch(err){$('#layoutMessage').textContent='Não importado: '+err.message}finally{e.target.value=''}};
  applyPreset('padrao');
- try{const saved=localStorage.getItem(key);if(saved){const d=JSON.parse(saved);load(d);currentModel=typeof d.model==='string'?d.model:''}}catch{applyPreset('padrao');currentModel='padrao'}
+ try{const saved=localStorage.getItem(key);if(saved){const d=JSON.parse(saved);load(d);currentModel=typeof d.model==='string'?d.model:'';
+  // Quem estava com o Padrão antigo (comandos e áudio empilhados à direita) passa ao Padrão novo; layout mexido pelo operador fica como está.
+  const OLD={preview:[0,0,16,22],program:[16,0,16,22],bus:[32,0,16,11],layers:[32,11,16,11]},same=(id,r)=>{const x=byId(id)?.rect;return !!x&&x.x===r[0]&&x.y===r[1]&&x.w===r[2]&&x.h===r[3]};
+  if(Object.entries(OLD).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['bus','preview','program','layers',...(same('cameras',[0,22,48,17])?['cameras']:[])]){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}}}catch{applyPreset('padrao');currentModel='padrao'}
  if(currentModel.startsWith('meu:')&&!savedLayouts[Number(currentModel.slice(4))])currentModel='';
  settle(null);render();paintModels();
  // A barra do topo termina de se montar depois deste script: medir de novo quando a página assenta.
