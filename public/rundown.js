@@ -167,7 +167,7 @@ async function startPlayer(p) {
   const item = p.item; if (!item || item.error) return;
   p.running = true; p.paused = false; item.played = true;
   await connectAudio(p, item);
-  item.el.currentTime = 0; item.el.loop = !!p.loop;
+  item.el.currentTime = item.startAt > 0 && item.startAt < (item.duration || Infinity) ? item.startAt : 0; item.startAt = 0; item.el.loop = !!p.loop;
   try { await item.el.play(); } catch (e) { p.running = false; log(p.label + ' não iniciou: ' + e.message); return; }
   sources[p.source] = p.label + ' · ' + item.name;
   log(p.label + ' no AR: ' + item.name); audit('info', p.label.toLowerCase() + '-no-ar', p.label + ' no AR: ' + item.name, { duracao: Math.round(item.duration || 0) });
@@ -263,7 +263,7 @@ vtPlayer.onStop = finished => {
 
 const vtPanel = rundownEl('section', 'vt-panel'); vtPanel.setAttribute('aria-label', 'VT · playlist');
 vtPanel.innerHTML = '<div class="vt-top"><div class="vt-now"><span class="vt-state" id="vtState">VT PARADO</span><strong id="vtTitle">Nenhum VT no AR</strong></div><output class="vt-clock" id="vtClock" aria-live="off">--:--</output></div>' +
-  '<div class="vt-bar"><i id="vtProgress"></i></div>' +
+  '<div class="vt-bar" id="vtBar" role="slider" tabindex="0" aria-label="Linha do tempo do VT: duplo clique para ir a um ponto" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="vt-track"><i id="vtProgress"></i><s id="vtStartMark" hidden></s></div><span class="vt-hover" id="vtHover" hidden></span></div>' +
   '<div class="vt-actions"><button type="button" id="vtFire" class="vt-fire">VT → PREVIEW</button><button type="button" id="vtPause" class="vt-pause" disabled><span class="cmd-ico">'+ICONS.pause+'</span>PAUSAR VT</button><button type="button" id="vtStop" class="vt-stop" disabled title="Para o VT, tira do ar e deixa o mesmo VT pronto para começar de novo"><span class="cmd-ico">'+ICONS.stop+'</span>PARAR VT</button><label class="vt-add">+ Adicionar VTs<input id="vtFiles" type="file" accept="video/*" multiple></label></div>' +
   '<ol class="vt-list" id="vtList" aria-label="Playlist de VTs"></ol>' +
   '<div class="vt-options"><label>Ao terminar<select id="vtEnd"><option value="return">Voltar para a câmera</option><option value="next">Disparar o próximo VT</option><option value="hold">Congelar no último quadro</option></select></label><label>Volta com<select id="vtTransition"><option value="mix">AUTO (transição escolhida)</option><option value="cut">CUT seco</option></select></label><label class="vt-vol">Volume do VT<input id="vtVolume" type="range" min="0" max="100" value="90"><meter id="vtMeter" min="0" max="1" value="0" aria-label="Nível do áudio do VT"></meter></label></div>' +
@@ -367,13 +367,38 @@ function paintVTClock() {
   $('#vtState').textContent = air ? (vtPlayer.paused ? 'VT PAUSADO' : el.ended ? 'VT NO AR · ÚLTIMO QUADRO' : 'VT NO AR') : state.prv === VT_SOURCE ? 'VT NO PREVIEW' : 'VT PARADO';
   $('#vtTitle').textContent = air ? item.name : cued ? 'Próximo: ' + cued.name : 'Nenhum VT na playlist';
   $('#vtClock').textContent = air ? '−' + formatClock(left) : cued?.duration ? formatClock(Math.round(cued.duration)) : '--:--';
-  $('#vtProgress').style.width = (air && item.duration ? Math.min(100, el.currentTime / item.duration * 100) : 0) + '%';
+  const pos = air && item.duration ? Math.min(100, el.currentTime / item.duration * 100) : 0;
+  $('#vtProgress').style.width = pos + '%'; $('#vtBar').setAttribute('aria-valuenow', String(Math.round(pos)));
+  // VT armado com ponto de início escolhido na linha do tempo: marca e relógio mostram de onde ele vai começar.
+  const mark = $('#vtStartMark'), start = !air && cued?.startAt > 0 && cued.duration ? cued.startAt : 0;
+  mark.hidden = !start; if (start) { mark.style.left = (start / cued.duration * 100) + '%'; $('#vtClock').textContent = '▸' + formatClock(Math.round(start)); }
   vtPanel.dataset.state = air ? (left <= 10 ? 'last' : 'air') : state.prv === VT_SOURCE ? 'prv' : 'idle';
   $('#vtStop').disabled = !(state.pgm === VT_SOURCE);
   $('#vtPause').disabled = !air; iconLabel($('#vtPause'), vtPlayer.paused ? 'play' : 'pause', vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT');
   if (vtPlayer.analyser && audioMixer.context) $('#vtMeter').value = meterValue(vtPlayer.analyser);
 }
 paintVTList(); paintCountdown();
+
+// Linha do tempo do VT: um clique não faz nada (evita mexer no AR sem querer); DOIS CLIQUES no ponto desejado levam o VT até ali.
+// Com o VT no AR ele salta na hora; com o VT armado (fora do AR) ele passa a começar daquele ponto.
+const vtBar = $('#vtBar'), vtHover = $('#vtHover');
+const barTarget = () => vtPlayer.running ? vtPlayer.item : cueItem();
+const barTime = e => { const r = vtBar.querySelector('.vt-track').getBoundingClientRect(), it = barTarget(); if (!it?.duration || !r.width) return null; return Math.min(it.duration - 0.25, Math.max(0, (e.clientX - r.left) / r.width * it.duration)); };
+function vtSeek(t) {
+  const it = barTarget(); if (!it?.duration || !(t >= 0)) return false;
+  t = Math.min(it.duration - 0.25, Math.max(0, t));
+  if (vtPlayer.running) {
+    const el = it.el, wasEnded = el.ended; el.currentTime = t;
+    if (wasEnded && !vtPlayer.paused) Promise.resolve(el.play()).catch(() => {});
+    log('VT no AR: foi para ' + formatClock(Math.round(t)) + ' (' + it.name + ')'); audit('info', 'vt-posicao', 'VT levado a ' + formatClock(Math.round(t)), { vt: it.name, segundos: Math.round(t) });
+  } else { it.startAt = t; log('VT armado começa em ' + formatClock(Math.round(t)) + ' (' + it.name + ')'); }
+  paintVTClock(); return true;
+}
+vtBar.addEventListener('mousemove', e => { const t = barTime(e); if (t === null) { vtHover.hidden = true; return; } const r = vtBar.getBoundingClientRect(); vtHover.hidden = false; vtHover.textContent = formatClock(Math.round(t)) + ' · duplo clique'; vtHover.style.left = Math.min(r.width - 40, Math.max(40, e.clientX - r.left)) + 'px'; });
+vtBar.addEventListener('mouseleave', () => { vtHover.hidden = true; });
+vtBar.addEventListener('click', e => { if (e.detail === 1) { vtBar.classList.remove('vt-hint'); void vtBar.offsetWidth; vtBar.classList.add('vt-hint'); } });
+vtBar.addEventListener('dblclick', e => { e.preventDefault(); const t = barTime(e); if (t !== null && vtSeek(t)) { vtBar.classList.remove('vt-hint', 'vt-jump'); void vtBar.offsetWidth; vtBar.classList.add('vt-jump'); } });
+vtBar.addEventListener('keydown', e => { const it = barTarget(); if (!it?.duration || !['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) return; e.preventDefault(); e.stopPropagation(); const now = vtPlayer.running ? it.el.currentTime : it.startAt || 0; vtSeek(e.key === 'Home' ? 0 : now + (e.key === 'ArrowLeft' ? -5 : 5)); });
 
 /* ---------- vinheta ---------- */
 const vinheta = { player: vinhetaPlayer };
@@ -451,5 +476,5 @@ const rundownBaseInspection = inspectionSettings;
 inspectionSettings = function () { return inspecting === 'countdown' ? structuredClone(fx.draft) : rundownBaseInspection(); };
 
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
-window.andromedaRundown = { setVinhetaLoop, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
+window.andromedaRundown = { vtSeek, setVinhetaLoop, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
   addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };

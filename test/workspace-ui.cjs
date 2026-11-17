@@ -70,12 +70,16 @@ assert(q('.cmd-btn[data-cmd=pip]'),'the PiP command is on the desk');assert(!q('
 rd.cdRow.querySelector('#cdTime').value='2:30';rd.cdRow.querySelector('#cdTime').dispatchEvent(new w.Event('change'));assert.equal(rd.countdown.seconds,150);rd.cdRow.querySelector('#cdPlus').click();assert.equal(rd.countdown.seconds,180);
 q('.cmd-btn[data-cmd=countdown]').click();assert(rd.countdown.on,'REGRESSIVA goes straight to air');assert(rd.cdRow.querySelector('#cdTime').disabled,'time locked while on air');q('.cmd-btn[data-cmd=countdown]').click();assert(!rd.countdown.on);
 q('.cmd-btn[data-cmd=countdown]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(!q('.cmd-pop').hidden&&q('.cmd-pop').contains(rd.cdRow),'double click opens the countdown settings');q('.cmd-pop-close').click();assert(q('.cmd-pop').hidden);
+// Áudio no MASTER (Habilitar áudio e Fones) e estilos modernos dos botões; a barra antiga do mixer sai de vista.
+assert(q('.master-panel #masterAudioOn')&&q('.master-panel #masterPhones'),'enable audio and headphones live in the MASTER panel');
+cmd.setStyle('neon');assert.equal(q('[data-tool=bus] .cmd-grid').dataset.btnStyle,'neon');assert.equal(q('.master-panel').dataset.btnStyle,'neon');cmd.setStyle('nada');assert.equal(cmd.layout().style,'vidro','unknown style falls back to Vidro');
+assert(w.andromedaPlayerInfo,'VT/vinheta own the PREVIEW/PGM info strips (no flicker)');
 // VINHETA em LOOP: guarda a escolha e o ajuste mostra a opção.
 rd.setVinhetaLoop(true);assert(rd.vinhetaPlayer.loop);assert.equal(w.localStorage.getItem('andromeda.vinheta.loop.v1'),'true');assert(q('.cmd-btn[data-cmd=vinheta] .cmd-sub').textContent.startsWith('↻'),'the VINHETA button shows the loop');
 q('.cmd-btn[data-cmd=vinheta]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#vinhetaLoop').checked,'loop option in the vinheta settings');q('.cmd-pop-close').click();rd.setVinhetaLoop(false);assert(!rd.vinhetaPlayer.loop);
 // VT e VINHETA vão ao PREVIEW; ao AR com CUT. Câmeras AFV saem do áudio porque não estão no AR.
-assert.equal(rd.vtToPreview(),false,'empty playlist: nothing goes to preview');
-rd.vt.items.push({name:'Abertura',el:{currentTime:0,ended:false,pause(){},play:()=>Promise.resolve()},duration:12});rd.cue(0);q('.cmd-btn[data-cmd=vt]').click();
+assert.equal(rd.vtToPreview(),false,'empty playlist: nothing goes to preview');assert.equal(rd.vtSeek(5),false,'timeline without a VT does nothing');
+rd.vt.items.push({name:'Abertura',el:{currentTime:0,ended:false,pause(){},play:()=>Promise.resolve()},duration:12});rd.cue(0);assert(rd.vtSeek(6));assert.equal(rd.vt.items[0].startAt,6,'double click on the timeline of an armed VT sets where it starts');rd.vt.items[0].startAt=0;q('.cmd-btn[data-cmd=vt]').click();
 assert.equal(vm.runInContext('state.prv',ctx),rd.VT_SOURCE,'VT command puts the VT in PREVIEW');assert.equal(q('.cmd-btn[data-cmd=vt]').dataset.prv,'true');
 const cam=vm.runInContext('state.pgm',ctx);vm.runInContext('cams[state.pgm].conn=true;cut()',ctx);assert.equal(vm.runInContext('state.pgm',ctx),rd.VT_SOURCE);assert.equal(vm.runInContext('audioWeight("afv",'+cam+')',ctx),0,'AFV camera out of the mix while the VT is on air');
 assert.equal(vm.runInContext('state.prv',ctx),cam,'the camera that was on air waits in PREVIEW to come back');assert(vm.runInContext('window.andromedaVtOnAir()',ctx));
@@ -103,6 +107,13 @@ assert.equal(rd.vinhetaToPreview(),false,'no vinheta loaded yet');
 // BLACK (F1) e BARRAS (F2) direto no AR; atalhos configuráveis; ESC volta à Operação.
 const key=(k,code)=>w.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,code:code||k,bubbles:true,cancelable:true}));
 key('F1');assert(rd.black.on,'F1 = BLACK');key('F1');assert(!rd.black.on);key('F2');assert(rd.bars.on,'F2 = BARRAS');key('F2');assert(!rd.bars.on);
+// Números 1–9 e 0 = câmera direto no AR (CUT); F1–F12 são sempre da mesa (o navegador nunca recarrega, abre ajuda ou busca).
+{const A=Object.fromEntries(cmd.ACTIONS.map(x=>[x.id,x.key]));for(let i=0;i<10;i++)assert.equal(A['cam'+i],i<9?String(i+1):'0','key '+(i<9?i+1:0)+' = camera '+(i+1)+' straight to air');assert.equal(A.prv0,'','the old PREVIEW numbers are free');
+for(const f of ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']){const ev=new w.KeyboardEvent('keydown',{key:f,bubbles:true,cancelable:true});w.dispatchEvent(ev);assert(ev.defaultPrevented,f+' never reaches the browser');}
+for(const f of ['F5','F12']){const input=q('#fxLayer')||q('input');const ev=new w.KeyboardEvent('keydown',{key:f,bubbles:true,cancelable:true});input.dispatchEvent(ev);assert(ev.defaultPrevented,f+' is prevented even with a form field focused');}
+const saved=vm.runInContext('({pgm:state.pgm,prv:state.prv,busy:state.busy,progress:state.progress})',ctx);vm.runInContext('state.busy=false;state.progress=0;state.pgm=0;state.prv=1;cams[3].conn=false',ctx);key('4');assert.equal(vm.runInContext('state.pgm',ctx),0,'a camera without signal never goes to air by key');assert.equal(vm.runInContext('state.prv',ctx),3,'it stays in PREVIEW');
+vm.runInContext('state.progress=.4',ctx);key('1');assert.equal(vm.runInContext('state.pgm',ctx),0,'no jump during a transition');vm.runInContext('state.progress=0',ctx);
+vm.runInContext('state.busy='+saved.busy+';state.progress='+saved.progress+';state.pgm='+saved.pgm+';state.prv='+saved.prv,ctx);}
 assert.equal(q('.cmd-btn[data-cmd=black] .cmd-key').textContent,'F1');assert.equal(q('.shortcut-list').children.length,cmd.ACTIONS.length,'every command can get a keyboard shortcut');
 vm.runInContext("openWorkspace('effects')",ctx);assert(!q('.effects-page').hidden);key('Escape');assert(q('.effects-page').hidden&&!vm.runInContext('operation.hidden',ctx),'ESC returns to Operação');
 // Áudio master no lugar de Camadas no ar, com FADE OUT e tempo.
@@ -112,7 +123,7 @@ assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera an
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
 q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,12,'and hidden');
-console.log('PASS: commands panel (custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
+console.log('PASS: commands panel (button styles, audio switches in MASTER, VT timeline seek, custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');
 assert.deepEqual([...q('#pfPreset').options].map(o=>o.value),['veryfast','superfast','ultrafast']);
