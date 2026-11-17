@@ -3,7 +3,7 @@ const { spawnSync } = require('node:child_process');
 const Mkv = require('../public/mkvmux.js'), { findFFmpeg } = require('../encoder.cjs');
 const exe = findFFmpeg();
 
-const { readMkv } = require('./mkv-reader.cjs');
+const { readMkv, lastFrame } = require('./mkv-reader.cjs');
 
 function source(dir, extra = []) {
   const file = path.join(dir, 'src.mkv');
@@ -27,7 +27,7 @@ test('Matroska engine muxer: its own output is read back by FFmpeg with the same
     assert.equal(mine.packets.filter(p => p.track === 1).length, frames.length, 'every video packet kept'); assert.equal(mine.packets.filter(p => p.track === 2).length, sounds.length, 'every audio packet kept');
     assert.deepEqual(mine.packets.filter(p => p.track === 1 && p.key).map(p => p.ms), frames.filter(p => p.key).map(p => p.ms), 'keyframes at the same instants');
     const r = probe(out, ['-map', '0:v:0', '-map', '0:a:0']); assert.equal(r.status, 0, r.stderr); assert.equal(r.stderr.trim(), '', 'FFmpeg decodes both tracks with no complaint: ' + r.stderr);
-    const count = spawnSync(exe, ['-hide_banner', '-i', out, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }).stderr; assert(Math.abs(Number(/frame=\s*(\d+)/.exec(count)[1]) - frames.length) <= 1, 'decoded frames: ' + count.slice(-200));
+    const count = spawnSync(exe, ['-hide_banner', '-i', out, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }).stderr; assert(Math.abs(lastFrame(count) - frames.length) <= 1, 'decoded frames: ' + count.slice(-200));
   } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
 });
 
@@ -48,6 +48,6 @@ test('Matroska engine muxer: a restart waits for a keyframe, and a stream cut an
     const tail = [h.header(), ...frames.filter(p => p.ms >= keys[1].ms).map(p => h.video(p.data, p.ms, p.key)), ...src.packets.filter(p => p.track === 2 && p.ms >= keys[1].ms).map(p => h.audio(p.data, p.ms))];
     const out = path.join(dir, 'tail.mkv'); fs.writeFileSync(out, Buffer.concat(tail.map(Buffer.from)));
     const cut = Buffer.concat(tail.map(Buffer.from)).subarray(0, Math.floor(fs.statSync(out).size * .8)); fs.writeFileSync(out, cut);
-    const r = spawnSync(exe, ['-hide_banner', '-i', out, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }); const n = Number(/frame=\s*(\d+)/.exec(r.stderr)?.[1] || 0); assert(n > 20, 'a cut file still decodes: ' + r.stderr.slice(-300));
+    const r = spawnSync(exe, ['-hide_banner', '-i', out, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }); const n = lastFrame(r.stderr); assert(n > 20, 'a cut file still decodes: ' + r.stderr.slice(-300));
   } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
 });

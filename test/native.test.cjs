@@ -1,7 +1,7 @@
 const { test } = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), { once } = require('node:events');
 const { spawn, spawnSync } = require('node:child_process'), { WebSocket } = require('ws');
 const { createBridge } = require('../server.cjs'), { createAudit } = require('../audit.cjs'), { findFFmpeg, argsForGroup, validateBroadcast, groupsFor } = require('../encoder.cjs');
-const Mkv = require('../public/mkvmux.js'), { readMkv } = require('./mkv-reader.cjs');
+const Mkv = require('../public/mkvmux.js'), { readMkv, lastFrame } = require('./mkv-reader.cjs');
 const exe = findFFmpeg();
 
 // Fonte de teste: H.264 + Opus gerados pelo FFmpeg e reempacotados pelo empacotador do motor, como o navegador faria.
@@ -18,7 +18,7 @@ function makeWebm(file) {
   const r = spawnSync(exe, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '6', '-c:v', 'libvpx', '-deadline', 'realtime', '-b:v', '500k', '-g', '30', '-c:a', 'libopus', '-y', file], { timeout: 60000 });
   assert.equal(r.status, 0, String(r.stderr));
 }
-const streams = f => { const p = spawnSync(exe, ['-hide_banner', '-i', f], { encoding: 'utf8' }).stderr; return { video: /Stream #0:\d.*Video: (\w+)/.exec(p)?.[1], audio: /Stream #0:\d.*Audio: (\w+)/.exec(p)?.[1], frames: Number(/frame=\s*(\d+)/.exec(spawnSync(exe, ['-hide_banner', '-i', f, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }).stderr)?.[1] || 0) }; };
+const streams = f => { const p = spawnSync(exe, ['-hide_banner', '-i', f], { encoding: 'utf8' }).stderr; return { video: /Stream #0:\d.*Video: (\w+)/.exec(p)?.[1], audio: /Stream #0:\d.*Audio: (\w+)/.exec(p)?.[1], frames: lastFrame(spawnSync(exe, ['-hide_banner', '-i', f, '-map', '0:v:0', '-f', 'null', '-'], { encoding: 'utf8' }).stderr) }; };
 
 async function open(port) {
   const children = [], spawnProcess = (cmd, args, opts) => { const c = spawn(cmd, args, opts); children.push({ c, args }); return c; };

@@ -23,4 +23,7 @@ function readMkv(buf) {
   walk(buf.length, {}); return out;
 }
 
-module.exports = { readMkv };
+// O FFmpeg imprime várias linhas "frame=" (no Windows também uma inicial com 0): vale a última.
+const lastFrame = text => { const all = [...String(text).matchAll(/frame=\s*(\d+)/g)]; return all.length ? Number(all[all.length - 1][1]) : 0; };
+
+module.exports = { readMkv, lastFrame };
