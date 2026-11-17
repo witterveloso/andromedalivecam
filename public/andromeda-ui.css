@@ -282,6 +282,7 @@ code { padding: 2px 6px; border-radius: 5px; background: var(--d-inset); border:
 .fx-quick > strong { display: none; }
 .fx-quick button[aria-pressed="true"] { background: var(--d-pgm); border-color: #ff5c7c; color: #fff; }
 #fxConfigure { margin-left: auto; }
+.key-panel[hidden] { display: none !important; }
 .dock-panel > .key-panel { margin: 0; padding: 10px 12px; background: none; border: 0; border-top: 1px solid var(--d-line); border-radius: 0; box-shadow: none; }
 .key-panel b { color: var(--d-faint); font: 700 10px var(--d-mono); letter-spacing: .12em; }
 #keySourceLabel { color: var(--d-muted); }

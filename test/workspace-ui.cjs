@@ -56,9 +56,9 @@ console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','vt','vtnext','vtpause','vtstop','vinheta','black','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vt','vtnext','vtpause','vtstop','vinheta','black','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
-assert(q('[data-tool=bus] .key-panel'),'KEY 1 monitor next to the PiP command');
+assert(q('.cmd-btn[data-cmd=pip]'),'the PiP command is on the desk');assert(!q('[data-tool=bus] .key-panel'),'the KEY 1 (PiP) monitor window is not on the desk any more');assert(q('.key-panel').hidden,'and the panel stays hidden wherever else it was attached');
 // Regressiva direto no AR; tempo no ajuste (duplo clique).
 rd.cdRow.querySelector('#cdTime').value='2:30';rd.cdRow.querySelector('#cdTime').dispatchEvent(new w.Event('change'));assert.equal(rd.countdown.seconds,150);rd.cdRow.querySelector('#cdPlus').click();assert.equal(rd.countdown.seconds,180);
 q('.cmd-btn[data-cmd=countdown]').click();assert(rd.countdown.on,'REGRESSIVA goes straight to air');assert(rd.cdRow.querySelector('#cdTime').disabled,'time locked while on air');q('.cmd-btn[data-cmd=countdown]').click();assert(!rd.countdown.on);
@@ -94,7 +94,7 @@ assert(q('[data-tool=layers] #masterFader')&&q('[data-tool=layers] #masterFade')
 assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera and mosaic tools in the Câmeras bar');
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
-q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,11,'and hidden');
+q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,12,'and hidden');
 console.log('PASS: commands panel (GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');
