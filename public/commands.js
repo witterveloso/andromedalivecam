@@ -314,8 +314,10 @@
 
   /* ---------- atalhos de teclado (configuráveis) ---------- */
   const ACTIONS = [
-    ...Array.from({ length: 10 }, (_, i) => ({ id: 'prv' + i, label: 'Câmera ' + (i + 1) + ' no PREVIEW', key: i < 9 ? String(i + 1) : '-', run: () => select('prv', i) })),
-    { id: 'prvBlack', label: 'Preto no PREVIEW', key: '0', run: () => select('prv', 10) },
+    // Números 1–9 e 0: a câmera vai DIRETO ao AR (CUT). As ações "no PREVIEW" continuam disponíveis para quem quiser atribuir uma tecla.
+    ...Array.from({ length: 10 }, (_, i) => ({ id: 'cam' + i, label: 'Câmera ' + (i + 1) + ' direto no AR', key: i < 9 ? String(i + 1) : '0', run: () => camToAir(i) })),
+    ...Array.from({ length: 10 }, (_, i) => ({ id: 'prv' + i, label: 'Câmera ' + (i + 1) + ' no PREVIEW', key: '', run: () => select('prv', i) })),
+    { id: 'prvBlack', label: 'Preto no PREVIEW', key: '', run: () => select('prv', 10) },
     { id: 'mosaic', label: 'Mosaico no PREVIEW', key: 'M', run: () => select('prv', 11) },
     { id: 'cut', label: 'CUT', key: 'Space', run: () => cut() },
     { id: 'auto', label: 'AUTO', key: 'Enter', run: () => auto() },
@@ -337,6 +339,19 @@
   const KEYS_KEY = 'andromeda.shortcuts.v1';
   const defaults = Object.fromEntries(ACTIONS.map(a => [a.id, a.key]));
   let keymap = { ...defaults, ...store.get(KEYS_KEY, {}) };
+  // Quem já tinha os números no PREVIEW (padrão antigo) passa para "direto no AR"; teclas trocadas pelo operador são respeitadas.
+  { const OLD = { prvBlack: '0', ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => ['prv' + i, i < 9 ? String(i + 1) : '-'])) }; let moved = false;
+    for (const [id, old] of Object.entries(OLD)) if (keymap[id] === old) { keymap[id] = ''; moved = true; }
+    if (moved) store.set(KEYS_KEY, keymap); }
+  // Câmera direto no AR: entra no PREVIEW e dá CUT. Sem sinal (ou durante transição) não vai ao ar: ela fica só no PREVIEW e a mesa avisa.
+  const hasSignal = i => { const el = media[i]?.element; return !!cams[i]?.conn && !!el && (el.videoWidth || el.naturalWidth || 0) > 0; };
+  function camToAir(i) {
+    if (state.busy || state.progress > 0) { log('Transição em andamento: ' + sources[i] + ' não foi ao ar'); return false; }
+    if (state.pgm === i) return false;
+    select('prv', i); if (state.prv !== i) return false;
+    if (!hasSignal(i)) { log(sources[i] + ' sem sinal: ficou só no PREVIEW (não foi ao ar)'); return false; }
+    cut(); log(sources[i] + ' direto no AR'); return true;
+  }
   const keyOf = id => keymap[id] || '';
   const comboOf = e => {
     const base = e.code === 'Space' ? 'Space' : e.key === 'Enter' ? 'Enter' : /^F\d{1,2}$/.test(e.key) ? e.key : e.key.length === 1 ? e.key.toUpperCase() : e.key;
@@ -346,6 +361,7 @@
   const LEGACY = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', 'M', 'Space', 'Enter']);
   const typing = t => t.isContentEditable || !!t.closest?.('input,select,textarea');
   let capturing = null;
+  function toggleFullscreen(doc) { try { if (doc.fullscreenElement) doc.exitFullscreen(); else doc.documentElement.requestFullscreen(); } catch { /* sem tela cheia */ } }
   addEventListener('keydown', e => {
     if (capturing) return;
     if (e.key === 'Escape') {
@@ -353,15 +369,22 @@
       if (document.querySelector('dialog[open]') || document.body.classList.contains('layout-editing') || typing(e.target) || !pop.hidden) return;
       openWorkspace('operation'); return;
     }
-    if (e.repeat || e.metaKey || document.querySelector('dialog[open]') || typing(e.target)) return;
+    // F1–F12 são da mesa enquanto ela está em operação: nunca acionam o navegador (ajuda, busca, recarregar, ferramentas…),
+    // mesmo com um campo de texto selecionado, uma janela aberta ou a tecla segurada.
+    const isF = /^F([1-9]|1[0-2])$/.test(e.key);
+    if (isF) e.preventDefault();
+    if (e.metaKey || (e.repeat && !isF)) return;
+    if (e.repeat) { e.stopImmediatePropagation(); return; }
+    if (!isF && (document.querySelector('dialog[open]') || typing(e.target))) return;
     const combo = comboOf(e);
-    const onButton = e.target.closest?.('button,[role="button"]') && !e.target.closest('.mv-cell,.src-btn,.cmd-btn');
+    const onButton = !isF && e.target.closest?.('button,[role="button"]') && !e.target.closest('.mv-cell,.src-btn,.cmd-btn');
     if (onButton && (combo === 'Space' || combo === 'Enter')) return; // Espaço/Enter acionam o botão em foco
     const action = ACTIONS.find(a => keymap[a.id] && keymap[a.id] === combo);
-    if (action) { e.preventDefault(); e.stopImmediatePropagation(); action.run(); paint(); return; }
-    // Teclas antigas que foram trocadas de função não disparam mais o comando antigo.
-    // F11 (tela cheia) e F12 (ferramentas) continuam do sistema.
-    if (LEGACY.has(combo) || /^F([1-9]|10)$/.test(combo)) { e.stopImmediatePropagation(); if (/^F([1-9]|10)$/.test(combo)) e.preventDefault(); }
+    if (action) { if (isF && document.querySelector('dialog[open]')) { e.stopImmediatePropagation(); return; } e.preventDefault(); e.stopImmediatePropagation(); action.run(); paint(); return; }
+    // F11 sem função na mesa continua alternando a tela cheia (da janela onde a tecla foi apertada).
+    if (e.key === 'F11' && combo === 'F11') { e.stopImmediatePropagation(); toggleFullscreen(e.andromedaSource?.document || e.target.ownerDocument || document); return; }
+    // Teclas antigas que foram trocadas de função não disparam mais o comando antigo; F1–F12 sem função não fazem nada.
+    if (LEGACY.has(combo) || isF) e.stopImmediatePropagation();
   }, true);
 
   /* ---------- Personalizar: atalhos e botões de comando ---------- */
@@ -369,7 +392,7 @@
   const settings = $('.layout-settings');
   if (settings) {
     const box = make('section', 'shortcut-settings');
-    box.innerHTML = '<h3>Atalhos do teclado</h3><p>Clique no atalho e pressione a tecla (ou combinação com Ctrl/Alt). <b>Backspace</b> limpa; <b>Esc</b> cancela. Funcionam em qualquer página, menos quando você digita num campo. <b>Esc</b> sempre volta para a Operação.</p><div class="shortcut-list" role="table" aria-label="Atalhos do teclado"></div><button type="button" id="shortcutsReset">Restaurar atalhos padrão</button>' +
+    box.innerHTML = '<h3>Atalhos do teclado</h3><p>Clique no atalho e pressione a tecla (ou combinação com Ctrl/Alt). <b>Backspace</b> limpa; <b>Esc</b> cancela. Funcionam em qualquer página; as teclas <b>F1 a F12</b> valem sempre (até com um campo de texto selecionado), e as demais não funcionam enquanto você digita num campo. <b>F11</b> só alterna a tela cheia se não tiver função na mesa. <b>Esc</b> sempre volta para a Operação.</p><div class="shortcut-list" role="table" aria-label="Atalhos do teclado"></div><button type="button" id="shortcutsReset">Restaurar atalhos padrão</button>' +
       '<h3>Botões de comando</h3><p>Ordem, visibilidade, largura e tamanho dos botões do painel Comandos. Na Operação, em <b>Personalizar</b>, dá para arrastar os botões direto no painel.</p><div class="cmd-order-tools"><label>Tamanho dos botões <input type="range" id="cmdSizeSetting" min="50" max="200" step="5"><output id="cmdSizeOut"></output></label><label>Botões por linha <select id="cmdColsSetting"></select></label><label>Estilo <select id="cmdStyleSetting"></select></label></div><ol class="cmd-order" aria-label="Ordem dos botões de comando"></ol>';
     settings.append(box);
     const list = box.querySelector('.shortcut-list'), order = box.querySelector('.cmd-order');
@@ -444,7 +467,7 @@
   function paintFooter() {
     const span = $$('.sim-footer span').find(el => /Atalhos/.test(el.textContent)); if (!span) return;
     const k = id => keymap[id] ? prettyKey(keymap[id]) : null;
-    span.textContent = 'Atalhos: ' + [[k('prv0') && k('prv8') ? k('prv0') + '–' + k('prv8') : null, 'preview'], [k('cut'), 'CUT'], [k('auto'), 'AUTO'], [k('black'), 'BLACK'], [k('bars'), 'BARRAS'], ['Esc', 'Operação']].filter(([key]) => key).map(([key, what]) => key + ' ' + what).join(' · ') + ' · troque em Personalizar';
+    span.textContent = 'Atalhos: ' + [[k('cam0') && k('cam8') ? k('cam0') + '–' + k('cam8') : null, 'câmera no AR'], [k('cut'), 'CUT'], [k('auto'), 'AUTO'], [k('black'), 'BLACK'], [k('bars'), 'BARRAS'], ['Esc', 'Operação']].filter(([key]) => key).map(([key, what]) => key + ' ' + what).join(' · ') + ' · troque em Personalizar';
   }
   const basePaint = paint; paint = function () { basePaint(); paintFooter(); };
   buildGrid(); sync();

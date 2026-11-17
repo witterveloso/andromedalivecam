@@ -18,6 +18,12 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!smoke && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null, bridge = null, closing = false;
+const { createCloseGuard } = require('./closeguard.cjs');
+const closeGuard = createCloseGuard({
+  dialog, app, disabled: !!smoke, getWindow: () => win,
+  // "No ar" = enviando ou preparando a transmissão (mesma regra do aviso do navegador).
+  isOnAir: () => win?.webContents.executeJavaScript('typeof busyTx === "function" && busyTx()') ?? false,
+});
 
 function report(result) {
   if (!smoke) return;
@@ -92,11 +98,12 @@ function createWindow() {
   contents.on('did-create-window', (child, details) => {
     if (details.frameName !== 'andromeda-segunda-tela') return;
     child.maximize();
-    child.webContents.on('before-input-event', (event, input) => { if (input.type === 'keyDown' && input.key === 'F11') { child.setFullScreen(!child.isFullScreen()); event.preventDefault(); } });
+    // F11 vai para a página (a mesa decide: comando atribuído ou tela cheia desta janela).
   });
   contents.on('will-navigate', (event, url) => { if (!url.startsWith(ORIGIN)) { event.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); } });
   // A mesa pede confirmação ao sair durante um envio (beforeunload); aqui ela vira uma pergunta clara.
   contents.on('will-prevent-unload', event => {
+    if (closeGuard.confirmed) { event.preventDefault(); return; } // a pergunta de fechar já avisou sobre o envio
     const choice = dialog.showMessageBoxSync(win, {
       type: 'warning', buttons: ['Continuar no ar', 'Encerrar e fechar'], defaultId: 0, cancelId: 0, noLink: true,
       title: 'Transmissão em andamento', message: 'A mesa está enviando ou gravando.', detail: 'Fechar agora interrompe a transmissão em todas as plataformas e finaliza a gravação.',
@@ -106,14 +113,15 @@ function createWindow() {
   contents.on('render-process-gone', (_e, details) => {
     if (closing || smoke) return;
     const choice = dialog.showMessageBoxSync(win, { type: 'error', buttons: ['Recarregar a mesa', 'Fechar'], defaultId: 0, title: 'A mesa parou', message: 'A tela da mesa parou de responder (' + details.reason + ').', detail: 'O serviço local continua ativo. Recarregar reabre a mesa; refaça a seleção de fontes antes de voltar ao ar.' });
-    if (choice === 0) contents.reload(); else app.quit();
+    if (choice === 0) contents.reload(); else { closeGuard.confirmNow(); app.quit(); }
   });
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
-    if (input.key === 'F11') { win.setFullScreen(!win.isFullScreen()); event.preventDefault(); }
-    else if (input.control && input.shift && input.key.toLowerCase() === 'i') { contents.toggleDevTools(); event.preventDefault(); }
+    // F1–F12 chegam à mesa (atalhos do Andrômeda Live); F11 sem função na mesa alterna a tela cheia pela própria página.
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') { contents.toggleDevTools(); event.preventDefault(); }
     else if (input.control && input.key.toLowerCase() === 'r' && !input.shift) event.preventDefault(); // sem recarregar a mesa por engano no ar
   });
+  win.on('close', event => closeGuard.handleClose(event)); // pergunta antes de fechar (toque sem querer no X)
   win.on('closed', () => { win = null; });
   if (smoke) contents.once('did-finish-load', () => setTimeout(checkPage, 2500));
   win.loadURL(ORIGIN + '/');
@@ -139,7 +147,7 @@ async function checkPage() {
 }
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('before-quit', () => { closing = true; });
+app.on('before-quit', event => { closeGuard.handleBeforeQuit(event); if (!event.defaultPrevented) closing = true; });
 app.on('window-all-closed', () => { bridge?.shutdown(); app.quit(); });
 if (smoke) setTimeout(() => report({ ok: false, error: 'tempo esgotado' }), 90000).unref();
 

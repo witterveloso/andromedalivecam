@@ -44,6 +44,7 @@
       "package.json",
       "public/**/*",
       "desktop/main.cjs",
+      "desktop/closeguard.cjs",
       "desktop/build/icon.png",
       "license-public.pem",
       "!check.cjs",

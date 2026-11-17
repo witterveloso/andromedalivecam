@@ -107,6 +107,13 @@ assert.equal(rd.vinhetaToPreview(),false,'no vinheta loaded yet');
 // BLACK (F1) e BARRAS (F2) direto no AR; atalhos configuráveis; ESC volta à Operação.
 const key=(k,code)=>w.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,code:code||k,bubbles:true,cancelable:true}));
 key('F1');assert(rd.black.on,'F1 = BLACK');key('F1');assert(!rd.black.on);key('F2');assert(rd.bars.on,'F2 = BARRAS');key('F2');assert(!rd.bars.on);
+// Números 1–9 e 0 = câmera direto no AR (CUT); F1–F12 são sempre da mesa (o navegador nunca recarrega, abre ajuda ou busca).
+{const A=Object.fromEntries(cmd.ACTIONS.map(x=>[x.id,x.key]));for(let i=0;i<10;i++)assert.equal(A['cam'+i],i<9?String(i+1):'0','key '+(i<9?i+1:0)+' = camera '+(i+1)+' straight to air');assert.equal(A.prv0,'','the old PREVIEW numbers are free');
+for(const f of ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']){const ev=new w.KeyboardEvent('keydown',{key:f,bubbles:true,cancelable:true});w.dispatchEvent(ev);assert(ev.defaultPrevented,f+' never reaches the browser');}
+for(const f of ['F5','F12']){const input=q('#fxLayer')||q('input');const ev=new w.KeyboardEvent('keydown',{key:f,bubbles:true,cancelable:true});input.dispatchEvent(ev);assert(ev.defaultPrevented,f+' is prevented even with a form field focused');}
+const saved=vm.runInContext('({pgm:state.pgm,prv:state.prv,busy:state.busy,progress:state.progress})',ctx);vm.runInContext('state.busy=false;state.progress=0;state.pgm=0;state.prv=1;cams[3].conn=false',ctx);key('4');assert.equal(vm.runInContext('state.pgm',ctx),0,'a camera without signal never goes to air by key');assert.equal(vm.runInContext('state.prv',ctx),3,'it stays in PREVIEW');
+vm.runInContext('state.progress=.4',ctx);key('1');assert.equal(vm.runInContext('state.pgm',ctx),0,'no jump during a transition');vm.runInContext('state.progress=0',ctx);
+vm.runInContext('state.busy='+saved.busy+';state.progress='+saved.progress+';state.pgm='+saved.pgm+';state.prv='+saved.prv,ctx);}
 assert.equal(q('.cmd-btn[data-cmd=black] .cmd-key').textContent,'F1');assert.equal(q('.shortcut-list').children.length,cmd.ACTIONS.length,'every command can get a keyboard shortcut');
 vm.runInContext("openWorkspace('effects')",ctx);assert(!q('.effects-page').hidden);key('Escape');assert(q('.effects-page').hidden&&!vm.runInContext('operation.hidden',ctx),'ESC returns to Operação');
 // Áudio master no lugar de Camadas no ar, com FADE OUT e tempo.

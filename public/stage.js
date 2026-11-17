@@ -268,7 +268,7 @@
   });
   $$('.sim-footer span').filter(el => /demonstração|Unsplash/.test(el.textContent)).forEach(el => el.remove());
   const shortcuts = $$('.sim-footer span').find(el => /Atalhos/.test(el.textContent));
-  if (shortcuts) shortcuts.textContent = 'Atalhos: 1–9 preview · − câmera 10 · 0 preto · M mosaico · Espaço CUT · Enter AUTO';
+  if (shortcuts) shortcuts.textContent = 'Atalhos: 1–9 e 0 câmera no AR · M mosaico · Espaço CUT · Enter AUTO · F1–F12 comandos';
 
   /* ---------- convites seguem a ordem dos canais ---------- */
 
