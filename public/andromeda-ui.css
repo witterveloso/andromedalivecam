@@ -908,30 +908,52 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .pf-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--d-muted); font: 500 11.5px var(--d-mono); }
 .pf-list:empty { display: none; }
 
-/* ---------- VUs modernos (LED): verde até −18 dBFS, amarelo de −18 a −6, vermelho de −6 a 0 ----------
-   A escala é a do medidor (−60 a 0 dBFS, linear em dB): −18 = 70% e −6 = 90%. Os segmentos apagados ficam à vista,
-   os acesos brilham, e a marca de pico (retenção de 1 s) é um segmento branco. */
-.vu-widget { --vu-green: #1fe07a; --vu-yellow: #ffcf33; --vu-red: #ff3355; --vu-gap: #04060a; }
-.vu-track { position: relative; height: 12px; padding: 0; background: var(--vu-gap); border: 1px solid #1c2433; border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .6); }
-.vu-track::before, .vu-lit { content: ""; position: absolute; inset: 2px; border-radius: 2px;
-  background: repeating-linear-gradient(90deg, transparent 0 5px, var(--vu-gap) 5px 7px), linear-gradient(90deg, var(--vu-green) 0 70%, var(--vu-yellow) 70% 90%, var(--vu-red) 90%); }
-.vu-track::before { opacity: .16; }
-.vu-lit { clip-path: inset(0 calc(100% - var(--vu-level)) 0 0); filter: drop-shadow(0 0 3px rgba(31, 224, 122, .55)) saturate(1.15); }
-.vu-peak { top: 2px; bottom: 2px; height: auto; width: 3px; border-radius: 1px; background: #fff; opacity: .95; box-shadow: 0 0 6px rgba(255, 255, 255, .8); }
-.vu-widget.clipping .vu-track { border-color: var(--vu-red); box-shadow: 0 0 10px rgba(255, 51, 85, .55), inset 0 1px 3px rgba(0, 0, 0, .6); }
-.vu-widget.clipping .vu-clip { background: var(--vu-red); color: #fff; }
+/* ---------- Medidores de áudio (estilo da referência do operador) ----------
+   Barra arredondada que enche de baixo para cima (ou da esquerda para a direita) em degradê contínuo: verde na base, amarelo e
+   vermelho na ponta. A altura é o pico real em dBFS (−60 a 0). Chegar a 0 dBFS acende a borda vermelha e o selo PEAK. */
+.vu-widget { --vu-fill: linear-gradient(to top, #43d36b 0%, #8fe05a 52%, #f4c84a 80%, #f0533f 100%); --vu-fill-h: linear-gradient(to right, #43d36b 0%, #8fe05a 52%, #f4c84a 80%, #f0533f 100%); }
+.vu-track { position: relative; height: 12px; padding: 0; background: #181a26; border: 1px solid #2a2e40; border-radius: 999px; overflow: hidden; }
+.vu-track::before { content: none; }
+.vu-lit { position: absolute; left: 2px; top: 2px; bottom: 2px; right: auto; width: max(0px, calc(var(--vu-level) - 4px)); clip-path: none; border-radius: 999px; background: var(--vu-fill-h); filter: none; transition: width .06s linear; }
+.vu-peak { display: none; }
+.vu-widget.clipping .vu-track { border-color: #f0533f; box-shadow: 0 0 10px rgba(240, 83, 63, .55); }
+.vu-widget.clipping .vu-clip { background: #f0533f; color: #fff; }
 
-/* Áudio master (coluna da direita): L e R em barras verticais; o número de pico fica embaixo de cada barra. */
+/* Versão vertical: canais do mixer e L/R do áudio master. */
+.source-mixer > .source-strip .vu-track, .master-meters .vu-track { width: 40px; height: 100%; min-height: 80px; border-radius: 10px; }
+.source-mixer > .source-strip .vu-lit, .master-meters .vu-lit { left: 3px; right: 3px; top: auto; bottom: 3px; width: auto; height: max(0px, calc(var(--vu-level) - 6px)); border-radius: 8px; background: var(--vu-fill); transition: height .06s linear; }
+
+/* Mixer: um canal por fonte, como na referência: medidor alto, nome embaixo (verde ativo, cinza em MUTE). */
+.source-mixer { display: flex; gap: 6px; overflow-x: auto; padding: 6px 2px 10px; }
+.source-mixer > .source-strip { display: grid; grid-template-rows: minmax(130px, 1fr) auto auto auto auto auto; justify-items: center; align-items: start; gap: 6px; flex: 0 0 104px; min-width: 104px; padding: 8px 6px; background: none; border: 0; border-radius: 10px; }
+.source-mixer > .source-strip > .vu-widget { order: 0; display: grid; justify-items: center; width: 100%; height: 100%; min-width: 0; }
+.source-mixer > .source-strip .vu-scale, .source-mixer > .source-strip .vu-caption { display: none; }
+.source-mixer > .source-strip > strong { order: 1; max-width: 100%; overflow: hidden; color: #43d36b; font: 700 13px var(--d-display); letter-spacing: .02em; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.source-mixer > .source-strip > .strip-state { order: 2; min-height: 20px; padding: 2px 8px; border-radius: 6px; color: var(--d-faint); font: 700 10.5px var(--d-mono); font-style: normal; letter-spacing: .08em; }
+.source-mixer > .source-strip > select { order: 3; width: 100%; min-height: 28px; font-size: 11px; }
+.source-mixer > .source-strip > input[type="range"] { order: 4; width: 100%; }
+.source-mixer > .source-strip > button { order: 5; width: 100%; min-height: 26px; padding: 2px 4px; font-size: 10.5px; }
+.source-mixer > .source-strip > small { display: none; }
+.source-mixer > .source-strip > button:disabled { display: none; }
+.source-mixer > .source-strip[data-mode="off"] > strong { color: var(--d-faint); }
+.source-mixer > .source-strip[data-mode="off"] > .strip-state { background: rgba(240, 83, 63, .14); color: #f0533f; }
+.source-mixer > .source-strip[data-mode="off"] .vu-lit { height: 8px; background: #3b3f5e; }
+
+/* Áudio master (coluna da direita): L e R verticais no mesmo estilo, com o nome e o pico embaixo. */
 .master-meters .pgm-audio-channels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 10px; min-height: 0; height: 100%; }
-.master-meters .pgm-audio-channels > div { display: grid; grid-template-rows: auto minmax(0, 1fr); justify-items: center; gap: 4px; margin: 0; min-height: 0; }
-.master-meters .pgm-audio-channels > div > b { color: var(--d-muted); font: 700 11px var(--d-mono); }
-.master-meters .vu-widget { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 6px; width: 100%; min-width: 0; height: 100%; }
-.master-meters .vu-track { width: 26px; height: auto; min-height: 66px; }
-.master-meters .vu-track::before, .master-meters .vu-lit {
-  background: repeating-linear-gradient(0deg, transparent 0 5px, var(--vu-gap) 5px 7px), linear-gradient(0deg, var(--vu-green) 0 70%, var(--vu-yellow) 70% 90%, var(--vu-red) 90%); }
-.master-meters .vu-lit { clip-path: inset(calc(100% - var(--vu-level)) 0 0 0); }
-.master-meters .vu-peak { left: 2px; right: 2px; top: auto; width: auto; height: 3px; bottom: clamp(2px, var(--vu-hold), calc(100% - 5px)); }
+.master-meters .pgm-audio-channels > div { display: grid; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 4px; margin: 0; min-height: 0; }
+.master-meters .pgm-audio-channels > div > b { order: 2; color: #43d36b; font: 700 12px var(--d-display); }
+.master-meters .vu-widget { order: 1; display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: 4px; width: 100%; min-width: 0; height: 100%; }
+.master-meters .vu-track { min-height: 66px; }
 .master-meters .vu-scale { display: none; }
-.master-meters .vu-caption { display: grid; justify-items: center; gap: 3px; min-width: 0; margin: 0; font-size: 9.5px; }
+.master-meters .vu-caption { display: flex; justify-content: center; gap: 6px; min-width: 0; margin: 0; font-size: 9.5px; }
 .free-grid > .dock-panel[data-tool="layers"] .master-panel { flex: 1 1 auto; grid-template-rows: auto minmax(96px, 1fr) auto auto auto; min-height: 0; gap: 6px; padding: 8px 12px; }
 .free-grid > .dock-panel[data-tool="layers"] .master-meters { min-height: 0; display: grid; }
+
+/* ---------- Segunda tela (dois monitores) ---------- */
+.second-holder { display: none !important; }
+.second-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--brand-blue, #00a3ff); border-radius: var(--d-r-sm, 8px); background: rgba(0, 163, 255, .08); color: var(--d-text); font-size: 12.5px; }
+.second-notice span { flex: 1 1 320px; }
+.second-notice button { min-height: 30px; }
+body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: border-box; background: var(--d-bg, #060817); color: var(--d-text, #e6e8f2); overflow: auto; }
+.second-bar { margin: 0 0 8px; color: var(--d-faint, #7078a6); font: 700 11px var(--d-display, sans-serif); letter-spacing: .14em; }

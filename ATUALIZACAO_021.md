@@ -1,5 +1,16 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.4
+- **Dois monitores (segunda tela).** Em *Personalizar*, cada painel pode ir para a **Segunda tela** (coluna *Página*), e há o modelo pronto **Duas telas** (câmeras, mixer e intercom na segunda tela; comandos, monitores, áudio master, corte e VT na principal).
+  - **Abrir segunda tela** (em Personalizar e na barra de edição) abre a janela com esses painéis. **No programa instalado ela abre sozinha no outro monitor**, maximizada; F11 deixa em tela cheia. Na primeira vez, se nenhum painel estiver marcado, o botão já aplica o modelo Duas telas.
+  - Os painéis são **movidos, não copiados**: câmeras, vídeo, áudio e medidores continuam funcionando lá. **Os atalhos de teclado valem também na segunda tela** (Espaço CUT, Enter AUTO, F1 BLACK, F2 BARRAS…), menos quando se digita num campo.
+  - Na segunda tela também dá para **arrastar** os painéis pelo título e mudar o tamanho pelo canto, como na principal.
+  - Fechando a janela, os painéis voltam para a mesa (guardados, funcionando) e aparece um aviso com o botão para reabrir.
+- **Medidores de áudio no estilo da referência do operador:** barras arredondadas que enchem em degradê contínuo (verde na base, amarelo e vermelho na ponta), sem segmentos.
+  - **Mixer de áudio:** um canal por fonte, lado a lado, com o medidor alto, o **nome curto embaixo** (CAM 1, BM CAM…; o nome completo aparece ao passar o mouse) em verde, e o estado: **MUTE** em vermelho quando a fonte está em OFF (barra apagada e nome em cinza), **AFV** ou **ON** nos outros casos. Modo e volume continuam embaixo de cada canal; "Reiniciar vídeo" só aparece para fontes que são arquivos de vídeo.
+  - **Áudio master:** L e R no mesmo estilo, com o pico em dBFS e o nome do canal embaixo.
+  - A altura da barra continua sendo o pico real em dBFS (−60 a 0). Chegar a 0 dBFS (limite digital) acende a borda vermelha e o selo PEAK.
+
 ## 0.21.3
 - **Mesa no Padrão novo: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.** Quem estava com o Padrão antigo passa ao novo sozinho; um layout mexido pelo operador fica como está (e o Padrão novo pode ser escolhido em *Personalizar → Modelo*).
 - **PREVIEW e PGM iguais e alinhados:** o PGM ganhou a mesma faixa de informação embaixo da imagem (fonte no ar e estado do sinal; com VT no ar mostra o nome e NO AR ou PAUSADO). Antes só o PREVIEW tinha a faixa e a imagem do PGM ficava 22 px mais baixa.
