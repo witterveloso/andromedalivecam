@@ -1,5 +1,12 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.7
+- **Instalador personalizado com a marca Andrômeda Live.** Feito a partir da arte da identidade visual do projeto (o "A" com a órbita e o play, o nome ANDRÔMEDA e a pastilha vermelha LIVE):
+  - **Painel lateral** das telas de boas-vindas e de conclusão (e do desinstalador): a galáxia da marca com o logo completo e a linha *Produção · Switcher · Transmissão · Multiplataforma*. No lugar da imagem azul genérica do Windows.
+  - **Cabeçalho** das demais telas (pasta de instalação, progresso) com o logo horizontal.
+  - Os arquivos têm o tamanho exato que o instalador exige (164×314 e 150×57, BMP de 24 bits); um teste automático confere isso, para um arquivo errado nunca chegar ao instalador.
+- **A palavra LIVE no logo do aplicativo.** O ícone novo (arquivo do programa, atalho da área de trabalho, menu Iniciar, barra de tarefas, janela, instalador e desinstalador, e o ícone da aba do navegador) traz o "A" da marca sobre a placa azul-noite com a **pastilha vermelha LIVE** embaixo, como na identidade visual. O ícone vai de 16 a 256 px (nos tamanhos pequenos a pastilha aparece como a faixa vermelha). O topo da mesa continua como estava: o nome ANDRÔMEDA e o selo vermelho LIVE ao lado.
+
 ## 0.21.6
 - **Correção: faixas do PREVIEW e do PGM piscando** "Aguardando fonte neste canal · SEM SINAL" com a vinheta no PREVIEW e o VT no AR (bug enviado pelo operador em vídeo). Duas partes da mesa escreviam na mesma faixa, uma a cada segundo e a outra a cada troca, e uma apagava a outra. Agora, com VT ou vinheta, a faixa tem um único dono e fica estável (testado: 60 leituras seguidas sem nenhuma troca; na 0.21.5 o mesmo teste mostrava as duas mensagens se alternando).
 - **Linha do tempo do VT manipulável, com dois cliques.** No painel do VT:
