@@ -1,5 +1,26 @@
 # Andrômeda Live 0.18 — gravação em 16:9 e 9:16
 
+## 0.18.2 — transmissão sem falta de vídeo
+
+Correção do aviso do YouTube **"Sem dados"** e **"O YouTube não está recebendo vídeo suficiente para manter um stream contínuo"**.
+
+**Causa principal:** quando a janela da mesa era minimizada ou ficava atrás de outra janela, o Windows e o navegador paravam de desenhar a mesa. A saída PROGRAM deixava de gerar quadros e a plataforma ficava sem vídeo.
+
+**O que mudou:**
+- **Motor de desenho reserva.** Se a janela for minimizada ou coberta, um relógio independente continua desenhando a saída do AR a 30 quadros por segundo. Ele desenha só a saída do AR (o multiview e o preview não aparecem nessa hora), para ficar leve.
+  - Medido no teste com a janela "minimizada": antes, nenhum quadro; agora, 29 quadros por segundo na saída PROGRAM.
+- **Fila de envio de cerca de 12 segundos por plataforma.** Antes era menos de 1 segundo. Uma oscilação curta do upload não descarta mais vídeo. Se a internet cair de vez, a plataforma reconecta sozinha, como antes.
+- **Áudio em 48 kHz e 160 kbps.** É o padrão pedido pelo Facebook e aceito pelo YouTube (antes era 44,1 kHz e 128 kbps).
+
+**O que já estava dentro das recomendações das plataformas** (YouTube, Facebook, Twitch):
+- vídeo H.264 perfil High;
+- taxa constante (CBR);
+- quadro-chave a cada 2 segundos;
+- áudio AAC estéreo.
+
+**Se o aviso voltar,** confira o upload: a velocidade de envio deve ficar pelo menos 30% acima da soma das taxas dos destinos. A página Transmissão mostra essa conta em "reserve pelo menos … Mbps de upload estável".
+
+
 ## 0.18.1 — prévia dos efeitos acompanha a rolagem
 
 Na página **GC e efeitos**, a **Prévia dos efeitos** agora acompanha a barra de rolagem:

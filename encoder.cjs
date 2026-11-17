@@ -119,7 +119,7 @@ function detectEncoders(ffmpeg) {
 
 // No tee, | separa saídas e [ ] delimita opções: escapamos o que puder aparecer num caminho de arquivo.
 const teeEscape = value => value.replace(/\\/g, '/').replace(/(['\[\]])/g, '\\$1');
-const FIFO = 'f=fifo:fifo_format=flv:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
+const FIFO = 'f=fifo:fifo_format=flv:queue_size=900:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
 
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
@@ -133,7 +133,7 @@ function argsForGroup(cfg, group) {
   return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', '-thread_queue_size', '128', '-probesize', '1000000', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0',
     '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${size}:flags=bilinear,setsar=1`, '-r', '30',
     ...ENCODERS[cfg.encoder || 'libx264'](kb), '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-    '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1',
+    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1',
     ...outputArgs(group)];
 }
 // Compatibilidade: o grupo principal (16:9, ou o único que houver).
@@ -144,7 +144,7 @@ function argsFor(c) {
   const size = c.resolution === '720p' ? '1280:720' : '1920:1080', kb = Math.round(c.bitrate * 1000);
   return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', '-thread_queue_size', '128', '-probesize', '1000000', '-analyzeduration', '1000000', '-f', 'webm', '-i', 'pipe:0',
     '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${size}:flags=bilinear,setsar=1`, '-r', '30', '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-b:v', kb + 'k', '-minrate', kb + 'k', '-maxrate', kb + 'k', '-bufsize', (kb * 2) + 'k', '-x264-params', 'nal-hrd=cbr:force-cfr=1', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
-    '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1', '-f', 'flv', '-flvflags', 'no_duration_filesize', '-rw_timeout', '15000000', c.target];
+    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1:first_pts=0', '-progress', 'pipe:3', '-stats_period', '1', '-f', 'flv', '-flvflags', 'no_duration_filesize', '-rw_timeout', '15000000', c.target];
 }
 
 function findFFmpeg() {
