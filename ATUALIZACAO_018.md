@@ -1,5 +1,34 @@
 # Andrômeda Live 0.18 — gravação em 16:9 e 9:16
 
+## 0.18.3 — câmeras no 4G/5G
+
+Correção da imagem que não chegava quando o celular estava em dados móveis (4G/5G).
+
+**Causa:** no 4G/5G a operadora esconde o celular atrás de um endereço compartilhado (CGNAT), às vezes só IPv6. Com a mesa atrás do roteador de casa ou da igreja, celular e mesa muitas vezes não encontram um caminho direto. A câmera aparecia conectada, mas a imagem não chegava. No Wi-Fi funcionava, porque lá o caminho direto existe. Até agora a mesa só tinha servidores STUN, que ajudam a achar o caminho, mas não retransmitem a imagem.
+
+**O que mudou:**
+- **Retransmissão (TURN) configurada na própria mesa:** em **Configurações → Convites → Como os celulares se conectam → Rede móvel (4G/5G)**.
+  - **Cloudflare (recomendado):** crie uma conta gratuita, entre em **dash.cloudflare.com → Realtime → TURN Server → Create** e cole o **Turn Token ID** e o **API Token**. A mesa gera credenciais temporárias de 24 horas e as renova sozinha.
+  - **Servidor próprio (coturn):** endereços, usuário e senha.
+  - **Salvar e testar** só salva se a chave funcionar. A chave fica guardada só neste computador e não vai para os celulares; eles recebem apenas credenciais temporárias.
+- A retransmissão só entra quando o caminho direto falha. No Wi-Fi a imagem continua indo direto.
+- Ela usa também a porta 443 (TURN sobre TLS), que passa por redes móveis e corporativas mais restritas.
+- **Na mesa:** em Fontes de câmera, cada câmera mostra **conexão direta** ou **conexão retransmitida (TURN)**.
+- **No celular:** se a conexão falhar sem retransmissão ativa, o app explica o motivo e pede para ativar "Rede móvel (4G/5G)" na mesa, em vez de só repetir "Reconectando".
+
+**Depois de ativar:** gere ou reenvie os convites. Câmeras que já estavam conectadas passam a usar a retransmissão na próxima reconexão.
+
+**O que foi testado:**
+- Testes automáticos com a resposta da Cloudflare simulada:
+  - endereços TURN corretos, sem a porta 53 (os navegadores a bloqueiam);
+  - o token nunca aparece para o navegador;
+  - uma chave recusada não apaga a anterior;
+  - servidor próprio e desligar;
+  - a mesa só aceita a alteração com a sessão dela.
+- Tela da mesa: o cartão aparece, salva e mostra "ativa".
+- **Não testado com celular real em 4G/5G nem com a conta Cloudflare real.** Faça o primeiro teste antes de um evento.
+
+
 ## 0.18.2 — transmissão sem falta de vídeo
 
 Correção do aviso do YouTube **"Sem dados"** e **"O YouTube não está recebendo vídeo suficiente para manter um stream contínuo"**.
