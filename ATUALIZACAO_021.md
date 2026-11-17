@@ -1,5 +1,15 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.5
+- **Botões de COMANDOS personalizáveis.** Em *Personalizar*, o painel Comandos ganha uma barra de ajuste:
+  - **Arrastar para trocar de lugar:** pegue um botão e solte antes ou depois de outro; uma marca azul mostra onde ele vai entrar. A ordem também continua no *Ajustes → Comandos*.
+  - **Tamanho dos botões:** barra de **50% a 200%** (de 5 em 5), com o valor ao lado. O texto acompanha o tamanho.
+  - **Botões por linha:** de 2 a 8.
+  - **Botão largo:** o **⇔** no canto do botão faz ele ocupar duas colunas (bom para BLACK ou VT); também há a opção *largo* em *Ajustes → Comandos*.
+  - **Restaurar** volta à ordem e ao tamanho padrão.
+  - No *Personalizar* os botões **não disparam nada**: clique ou arraste ali nunca muda o AR. Fora dele, tudo funciona como antes. A escolha fica salva e volta ao abrir a mesa.
+- **Vinheta em LOOP.** No ajuste da vinheta (duplo clique em VINHETA) há a opção **LOOP: repetir direto até tirar do AR**. Com ela ligada, a vinheta repete sem parar quando vai ao AR e só sai quando o operador corta para outra fonte (CUT/AUTO). O botão mostra **↻** e "LOOP". Dá para ligar ou desligar com ela no ar: desligando, ela termina a passada e a mesa volta sozinha para a câmera. A escolha fica salva.
+
 ## 0.21.4
 - **Dois monitores (segunda tela).** Em *Personalizar*, cada painel pode ir para a **Segunda tela** (coluna *Página*), e há o modelo pronto **Duas telas** (câmeras, mixer e intercom na segunda tela; comandos, monitores, áudio master, corte e VT na principal).
   - **Abrir segunda tela** (em Personalizar e na barra de edição) abre a janela com esses painéis. **No programa instalado ela abre sozinha no outro monitor**, maximizada; F11 deixa em tela cheia. Na primeira vez, se nenhum painel estiver marcado, o botão já aplica o modelo Duas telas.

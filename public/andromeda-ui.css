@@ -621,6 +621,9 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 }
 /* Editando, o conteúdo não recebe cliques: ajustar a mesa nunca corta nem muda o AR. */
 .layout-editing .free-grid > .dock-panel > :not(.dock-handle):not(.free-resize) { pointer-events: none; opacity: .85; }
+/* Exceção: os botões de COMANDOS seguem vivos para serem arrastados e redimensionados (no Personalizar eles não disparam nada). */
+.layout-editing .free-grid > .dock-panel[data-tool="bus"] .cmd-grid, .layout-editing .free-grid > .dock-panel[data-tool="bus"] .cmd-tools { pointer-events: auto; }
+.layout-editing .free-grid > .dock-panel[data-tool="bus"] > .me-bus { opacity: 1; }
 .layout-editing .free-grid > .dock-panel { box-shadow: 0 0 0 1px rgba(0, 163, 255, .35); }
 .free-grid > .dock-panel.free-active { z-index: 20; box-shadow: 0 0 0 2px var(--brand-blue), 0 14px 40px rgba(0, 0, 0, .6); }
 .free-editbar {
@@ -806,6 +809,7 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .cmd-pop { position: fixed; z-index: 95; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--d-line-2); border-radius: var(--d-r); background: var(--d-panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .6); }
 .cmd-pop[hidden] { display: none; }
 .cmd-pop-title { color: var(--d-text); font: 800 13px var(--d-display); letter-spacing: .12em; text-transform: uppercase; }
+.cmd-pop-field select:disabled { opacity: .45; cursor: not-allowed; }
 .cmd-pop-close { position: absolute; top: 8px; right: 8px; min-width: 30px; min-height: 30px; padding: 0; }
 .cmd-pop-note { margin: 0; color: var(--d-muted); font-size: 12px; }
 .cmd-pop-field { display: grid; gap: 4px; color: var(--d-muted); font-size: 12px; }
@@ -851,13 +855,34 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .cmd-order-row button { min-height: 30px; padding: 0; }
 @media (prefers-reduced-motion: reduce) { .flash { animation: none; outline: 3px solid var(--d-accent); } }
 .me-bus:has(> .cmd-grid) { padding: 0; gap: 0; }
-/* Comandos na mesa livre: 4 colunas que ocupam a altura do painel. Os quatro comandos do VT (VT, PRÓXIMO, PAUSAR, PARAR)
-   ficam sempre juntos numa linha só: o VT começa uma linha nova. Nomes longos quebram em duas linhas em vez de serem cortados. */
+/* Comandos personalizáveis: botões por linha (--cmd-cols), tamanho (--cmd-scale, barra de 50% a 200%), botões largos e
+   ordem própria (arrastar no modo Personalizar). Na ordem padrão os quatro comandos do VT ficam numa linha só. */
 .free-grid > .dock-panel[data-tool="bus"] > .me-bus:not(.dock-handle):not(.free-resize):not(.mon-fit) { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-.free-grid > .dock-panel[data-tool="bus"] .cmd-grid { flex: 1 1 0; min-height: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(42px, 1fr); align-content: stretch; gap: 6px; padding: 8px 10px; }
-.free-grid > .dock-panel[data-tool="bus"] .cmd-btn { min-height: 0; padding: 4px 5px; }
+.cmd-grid { --cmd-scale: 1; --cmd-cols: 4; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-grid { flex: 1 1 0; min-height: 0; grid-template-columns: repeat(var(--cmd-cols), minmax(0, 1fr)); grid-auto-rows: calc(62px * var(--cmd-scale)); align-content: start; gap: calc(6px * var(--cmd-scale)); padding: 8px 10px; overflow: auto; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-btn { min-height: 0; padding: 4px 5px; font-size: calc(12px * var(--cmd-scale)); }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-sub { font-size: calc(10.5px * var(--cmd-scale)); }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-key { font-size: calc(9px * min(var(--cmd-scale), 1.4)); }
 .free-grid > .dock-panel[data-tool="bus"] .cmd-name { white-space: normal; overflow-wrap: normal; line-height: 1.15; letter-spacing: .02em; }
-.cmd-btn[data-cmd="vt"] { grid-column-start: 1; }
+.cmd-grid:not([data-custom="true"]) .cmd-btn[data-cmd="vt"] { grid-column-start: 1; }
+.cmd-btn[data-wide="true"] { grid-column: span 2; }
+.cmd-tools { display: none; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 10px 0; color: var(--d-muted); font-size: 12px; }
+.layout-editing .cmd-tools { display: flex; }
+.cmd-tools label { display: flex; align-items: center; gap: 8px; }
+.cmd-tools input[type="range"] { width: 140px; }
+.cmd-tools output { min-width: 4ch; color: var(--d-text); font: 600 12px var(--d-mono); }
+.cmd-tools button { min-height: 28px; padding: 2px 10px; font-size: 11.5px; }
+.cmd-hint { flex: 1 1 100%; color: var(--d-faint); font-size: 11px; }
+.cmd-wide-toggle { display: none; position: absolute; left: 4px; bottom: 3px; padding: 0 5px; border: 1px solid var(--d-line-2); border-radius: 6px; background: var(--d-inset); color: var(--d-muted); font: 700 11px var(--d-mono); cursor: pointer; }
+.layout-editing .cmd-wide-toggle { display: block; }
+.cmd-btn[data-wide="true"] .cmd-wide-toggle { color: var(--brand-blue, #00a3ff); border-color: var(--brand-blue, #00a3ff); }
+.layout-editing .cmd-btn { cursor: grab; outline: 1px dashed var(--d-line-2); outline-offset: -3px; }
+.cmd-btn.cmd-dragging { opacity: .45; }
+.cmd-btn.cmd-drop-before { box-shadow: inset 4px 0 0 var(--brand-blue, #00a3ff); }
+.cmd-btn.cmd-drop-after { box-shadow: inset -4px 0 0 var(--brand-blue, #00a3ff); }
+.cmd-order-tools { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 6px 0 10px; }
+.cmd-order-tools label { display: flex; align-items: center; gap: 8px; }
+.cmd-order-wide { display: inline-flex; align-items: center; gap: 4px; color: var(--d-muted); font-size: 12px; }
 
 /* ---------- Controle de câmera ---------- */
 .camctl { display: grid; gap: 10px; padding: 12px; }

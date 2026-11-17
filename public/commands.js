@@ -40,7 +40,13 @@
   const busShell = bus.closest('.dock-panel') || bus.parentElement;
   bus.querySelectorAll('.bus-row').forEach(row => { row.hidden = true; });
   const grid = make('div', 'cmd-grid'); grid.setAttribute('role', 'toolbar'); grid.setAttribute('aria-label', 'Comandos de produção');
-  bus.append(grid);
+  // Barra de ajuste dos botões: aparece no modo Personalizar, acima dos botões.
+  const tools = make('div', 'cmd-tools'); tools.setAttribute('role', 'group'); tools.setAttribute('aria-label', 'Ajuste dos botões de comando');
+  tools.innerHTML = '<label class="cmd-size">Tamanho dos botões <input type="range" min="50" max="200" step="5" aria-label="Tamanho dos botões de comando"><output></output></label>' +
+    '<label class="cmd-cols">Por linha <select aria-label="Botões por linha"></select></label><button type="button" class="cmd-reset">Restaurar</button>' +
+    '<span class="cmd-hint">Arraste um botão para trocar de lugar · ⇔ deixa o botão largo</span>';
+  for (let n = 2; n <= 8; n++) tools.querySelector('select').add(new Option(String(n), String(n)));
+  bus.append(tools, grid);
   keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
   const gcName = n => (fx.live.layers[n]?.name || 'GC ' + (n + 1));
@@ -51,7 +57,7 @@
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
     { id: 'pip', name: () => 'PiP', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
-    { id: 'vinheta', name: () => 'VINHETA', sub: () => vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo', run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
+    { id: 'vinheta', name: () => 'VINHETA', sub: () => (vinhetaPlayer.loop ? '↻ ' : '') + (vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo') + (vinhetaPlayer.loop && !vinhetaPlayer.running ? ' · LOOP' : ''), run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
     { id: 'black', name: () => 'BLACK', run: () => R.toggleBlack(), on: () => black.on, settings: b => popBlack(b) },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
     { id: 'vtnext', name: () => 'PRÓXIMO VT', icon: () => 'next', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
@@ -67,22 +73,52 @@
   for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
+  // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
+  const clampSize = v => Math.min(200, Math.max(50, Math.round(Number(v) / 5) * 5 || 100)), clampCols = v => Math.min(8, Math.max(2, Math.round(Number(v)) || 4));
+  cmdLayout.size = clampSize(cmdLayout.size ?? 100); cmdLayout.cols = clampCols(cmdLayout.cols ?? 4);
+  cmdLayout.wide = (cmdLayout.wide || []).filter(byId); cmdLayout.custom = !!cmdLayout.custom;
+  const editingIn = el => !!el?.ownerDocument?.body?.classList.contains('layout-editing');
 
   const buttons = new Map();
+  // Move um comando para antes de outro (ou para o fim). Usado pelo arrastar e pelos testes.
+  function moveCommand(id, beforeId) {
+    if (!byId(id) || id === beforeId) return;
+    const order = cmdLayout.order.filter(x => x !== id), at = beforeId ? order.indexOf(beforeId) : -1;
+    order.splice(at < 0 ? order.length : at, 0, id); cmdLayout.order = order; cmdLayout.custom = true; saveCmdLayout();
+  }
+  function setWide(id, on) { cmdLayout.wide = on ? [...new Set([...cmdLayout.wide, id])] : cmdLayout.wide.filter(x => x !== id); saveCmdLayout(); }
+  function setSize(v) { cmdLayout.size = clampSize(v); saveCmdLayout(); }
+  function setCols(v) { cmdLayout.cols = clampCols(v); saveCmdLayout(); }
+  function resetLook() { cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [], size: 100, cols: 4, wide: [], custom: false }; saveCmdLayout(); }
+  let dragId = null;
   function buildGrid() {
-    grid.replaceChildren();
+    grid.replaceChildren(); buttons.clear();
+    grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); grid.style.setProperty('--cmd-cols', String(cmdLayout.cols));
+    grid.dataset.custom = String(cmdLayout.custom);
+    const range = tools.querySelector('input'), sel = tools.querySelector('select');
+    range.value = String(cmdLayout.size); tools.querySelector('output').textContent = cmdLayout.size + '%'; sel.value = String(cmdLayout.cols);
     for (const id of cmdLayout.order) {
       if (cmdLayout.hidden.includes(id)) continue;
-      const c = byId(id), b = make('button', 'cmd-btn'); b.type = 'button'; b.dataset.cmd = id;
-      b.append(make('span', 'cmd-name'), make('small', 'cmd-sub'), make('kbd', 'cmd-key'));
+      const c = byId(id), b = make('button', 'cmd-btn'); b.type = 'button'; b.dataset.cmd = id; b.dataset.wide = String(cmdLayout.wide.includes(id)); b.draggable = true;
+      const wide = make('span', 'cmd-wide-toggle', '⇔'); wide.title = 'Botão largo (2 colunas) / normal'; wide.setAttribute('aria-hidden', 'true');
+      wide.addEventListener('click', e => { e.stopPropagation(); setWide(id, !cmdLayout.wide.includes(id)); });
+      b.append(make('span', 'cmd-name'), make('small', 'cmd-sub'), make('kbd', 'cmd-key'), wide);
       // Clique executa (com uma folga curta para reconhecer o duplo clique); teclado (Enter/Espaço no botão) executa na hora.
+      // No modo Personalizar o botão não dispara nada: ele só é arrastado.
       let timer = null;
-      b.addEventListener('click', e => { if (e.detail === 0) { c.run(); paint(); return; } if (e.detail > 1) return; clearTimeout(timer); timer = setTimeout(() => { timer = null; c.run(); paint(); }, 230); });
-      b.addEventListener('dblclick', e => { e.preventDefault(); clearTimeout(timer); timer = null; c.settings(b); });
+      b.addEventListener('click', e => { if (editingIn(b)) return; if (e.detail === 0) { c.run(); paint(); return; } if (e.detail > 1) return; clearTimeout(timer); timer = setTimeout(() => { timer = null; c.run(); paint(); }, 230); });
+      b.addEventListener('dblclick', e => { e.preventDefault(); clearTimeout(timer); timer = null; if (editingIn(b)) return; c.settings(b); });
+      b.addEventListener('dragstart', e => { if (!editingIn(b)) { e.preventDefault(); return; } dragId = id; b.classList.add('cmd-dragging'); try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch { /* sem dados */ } });
+      b.addEventListener('dragend', () => { dragId = null; b.classList.remove('cmd-dragging'); for (const x of grid.children) x.classList.remove('cmd-drop-before', 'cmd-drop-after'); });
+      b.addEventListener('dragover', e => { if (!dragId || dragId === id) return; e.preventDefault(); const r = b.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2; b.classList.toggle('cmd-drop-after', after); b.classList.toggle('cmd-drop-before', !after); });
+      b.addEventListener('dragleave', () => b.classList.remove('cmd-drop-before', 'cmd-drop-after'));
+      b.addEventListener('drop', e => { if (!dragId || dragId === id) return; e.preventDefault(); const after = b.classList.contains('cmd-drop-after'), visible = cmdLayout.order.filter(x => !cmdLayout.hidden.includes(x)), next = visible[visible.indexOf(id) + 1] || null;
+        const moving = dragId; dragId = null; moveCommand(moving, after ? (next === moving ? visible[visible.indexOf(id) + 2] || null : next) : id); });
       grid.append(b); buttons.set(id, b);
     }
     paint();
   }
+  function saveCmdLayout() { store.set(LAYOUT_KEY, cmdLayout); buildGrid(); window.andromedaCommands?.paintOrder?.(); }
   function paint() {
     for (const [id, b] of buttons) {
       const c = byId(id), on = !!c.on(), prv = !!c.prv?.(), sub = c.sub?.() || '';
@@ -93,6 +129,10 @@
     }
   }
   setInterval(paint, 200);
+  { const range = tools.querySelector('input');
+    range.addEventListener('input', () => { cmdLayout.size = clampSize(range.value); tools.querySelector('output').textContent = cmdLayout.size + '%'; grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); });
+    range.addEventListener('change', () => setSize(range.value));
+    tools.querySelector('select').onchange = e => setCols(e.target.value); tools.querySelector('.cmd-reset').onclick = () => resetLook(); }
 
   /* ---------- ajustes de cada comando ---------- */
   function openFx(selector) {
@@ -134,11 +174,16 @@
     const end = make('label', 'cmd-pop-field', 'Ao terminar'), sel = make('select');
     for (const [v, t] of [['return', 'Voltar para a câmera'], ['hold', 'Congelar no último quadro']]) sel.add(new Option(t, v));
     sel.value = vinhetaPlayer.end; sel.onchange = () => { vinhetaPlayer.end = sel.value; }; end.append(sel);
+    const loop = make('label', 'cmd-pop-check'), chk = make('input'); chk.type = 'checkbox'; chk.id = 'vinhetaLoop'; chk.checked = vinhetaPlayer.loop;
+    loop.append(chk, make('span', '', 'LOOP: repetir direto até tirar do AR'));
+    const syncLoop = () => { sel.disabled = chk.checked; tr.disabled = chk.checked; };
+    chk.onchange = () => { R.setVinhetaLoop(chk.checked); syncLoop(); };
     const how = make('label', 'cmd-pop-field', 'Volta com'), tr = make('select');
     for (const [v, t] of [['mix', 'AUTO (transição escolhida)'], ['cut', 'CUT seco']]) tr.add(new Option(t, v));
     tr.value = vinhetaPlayer.transition; tr.onchange = () => { vinhetaPlayer.transition = tr.value; }; how.append(tr);
-    openPop(b, 'Vinheta', note(vinhetaPlayer.item ? 'Carregada: ' + vinhetaPlayer.item.name + (vinhetaPlayer.item.duration ? ' (' + R.formatClock(Math.round(vinhetaPlayer.item.duration)) + ')' : '') : 'Nenhum vídeo carregado.'), label, end, how,
-      note('Clique em VINHETA para levá-la ao PREVIEW; ela toca quando vai ao AR (CUT/AUTO) e a mesa volta sozinha para a câmera.'));
+    syncLoop();
+    openPop(b, 'Vinheta', note(vinhetaPlayer.item ? 'Carregada: ' + vinhetaPlayer.item.name + (vinhetaPlayer.item.duration ? ' (' + R.formatClock(Math.round(vinhetaPlayer.item.duration)) + ')' : '') : 'Nenhum vídeo carregado.'), label, loop, end, how,
+      note('Clique em VINHETA para levá-la ao PREVIEW; ela toca quando vai ao AR (CUT/AUTO). Sem loop, a mesa volta sozinha para a câmera; com LOOP ela repete até você cortar para outra fonte.'));
   }
   function popBlack(b) {
     const label = make('label', 'cmd-pop-field', 'Tempo do fade (segundos)'), input = make('input'); input.type = 'number'; input.min = '0'; input.max = '10'; input.step = '0.1'; input.value = String(black.seconds);
@@ -292,11 +337,12 @@
   }, true);
 
   /* ---------- Personalizar: atalhos e botões de comando ---------- */
+  let orderPainter = null;
   const settings = $('.layout-settings');
   if (settings) {
     const box = make('section', 'shortcut-settings');
     box.innerHTML = '<h3>Atalhos do teclado</h3><p>Clique no atalho e pressione a tecla (ou combinação com Ctrl/Alt). <b>Backspace</b> limpa; <b>Esc</b> cancela. Funcionam em qualquer página, menos quando você digita num campo. <b>Esc</b> sempre volta para a Operação.</p><div class="shortcut-list" role="table" aria-label="Atalhos do teclado"></div><button type="button" id="shortcutsReset">Restaurar atalhos padrão</button>' +
-      '<h3>Botões de comando</h3><p>Ordem e visibilidade dos botões do painel Comandos.</p><ol class="cmd-order" aria-label="Ordem dos botões de comando"></ol>';
+      '<h3>Botões de comando</h3><p>Ordem, visibilidade, largura e tamanho dos botões do painel Comandos. Na Operação, em <b>Personalizar</b>, dá para arrastar os botões direto no painel.</p><div class="cmd-order-tools"><label>Tamanho dos botões <input type="range" id="cmdSizeSetting" min="50" max="200" step="5"><output id="cmdSizeOut"></output></label><label>Botões por linha <select id="cmdColsSetting"></select></label></div><ol class="cmd-order" aria-label="Ordem dos botões de comando"></ol>';
     settings.append(box);
     const list = box.querySelector('.shortcut-list'), order = box.querySelector('.cmd-order');
     function paintShortcuts() {
@@ -331,10 +377,16 @@
         const move = d => { const j = i + d; [cmdLayout.order[i], cmdLayout.order[j]] = [cmdLayout.order[j], cmdLayout.order[i]]; saveLayout(); };
         up.onclick = () => move(-1); down.onclick = () => move(1);
         show.onchange = () => { cmdLayout.hidden = show.checked ? cmdLayout.hidden.filter(x => x !== id) : [...cmdLayout.hidden, id]; saveLayout(); };
-        li.append(show, name, up, down); return li;
+        const wide = make('label', 'cmd-order-wide'), wideBox = make('input'); wideBox.type = 'checkbox'; wideBox.checked = cmdLayout.wide.includes(id); wideBox.onchange = () => setWide(id, wideBox.checked); wide.append(wideBox, ' largo');
+        li.append(show, name, up, down, wide); return li;
       }));
+      const size = $('#cmdSizeSetting'), cols = $('#cmdColsSetting');
+      if (size) { size.value = String(cmdLayout.size); $('#cmdSizeOut').textContent = cmdLayout.size + '%'; }
+      if (cols) { if (!cols.options.length) for (let n = 2; n <= 8; n++) cols.add(new Option(String(n), String(n))); cols.value = String(cmdLayout.cols); }
     }
-    function saveLayout() { store.set(LAYOUT_KEY, cmdLayout); buildGrid(); paintOrder(); }
+    function saveLayout() { cmdLayout.custom = true; saveCmdLayout(); }
+    { const size = $('#cmdSizeSetting'); size.oninput = () => { $('#cmdSizeOut').textContent = clampSize(size.value) + '%'; }; size.onchange = () => setSize(size.value); $('#cmdColsSetting').onchange = e => setCols(e.target.value); }
+    orderPainter = paintOrder;
     paintShortcuts(); paintOrder();
   }
 
@@ -361,5 +413,5 @@
   }
   const basePaint = paint; paint = function () { basePaint(); paintFooter(); };
   buildGrid(); sync();
-  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout };
+  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout, moveCommand, setWide, setSize, setCols, resetLook, paintOrder: () => orderPainter?.() };
 })();
