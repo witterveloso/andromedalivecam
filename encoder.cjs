@@ -60,7 +60,7 @@ function validateBroadcast(input) {
   const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < 3 || bitrate > 20) fail('Bitrate deve ficar entre 3 e 20 Mbps.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
   // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
-  return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', vertical: { resolution: vres, bitrate: vbit } };
+  return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
 }
 
 // Grupos de codificação: cada formato com seus destinos e sua gravação. Só existe o grupo que tiver uso.
@@ -127,7 +127,7 @@ const FIFO = 'f=fifo:fifo_format=flv:queue_size=240:drop_pkts_on_overflow=1:atte
 
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
-  if (group.record) outputs.push('[f=matroska:onfail=ignore]' + teeEscape(group.record.file));
+  if (group.record) outputs.push('[f=matroska:flush_packets=1:onfail=ignore]' + teeEscape(group.record.file));
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
 }
 
@@ -140,6 +140,10 @@ const audioFilter = (avSync = 0) => 'aresample=async=1:first_pts=0' + (avSync > 
 const INPUT_FLAGS = ['-flags', '+low_delay', '-thread_queue_size', '64', '-probesize', '262144', '-analyzeduration', '200000'];
 // Uma codificação por grupo (formato). Cada grupo roda num FFmpeg próprio: a queda de um não derruba o outro.
 function argsForGroup(cfg, group) {
+  // Motor próprio: o navegador já entrega H.264 e Opus (Matroska ao vivo). O vídeo é só copiado; o som vira AAC. A compensação de
+  // sincronismo já está nos instantes dos pacotes (feita no navegador), então nenhum filtro de atraso entra aqui.
+  if (cfg.engine === 'native') return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', ...INPUT_FLAGS, '-f', 'matroska', '-i', 'pipe:0',
+    '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1', '-progress', 'pipe:3', '-stats_period', '1', ...outputArgs(group)];
   const size = group.size, kb = Math.round(group.bitrate * 1000);
   return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', ...INPUT_FLAGS, '-f', 'webm', '-i', 'pipe:0',
     '-map', '0:v:0', '-map', '0:a:0', '-vf', videoFilter(size, cfg.avSync), '-r', '30',

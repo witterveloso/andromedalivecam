@@ -25,17 +25,27 @@
   card.innerHTML = '<h4>Este computador</h4>' +
     '<p class="pf-help">Mede quanto o computador codifica e escolhe sozinho a resolução e a velocidade que deixam folga para a transmissão não travar.</p>' +
     '<div class="pf-row"><button type="button" id="pfRun">Verificar e ajustar automaticamente</button><span id="pfState" class="pf-state" role="status"></span></div>' +
-    '<label class="pf-field">Velocidade do codificador <select id="pfPreset"></select></label>' +
+    '<label class="pf-field">Motor de envio <select id="pfEngine"></select></label><p class="pf-note" id="pfEngineNote"></p>' +
+    '<label class="pf-field">Velocidade do codificador (motor padrão) <select id="pfPreset"></select></label>' +
     '<ul id="pfList" class="pf-list" aria-label="Resultado da medição"></ul>' +
     '<p class="pf-note" id="pfNote"></p>';
   transportPanel.append(card);
   const q = s => card.querySelector(s);
   for (const [v, t] of Object.entries(PRESET_NAMES)) q('#pfPreset').add(new Option(t, v));
   q('#pfPreset').value = model.preset;
+  // Motor de envio: Automático usa o Andrômeda quando o navegador oferece H.264 e Opus; qualquer falha durante a live volta ao padrão sozinha.
+  const ENGINE_NAMES = { auto: 'Automático (recomendado)', native: 'Andrômeda (codificação no navegador)', standard: 'Padrão (FFmpeg recodifica)' };
+  if (!ENGINE_NAMES[model.engine]) model.engine = 'auto';
+  for (const [v, t] of Object.entries(ENGINE_NAMES)) q('#pfEngine').add(new Option(t, v));
+  q('#pfEngine').value = model.engine;
+  q('#pfEngine').onchange = () => { model.engine = q('#pfEngine').value; B.save(); q('#pfNote').textContent = 'Vale a partir da próxima transmissão. A compensação de sincronismo é guardada por motor: calibre de novo ao trocar.'; };
+  if (window.AndromedaEngine) AndromedaEngine.probe({ width: 1280, height: 720, bitrate: 4e6 }).then(p => {
+    q('#pfEngineNote').textContent = p.ok ? 'Neste computador o motor Andrômeda está disponível (H.264 ' + (p.hardware ? 'pela placa de vídeo' : 'por software') + ').' : 'Motor Andrômeda indisponível aqui (' + p.reason + ') — a mesa usa o padrão.';
+  });
   q('#pfPreset').onchange = () => { model.preset = q('#pfPreset').value; B.save(); q('#pfNote').textContent = 'Vale a partir da próxima transmissão.'; };
   const busy = () => typeof busyTx === 'function' && busyTx();
   let running = false;
-  function paint() { q('#pfRun').disabled = running || busy(); q('#pfPreset').disabled = busy(); q('#pfRun').textContent = running ? 'Medindo o computador…' : 'Verificar e ajustar automaticamente'; if (document.activeElement !== q('#pfPreset')) q('#pfPreset').value = model.preset; }
+  function paint() { q('#pfRun').disabled = running || busy(); q('#pfPreset').disabled = busy(); q('#pfEngine').disabled = busy(); q('#pfRun').textContent = running ? 'Medindo o computador…' : 'Verificar e ajustar automaticamente'; if (document.activeElement !== q('#pfPreset')) q('#pfPreset').value = model.preset; }
   setInterval(paint, 700);
 
   function applyProfile(rec, hardware) {

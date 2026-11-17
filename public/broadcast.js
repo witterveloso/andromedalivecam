@@ -35,7 +35,9 @@
   const streaming = () => model.mode !== 'record';
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '' })) })); } catch { /* sem armazenamento */ } };
   const live = { states: new Map(), recording: null, recorded: null, files: [], storage: null, checked: null };
-  window.andromedaBroadcast = { model, live, save };
+  // A compensação de sincronismo é medida e guardada por motor: cada um tem o seu atraso próprio de captura e codificação.
+  const avSyncFor = engine => (engine === 'native' ? model.avSyncNativeMs : model.avSyncMs) || 0;
+  window.andromedaBroadcast = { model, live, save, avSyncFor };
 
   const active = () => model.destinations.filter(d => d.enabled && d.server.trim() && d.key.trim());
   const pending = () => model.destinations.filter(d => d.enabled && !(d.server.trim() && d.key.trim()));
@@ -254,18 +256,32 @@
       const recordH = model.record && model.recordFormats !== '9:16', recordV = model.record && model.recordFormats !== '16:9';
       const needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
       if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
-      const video = programOutput.captureStream(30); liveTx.videoStream = video;
-      const stream = new MediaStream([...video.getVideoTracks(), ...destination.stream.getAudioTracks()]);
+      // Motor de envio: o próprio (WebCodecs: uma só codificação, no navegador) ou o padrão (MediaRecorder → FFmpeg). O padrão é sempre o plano B.
+      let engine = 'webm', nativeSession = null, nativeDown = 0;
+      if ((model.engine || 'auto') !== 'standard' && window.AndromedaEngine) {
+        const wanted = [needH && [width, height, model.bitrate * 1e6], needV && [window.andromedaVertical.size()[0], window.andromedaVertical.size()[1], (window.andromedaVertical.settings.bitrate || 4) * 1e6]].filter(Boolean);
+        const probes = await Promise.all(wanted.map(([w, h, b]) => AndromedaEngine.probe({ width: w, height: h, bitrate: b }))); if (epoch !== liveTx.epoch) return;
+        const bad = probes.find(p => !p.ok);
+        if (!bad) { engine = 'native'; liveTx.hardware = probes.every(p => p.hardware); } else log('Motor Andrômeda indisponível neste computador: ' + bad.reason + ' Usando o codificador padrão.');
+      }
+      model.engineUsed = engine; liveTx.engine = engine;
+      let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
       const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6, makeRecorder = (media, bits) => new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: bits, audioBitsPerSecond: 160000 });
-      let recorder = makeRecorder(stream, hBits); liveTx.recorder = recorder;
-      let recorderV = null, vStream = null;
-      if (needV) {
-        window.andromedaVertical.setLive(true);
-        const vVideo = window.andromedaVertical.canvas.captureStream(30); liveTx.verticalStream = vVideo;
-        vStream = new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]); recorderV = makeRecorder(vStream, vBits);
-        liveTx.recorderV = recorderV;
-      }
+      let recorder = null, recorderV = null;
+      // Gravadores do motor padrão: criados já no começo quando ele é o escolhido, ou só se o motor próprio falhar.
+      const buildStandard = () => {
+        const video = programOutput.captureStream(30); liveTx.videoStream = video;
+        stream = new MediaStream([...video.getVideoTracks(), ...destination.stream.getAudioTracks()]);
+        recorder = makeRecorder(stream, hBits); liveTx.recorder = recorder;
+        if (needV) {
+          const vVideo = window.andromedaVertical.canvas.captureStream(30); liveTx.verticalStream = vVideo;
+          vStream = new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]); recorderV = makeRecorder(vStream, vBits);
+          liveTx.recorderV = recorderV;
+        }
+      };
+      if (needV) window.andromedaVertical.setLive(true);
+      if (engine === 'webm') buildStandard();
       const dual = needV;
       const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = ''; liveTx.phase = 'connecting';
       for (const d of targets) live.states.set(d.id, { state: 'connecting' });
@@ -282,7 +298,37 @@
         };
         rec.onerror = () => finishTransport('O navegador interrompeu a captura de vídeo. Reinicie o envio.');
       };
-      pipe(recorder, 0); if (recorderV) pipe(recorderV, 1);
+      if (recorder) pipe(recorder, 0); if (recorderV) pipe(recorderV, 1);
+      // ---- Motor próprio ----
+      const sendNative = channel => bytes => {
+        if (epoch !== liveTx.epoch || engine !== 'native') return;
+        if (socket.readyState !== WebSocket.OPEN) { finishTransport('A conexão com o serviço local foi perdida.'); return; }
+        if (socket.bufferedAmount > 6 * 1024 * 1024) { fallbackToStandard('o envio ao serviço local acumulou'); return; }
+        if (dual) { const out = new Uint8Array(bytes.length + 1); out[0] = channel; out.set(bytes, 1); socket.send(out); } else socket.send(bytes);
+      };
+      // Qualquer falha do motor próprio passa a sessão, sem encerrá-la, para o codificador padrão (o serviço troca o FFmpeg e abre outra gravação, _p2).
+      let groupsReady = ['h'];
+      const fallbackToStandard = reason => {
+        if (engine !== 'native' || epoch !== liveTx.epoch) return; engine = 'webm'; liveTx.engine = 'webm'; model.engineUsed = 'webm';
+        const dead = nativeSession; nativeSession = null; liveTx.native = null; try { dead?.abort(); } catch { /* já parado */ }
+        log('Motor Andrômeda desligado (' + reason + '). Continuando com o codificador padrão.'); window.andromedaAudit?.('warn', 'motor-padrao', 'Motor Andrômeda desligado: ' + reason);
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'engine', engine: 'webm', reason }));
+        buildStandard(); if (recorder) pipe(recorder, 0); if (recorderV) pipe(recorderV, 1);
+        if (recorder && (groupsReady.includes('h') || !dual)) recorder.start(100); else liveTx.recorder = null;
+        if (recorderV && groupsReady.includes('v')) recorderV.start(100);
+      };
+      const startNative = async groups => {
+        groupsReady = groups; const outputs = [];
+        if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: model.bitrate * 1e6, onChunk: sendNative(0) });
+        if (needV && groups.includes('v')) { const c = window.andromedaVertical.canvas; outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: (window.andromedaVertical.settings.bitrate || 4) * 1e6, onChunk: sendNative(1) }); }
+        nativeSession = AndromedaEngine.create({
+          audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'),
+          onError: e => fallbackToStandard(e.message),
+          onStats: s => { liveTx.nativeStats = s; if (s.dropped > 4) nativeDown++; else nativeDown = 0; if (nativeDown >= 5 && Date.now() - (liveTx.overloadAt || 0) > 60000) { liveTx.overloadAt = Date.now(); window.andromedaLight = true; const m = 'Atenção: o computador não está acompanhando a codificação (' + s.dropped + ' quadros descartados no último segundo). Mesa em modo leve; feche programas pesados ou use 720p.'; log(m); liveTx.notice = m; window.andromedaAudit?.('warn', 'sobrecarga', m, { motor: 'andromeda', descartados: s.dropped }); } },
+        });
+        liveTx.native = nativeSession;
+        try { await nativeSession.start(); log('Motor Andrômeda ativo: H.264 ' + (liveTx.hardware ? 'pela placa de vídeo' : 'por software') + ', uma só codificação no navegador.'); } catch (e) { fallbackToStandard(e.message); }
+      };
       // Autorrecuperação: o codificador de um formato foi reiniciado no serviço e precisa de um gravador novo (o WebM só tem
       // cabeçalho no começo de cada gravador). O antigo é solto sem enviar mais nada.
       const reopen = group => {
@@ -292,10 +338,10 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : (model.avSyncMs || 0), preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: model.resolution, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === 'ready') { const groups = msg.groups || ['h']; if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
+        if (msg.type === 'ready') { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
         else if (msg.type === 'avsync') window.andromedaSync?.onResult(msg);
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
@@ -316,7 +362,8 @@
           txStatus((liveTx.notice ? liveTx.notice + ' — ' : '') + (targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
         }
         else if (msg.type === 'health') { liveTx.health = msg; }
-        else if (msg.type === 'restart') { reopen(msg.group); log(msg.message); }
+        else if (msg.type === 'restart') { if (engine === 'native') nativeSession?.restart(msg.group); else reopen(msg.group); log(msg.message); }
+        else if (msg.type === 'engine') { log(msg.message); }
         else if (msg.type === 'notice') { if (msg.overload) window.andromedaLight = true; log(msg.message); liveTx.notice = msg.message; txStatus(msg.message); }
         else if (msg.type === 'error') finishTransport(msg.message);
         else if (msg.type === 'stopped') finishTransport();
