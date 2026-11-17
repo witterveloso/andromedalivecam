@@ -9,6 +9,7 @@
   - **PAUSAR / CONTINUAR:** congela o VT que está no AR (imagem parada e sem som) e retoma do mesmo ponto.
   - **PARAR:** tira o VT do ar com a transição de volta configurada e deixa o **mesmo VT** pronto para começar de novo. (No fim normal do VT, o próximo da lista é que fica pronto.) O antigo botão "Tirar VT do ar" virou este.
   - Sem VT no ar, os dois avisam no registro e não fazem nada.
+  - Cada botão traz o **sinal da função antes do nome** (⏸ pausar, ▶ continuar, ■ parar, ⏭ próximo), desenhado pelo programa para ter o mesmo tamanho em qualquer computador.
 - **Botão PiP retirado** do painel Comandos (e o atalho F8). O PiP continua em *GC e efeitos*.
 - **Logo de cada plataforma nos destinos** (Transmissão): YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn e RTMP próprio. O logo aparece no bloco colorido de cada destino, no lugar das duas letras. Marcas desenhadas pelo próprio programa (sem imagens externas), com o nome da plataforma como texto de acessibilidade. O contorno azul do bloco continua marcando os destinos verticais 9:16.
 
