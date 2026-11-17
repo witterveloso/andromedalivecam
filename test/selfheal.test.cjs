@@ -11,17 +11,20 @@ const feed = (ws, bytes, from = 0) => { const step = Math.ceil(bytes.length / 90
 const duration = f => { const p = spawnSync(exe, ['-hide_banner', '-i', f], { encoding: 'utf8' }), m = /Duration: (\d+):(\d+):([\d.]+)/.exec(p.stderr); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : 0; };
 
 // Sessão só de gravação; "kills" diz em que segundos matar o codificador. O navegador simulado reabre o gravador ao receber "restart".
-async function session(port, { resync = true, kills = [2], reopen = true, durationMs = 7000 }) {
+async function session(port, { resync = true, kills = [2], killAtFrames = 0, reopen = true, durationMs = 7000 }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-heal-')), source = path.join(dir, 'source.webm'); makeWebm(source); const bytes = fs.readFileSync(source);
   const children = [], spawnProcess = (cmd, args, opts) => { const c = spawn(cmd, args, opts); children.push({ c, args }); return c; };
   const audit = createAudit({ write: false }), bridge = createBridge({ port, ffmpeg: exe, spawnProcess, audit }); bridge.listen(); await once(bridge.server, 'listening');
-  let ws, timer; const seen = []; const timers = [];
+  let ws, timer, killed = false; const seen = []; const timers = [];
+  const killEncoder = () => children.filter(x => x.args.includes('tee')).at(-1)?.c.kill('SIGKILL');
   try {
     const s = await (await fetch('http://localhost:' + port + '/api/session')).json();
     ws = new WebSocket('ws://localhost:' + port + '/publish', 'andromeda.' + s.token, { origin: 'http://localhost:' + port }); await once(ws, 'open');
     const done = new Promise((resolve, reject) => { const to = setTimeout(() => reject(Error('Timed out: ' + JSON.stringify(seen.map(m => m.type)))), 90000);
       ws.on('message', raw => { const m = JSON.parse(raw); seen.push(m);
-        if (m.type === 'ready' && !seen.slice(0, -1).some(x => x.type === 'ready')) { timer = feed(ws, bytes); kills.forEach(sec => timers.push(setTimeout(() => children.filter(x => x.args.includes('tee')).at(-1)?.c.kill('SIGKILL'), sec * 1000))); timers.push(setTimeout(() => ws.send(JSON.stringify({ type: 'stop' })), durationMs)); }
+        if (m.type === 'ready' && !seen.slice(0, -1).some(x => x.type === 'ready')) { timer = feed(ws, bytes); if (!killAtFrames) kills.forEach(sec => timers.push(setTimeout(killEncoder, sec * 1000))); timers.push(setTimeout(() => ws.send(JSON.stringify({ type: 'stop' })), durationMs)); }
+        // Em computadores lentos (Windows no CI) o FFmpeg demora a gravar; matar só depois de haver imagem evita testar um arquivo vazio.
+        if (killAtFrames && !killed && m.type === 'sending' && m.frames >= killAtFrames) { killed = true; killEncoder(); }
         if (m.type === 'restart' && reopen) { clearInterval(timer); for (let i = 0; i < 3; i++) ws.send(bytes.subarray(40000 + i * 3000, 43000 + i * 3000)); /* restos do gravador antigo: sem cabeçalho */ ws.send(bytes.subarray(0, 1)); setTimeout(() => { timer = feed(ws, bytes, 1); }, 100); /* como o Chrome: 1º pedaço de 1 byte, o resto do cabeçalho no seguinte */ }
         if (m.type === 'stopped' || m.type === 'error') { clearTimeout(to); setTimeout(resolve, m.type === 'error' ? 500 : 0); } }); });
     ws.send(JSON.stringify({ type: 'start', resolution: '720p', bitrate: 3, destinations: [], record: { dir: path.join(dir, 'rec'), formats: '16:9' }, channels: 1, resync }));
@@ -31,7 +34,7 @@ async function session(port, { resync = true, kills = [2], reopen = true, durati
 
 test('self-healing: the encoder is killed mid-session, restarts by itself, and both recordings are kept', async t => {
   if (!exe) return t.skip('FFmpeg ausente');
-  const { seen, audit, dir } = await session(3300, { kills: [2.2] });
+  const { seen, audit, dir } = await session(3300, { killAtFrames: 45, durationMs: 9000 });
   try {
     assert(!seen.some(m => m.type === 'error'), JSON.stringify(seen.filter(m => m.type === 'error')));
     const restart = seen.filter(m => m.type === 'restart'); assert.equal(restart.length, 1); assert.match(restart[0].message, /reiniciado sozinho \(tentativa 1 de 3\)/);
