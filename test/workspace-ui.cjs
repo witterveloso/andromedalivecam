@@ -56,7 +56,7 @@ console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vt','vtnext','vtpause','vtstop','vinheta','black','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vinheta','black','vt','vtnext','vtpause','vtstop','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
 assert(q('.cmd-btn[data-cmd=pip]'),'the PiP command is on the desk');assert(!q('[data-tool=bus] .key-panel'),'the KEY 1 (PiP) monitor window is not on the desk any more');assert(q('.key-panel').hidden,'and the panel stays hidden wherever else it was attached');
 // Regressiva direto no AR; tempo no ajuste (duplo clique).
@@ -80,8 +80,15 @@ assert.equal(q('.cmd-btn[data-cmd=vtnext] .cmd-key').textContent,'⇧F9','VT NEX
 {let elPaused=false;const el=rd.vtPlayer.item.el;el.pause=()=>{elPaused=true};el.play=()=>{elPaused=false;return Promise.resolve()};
 assert.equal(rd.vtPause(),true);assert(rd.vtPlayer.paused&&elPaused,'PAUSAR freezes the VT on air');cmd.paint();assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-name').textContent,'CONTINUAR VT');assert.equal(q('.cmd-btn[data-cmd=vtpause]').getAttribute('aria-pressed'),'true');assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-key').textContent,'⇧F7');
 assert.equal(rd.vtPause(),true);assert(!rd.vtPlayer.paused&&!elPaused,'CONTINUAR resumes the VT');
-const held=rd.vtPlayer.item;assert.equal(rd.vtStop(),true,'PARAR takes the VT off air');assert.equal(rd.vt.holdCue,held,'and keeps the same VT ready');assert.equal(q('.cmd-btn[data-cmd=vtstop] .cmd-key').textContent,'⇧F8');}
+const held=rd.vtPlayer.item;assert.equal(rd.vtStop(),true,'PARAR takes the VT off air');assert.equal(q('.cmd-btn[data-cmd=vtstop] .cmd-key').textContent,'⇧F8');}
 vm.runInContext('cut()',ctx);
+// Fim natural arma o próximo; VT interrompido não avança sozinho; PRÓXIMO VT sem VT no AR arma o seguinte (quem leva ao PREVIEW é o VT).
+rd.vtPlayer.running=false; /* o VT saiu do AR (o relógio dos reprodutores está desligado neste teste) */
+rd.vt.cue=0;rd.vtPlayer.item=rd.vt.items[0];rd.vtPlayer.onStop(true);assert.equal(rd.vt.cue,1,'natural end: the playlist arms the next VT');
+rd.vt.cue=0;rd.vtPlayer.item=rd.vt.items[0];rd.vtPlayer.onStop(false);assert.equal(rd.vt.cue,0,'interrupted VT: nothing advances by itself');
+assert.match(rd.vtNextLabel(),/^armar 2\/2 · Encerramento$/,'the button says which VT it will arm');const prvBefore=vm.runInContext('state.prv',ctx);
+assert.equal(rd.vtNext(),true);assert.equal(rd.vt.cue,1,'PRÓXIMO VT without a VT on air arms the next one');assert.equal(vm.runInContext('state.prv',ctx),prvBefore,'and does not touch the PREVIEW');
+assert.equal(rd.vtNext(),false,'the armed VT is the last one');
 assert.equal(rd.vinhetaToPreview(),false,'no vinheta loaded yet');
 // BLACK (F1) e BARRAS (F2) direto no AR; atalhos configuráveis; ESC volta à Operação.
 const key=(k,code)=>w.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,code:code||k,bubbles:true,cancelable:true}));

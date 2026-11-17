@@ -201,8 +201,10 @@
 
   /* ---------- sincronização visual ---------- */
 
-  const info = make('div', 'preview-strip'), infoText = make('span'), infoState = make('b'); info.append(infoText, infoState);
-  $('#monPreview')?.closest('.dock-panel')?.append(info);
+  // Faixa de informação sob cada monitor. O PGM tem a mesma faixa do PREVIEW: assim os dois painéis têm a mesma estrutura e as
+  // imagens ficam do mesmo tamanho e na mesma altura (antes só o PREVIEW tinha a faixa e a imagem do PGM ficava mais baixa).
+  const strip = (bus, monitor) => { const el = make('div', 'preview-strip'), text = make('span'), badge = make('b'); el.dataset.bus = bus; el.append(text, badge); $(monitor)?.closest('.dock-panel')?.append(el); return { el, text, badge }; };
+  const strips = { prv: strip('prv', '#monPreview'), pgm: strip('pgm', '#monProgram') };
   const baseSync = sync;
   sync = function () {
     baseSync();
@@ -229,13 +231,15 @@
     paintInfo();
   };
   function paintInfo() {
-    const i = state.prv;
-    const ok = i === MOSAIC || i === 10 || live(i);
-    if (i === MOSAIC) infoText.textContent = 'MOSAICO · ' + stage.members.length + ' câmera(s)';
-    else if (i === 10) infoText.textContent = 'PRETO';
-    else if (!live(i)) infoText.textContent = 'Aguardando fonte neste canal';
-    else { const [w, h] = dims(media[i].element); infoText.textContent = kind(i) + ' · ' + w + '×' + h + (h > w ? ' · VERTICAL' : ''); }
-    infoState.textContent = ok ? 'VÍDEO OK' : 'SEM SINAL'; info.dataset.ok = String(ok);
+    for (const [bus, { el, text, badge }] of Object.entries(strips)) {
+      const i = state[bus];
+      const ok = i === MOSAIC || i === 10 || live(i);
+      if (i === MOSAIC) text.textContent = 'MOSAICO · ' + stage.members.length + ' câmera(s)';
+      else if (i === 10) text.textContent = 'PRETO';
+      else if (!live(i)) text.textContent = 'Aguardando fonte neste canal';
+      else { const [w, h] = dims(media[i].element); text.textContent = kind(i) + ' · ' + w + '×' + h + (h > w ? ' · VERTICAL' : ''); }
+      badge.textContent = ok ? 'VÍDEO OK' : 'SEM SINAL'; el.dataset.ok = String(ok);
+    }
   }
 
   /* ---------- fontes de câmera: sem demonstração por padrão ---------- */
