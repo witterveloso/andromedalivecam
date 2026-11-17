@@ -5,7 +5,7 @@
  * - A janela não reduz quadros quando fica atrás de outra ou minimizada.
  * - Logs e licença ficam na pasta de dados do usuário (a instalação é só leitura).
  */
-const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, session, shell, screen } = require('electron');
 const fs = require('node:fs'), path = require('node:path');
 
 const PORT = 3180, ORIGIN = 'http://localhost:' + PORT;
@@ -79,10 +79,20 @@ function createWindow() {
 
   const contents = win.webContents;
   // "Visualizar saída PGM" abre uma janela em branco que a mesa preenche; links externos vão para o navegador.
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url, frameName }) => {
+    // Segunda tela: abre no outro monitor (se houver), ocupando a área útil dele.
+    if ((!url || url === 'about:blank') && frameName === 'andromeda-segunda-tela') {
+      const here = screen.getDisplayMatching(win.getBounds()), other = screen.getAllDisplays().find(d => d.id !== here.id) || here, area = other.workArea;
+      return { action: 'allow', overrideBrowserWindowOptions: { title: 'Andrômeda Live · Segunda tela', x: area.x, y: area.y, width: area.width, height: area.height, backgroundColor: '#060817', autoHideMenuBar: true, icon: path.join(__dirname, 'build', 'icon.png'), webPreferences: { backgroundThrottling: false } } };
+    }
     if (!url || url === 'about:blank') return { action: 'allow', overrideBrowserWindowOptions: { title: 'PROGRAM (AR)', backgroundColor: '#000000', autoHideMenuBar: true, webPreferences: { backgroundThrottling: false } } };
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+  contents.on('did-create-window', (child, details) => {
+    if (details.frameName !== 'andromeda-segunda-tela') return;
+    child.maximize();
+    child.webContents.on('before-input-event', (event, input) => { if (input.type === 'keyDown' && input.key === 'F11') { child.setFullScreen(!child.isFullScreen()); event.preventDefault(); } });
   });
   contents.on('will-navigate', (event, url) => { if (!url.startsWith(ORIGIN)) { event.preventDefault(); if (/^https?:\/\//.test(url)) shell.openExternal(url); } });
   // A mesa pede confirmação ao sair durante um envio (beforeunload); aqui ela vira uma pergunta clara.

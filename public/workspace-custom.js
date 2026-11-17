@@ -11,14 +11,19 @@
  const make=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text)e.textContent=text;return e};
  const grid=make('div','free-grid');
  operation.classList.add('custom-workspace','free-workspace');operation.append(grid);
- const pages={operation:grid,configuration,transmission,effects:effectsPage};
- const pageNames={operation:'Operação',configuration:'Configurações',transmission:'Transmissão',effects:'GC e efeitos'};
+ // Segunda tela: painéis marcados para ela vivem numa janela própria (no programa instalado, abre no outro monitor).
+ // Com a janela fechada eles ficam guardados aqui, ocultos, e continuam funcionando.
+ const secondHolder=make('div','second-holder');secondHolder.hidden=true;document.body.append(secondHolder);
+ const pages={operation:grid,configuration,transmission,effects:effectsPage,second:secondHolder};
+ const pageNames={operation:'Operação',second:'Segunda tela',configuration:'Configurações',transmission:'Transmissão',effects:'GC e efeitos'};
  const definitions=[['preview','Preview',$('#monPreview'),'operation','half'],['program','PGM / AR',programCard,'operation','half'],['cameras','Câmeras',multiview,'operation','full'],['cut','Corte e transições',controls,'operation','full'],['bus','Comandos',bus,'operation','full'],['layers','Áudio master',fxQuick,'operation','full'],['vt','VT · Playlist',typeof vtPanel!=='undefined'?vtPanel:null,'operation','full'],['camctl','Controle de câmera',typeof camCtlPanel!=='undefined'?camCtlPanel:null,'operation','full'],['intercom','Intercom',intercom,'operation','full'],['audio','Mixer de áudio',audioPanel,'operation','full'],['camera-links','Convites Andromeda Cam',camSettings,'configuration','full'],['blackmagic','Entradas Blackmagic',bmPanel,'configuration','full'],['transport','Codificador',transportPanel,'transmission','full'],['destinations','Destinos',$('.stream-panel'),'transmission','full'],['events','Eventos',$('.events'),'configuration','full'],['fx-editor','Ajustes GC / PiP',$('.effects-editor'),'effects','half'],['fx-preview','Prévia dos efeitos',$('.effects-preview'),'effects','half'],['remote','Mesa na nuvem',$('.remote-panel'),'configuration','full']];
  // [coluna, linha, largura, altura] na grade de 48 × 48 (uma tela).
  const PRESETS={
   // Padrão: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.
   padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
   cameras:{name:'Câmeras em destaque',rects:{cameras:[0,0,30,28],preview:[30,0,18,14],program:[30,14,18,14],cut:[0,28,48,9],bus:[0,37,24,11],layers:[24,37,24,11],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
+  // Duas telas: comandos, monitores, áudio, corte e VT no monitor principal; câmeras, mixer e intercom na segunda tela.
+  duas:{name:'Duas telas · câmeras e mixer na segunda tela',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cut:[0,18,48,9],vt:[0,27,30,16],camctl:[30,27,18,16]},second:{cameras:[0,0,48,30],audio:[0,30,28,18],intercom:[28,30,20,18]}},
   grandes:{name:'Monitores grandes',rects:{preview:[0,0,24,26],program:[24,0,24,26],cameras:[0,26,48,13],cut:[0,39,48,9],bus:[0,48,24,11],layers:[24,48,24,11],audio:[0,59,28,18],intercom:[28,59,20,18],vt:[0,77,30,16],camctl:[30,77,18,16]}},
  };
  let items=definitions.filter(d=>d[2]).map(([id,title,content,page,width],order)=>{const shell=make('section','dock-panel');shell.dataset.tool=id;const header=make('div','dock-handle',title);const size=make('span','free-size');header.append(size);const grip=make('span','free-resize');grip.title='Arraste para mudar o tamanho';shell.append(header,content,grip);return {id,title,shell,header,size,grip,page,width,order,rect:null,defaultPage:page,defaultWidth:width}});
@@ -37,14 +42,15 @@
  const byId=id=>items.find(i=>i.id===id);
  function setScale(item,v){item.scale=Math.min(SCALE_MAX,Math.max(SCALE_MIN,Math.round(v/SCALE_STEP)*SCALE_STEP));paintScale(item);paintRows();save()}
  function paintScale(item){if(!item.scaleOut)return;item.shell.style.setProperty('--mon-scale',String(item.scale/100));item.scaleOut.textContent=item.scale+'%'}
- const opItems=()=>items.filter(i=>i.page==='operation');
- const bottomRow=except=>Math.max(0,...opItems().filter(i=>i!==except&&i.rect).map(i=>i.rect.y+i.rect.h));
- function applyPreset(name){const preset=PRESETS[name];for(const item of items){if(item.scaleOut)item.scale=SCALE_MAX;const r=preset.rects[item.id];if(r){item.page='operation';item.rect={x:r[0],y:r[1],w:r[2],h:r[3]};}else{item.page=item.defaultPage;item.width=item.defaultWidth;if(item.page==='operation')item.rect={x:0,y:bottomRow(item),w:COLS,h:12};}item.order=definitions.findIndex(d=>d[0]===item.id);}}
+ const GRID_PAGES=['operation','second'],onGrid=item=>GRID_PAGES.includes(item.page);
+ const opItems=(page='operation')=>items.filter(i=>i.page===page);
+ const bottomRow=(except,page=except?.page==='second'?'second':'operation')=>Math.max(0,...opItems(page).filter(i=>i!==except&&i.rect).map(i=>i.rect.y+i.rect.h));
+ function applyPreset(name){const preset=PRESETS[name];for(const item of items){if(item.scaleOut)item.scale=SCALE_MAX;const r=preset.rects[item.id],r2=preset.second?.[item.id];if(r){item.page='operation';item.rect={x:r[0],y:r[1],w:r[2],h:r[3]};}else if(r2){item.page='second';item.rect={x:r2[0],y:r2[1],w:r2[2],h:r2[3]};}else{item.page=item.defaultPage;item.width=item.defaultWidth;if(item.page==='operation')item.rect={x:0,y:bottomRow(item),w:COLS,h:12};}item.order=definitions.findIndex(d=>d[0]===item.id);}}
  const panel=make('section','layout-settings');
- panel.innerHTML='<h2>Personalizar a mesa</h2><p>Na Operação, cada painel tem o tamanho e o lugar que você quiser. Toque em <b>Personalizar</b> no topo: arraste o painel pelo título para mover e pelo canto inferior direito para mudar o tamanho. Com o título selecionado, as setas movem e Shift + setas mudam o tamanho. A grade tem 48 colunas e 48 linhas por tela. Os ajustes ficam salvos neste computador e não mudam o sinal do AR.</p><div class="layout-actions"><button id="layoutEdit">Editar posições</button><label>Modelo <select id="layoutPreset"></select></label><span class="layout-save"><input id="layoutName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="layoutSave">Salvar layout</button><button id="layoutDelete">Excluir</button></span><button id="layoutPack">Juntar painéis</button><button id="layoutRestore">Restaurar padrão</button><button id="layoutExport">Exportar layout</button><label>Importar layout <input id="layoutImport" type="file" accept="application/json,.json"></label></div><div class="layout-head" aria-hidden="true"><span>Painel</span><span>Página</span><span>Coluna · Linha</span><span>Largura · Altura</span><span>Ordem · imagem</span></div><div id="layoutRows"></div><p id="layoutMessage" role="status"></p>';
+ panel.innerHTML='<h2>Personalizar a mesa</h2><p>Na Operação, cada painel tem o tamanho e o lugar que você quiser. Toque em <b>Personalizar</b> no topo: arraste o painel pelo título para mover e pelo canto inferior direito para mudar o tamanho. Com o título selecionado, as setas movem e Shift + setas mudam o tamanho. A grade tem 48 colunas e 48 linhas por tela. <b>Dois monitores:</b> escolha <b>Segunda tela</b> na coluna Página de um painel (ou o modelo <b>Duas telas</b>) e toque em <b>Abrir segunda tela</b>; no programa instalado ela abre sozinha no outro monitor, e lá também dá para arrastar os painéis. Os ajustes ficam salvos neste computador e não mudam o sinal do AR.</p><div class="layout-actions"><button id="layoutEdit">Editar posições</button><label>Modelo <select id="layoutPreset"></select></label><span class="layout-save"><input id="layoutName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="layoutSave">Salvar layout</button><button id="layoutDelete">Excluir</button></span><button id="layoutSecond">Abrir segunda tela</button><button id="layoutPack">Juntar painéis</button><button id="layoutRestore">Restaurar padrão</button><button id="layoutExport">Exportar layout</button><label>Importar layout <input id="layoutImport" type="file" accept="application/json,.json"></label></div><div class="layout-head" aria-hidden="true"><span>Painel</span><span>Página</span><span>Coluna · Linha</span><span>Largura · Altura</span><span>Ordem · imagem</span></div><div id="layoutRows"></div><p id="layoutMessage" role="status"></p>';
  configuration.prepend(panel);
  const editBar=make('div','free-editbar');editBar.setAttribute('role','toolbar');editBar.setAttribute('aria-label','Personalizar a mesa');
- editBar.innerHTML='<strong>Personalizando</strong><span>Título: mover · canto ◢: tamanho · setas e Shift + setas no teclado · Esc conclui</span><label>Modelo <select id="freePreset"></select></label><span class="layout-save"><input id="freeName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="freeSave">Salvar layout</button><button id="freeDelete">Excluir</button></span><button id="freePack">Juntar painéis</button><button id="freeRestore">Restaurar padrão</button><button id="freeDone" class="free-done">Concluir</button>';
+ editBar.innerHTML='<strong>Personalizando</strong><span>Título: mover · canto ◢: tamanho · setas e Shift + setas no teclado · Esc conclui</span><label>Modelo <select id="freePreset"></select></label><span class="layout-save"><input id="freeName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="freeSave">Salvar layout</button><button id="freeDelete">Excluir</button></span><button id="freeSecond">Abrir segunda tela</button><button id="freePack">Juntar painéis</button><button id="freeRestore">Restaurar padrão</button><button id="freeDone" class="free-done">Concluir</button>';
  operation.prepend(editBar);editBar.hidden=true;
  // Layouts gravados pelo operador: um nome por arrumação (ex.: "Culto domingo", "Entrevista"), até 20.
  const SAVED_KEY='andromeda.layouts.v1',SAVED_MAX=20;
@@ -78,20 +84,20 @@
  function save(){if(!applying&&currentModel){currentModel='';paintModels()}try{localStorage.setItem(key,JSON.stringify({...snapshot(),model:currentModel}));$('#layoutMessage').textContent='Layout salvo neste computador.'}catch{$('#layoutMessage').textContent='Armazenamento indisponível. Exporte o layout para guardar.'}}
  const overlap=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
  // O painel movido fica onde foi solto; quem estiver embaixo dele desce o necessário.
- function settle(moved){const placed=moved?[moved]:[];const rest=opItems().filter(i=>i!==moved).sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x);for(const item of rest){let hit;while((hit=placed.find(p=>overlap(item.rect,p.rect))))item.rect.y=hit.rect.y+hit.rect.h;placed.push(item)}}
+ function settle(moved){for(const pg of moved?[moved.page]:GRID_PAGES){const placed=moved?[moved]:[];const rest=opItems(pg).filter(i=>i!==moved&&i.rect).sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x);for(const item of rest){let hit;while((hit=placed.find(p=>overlap(item.rect,p.rect))))item.rect.y=hit.rect.y+hit.rect.h;placed.push(item)}}}
  // Sobe cada painel até encostar no de cima: remove buracos sem trocar a ordem.
- function pack(){const done=[];for(const item of opItems().sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x)){while(item.rect.y>0&&!done.some(p=>overlap({...item.rect,y:item.rect.y-1},p.rect)))item.rect.y--;done.push(item)}}
+ function pack(){for(const pg of GRID_PAGES){const done=[];for(const item of opItems(pg).filter(i=>i.rect).sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x)){while(item.rect.y>0&&!done.some(p=>overlap({...item.rect,y:item.rect.y-1},p.rect)))item.rect.y--;done.push(item)}}}
  function fitRows(){const top=grid.getBoundingClientRect().top+(window.scrollY||0),footer=$('.sim-footer')?.getBoundingClientRect().height||32,available=window.innerHeight-top-footer-12;rowPx=Math.max(18,Math.floor(available/ROWS*100)/100);grid.style.setProperty('--free-row',rowPx+'px')}
  function place(item){const r=item.rect;item.shell.style.gridArea=(r.y+1)+' / '+(r.x+1)+' / span '+r.h+' / span '+r.w;item.size.textContent=r.w+' × '+r.h}
  function render(){fitRows();items.sort((a,b)=>a.order-b.order);
-  for(const item of items){item.shell.dataset.width=item.width;item.shell.dataset.page=item.page;if(item.page==='operation'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;grid.append(item.shell)}else{item.shell.style.gridArea='';item.header.removeAttribute('tabindex');pages[item.page].append(item.shell)}}
-  for(const item of items)paintScale(item);paintRows();requestAnimationFrame?.(()=>{fitRows();fitContents()})}
+  for(const item of items){item.shell.dataset.width=item.width;item.shell.dataset.page=item.page;if(item.page==='operation'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;grid.append(item.shell)}else if(item.page==='second'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;(second?second.grid:secondHolder).append(item.shell)}else{item.shell.style.gridArea='';item.header.removeAttribute('tabindex');pages[item.page].append(item.shell)}}
+  for(const item of items)paintScale(item);paintRows();paintSecond();requestAnimationFrame?.(()=>{fitRows();fitSecond();fitContents()})}
  function numberInput(label,value,min,max,onchange){const input=make('input');input.type='number';input.min=min;input.max=max;input.step=1;input.value=value;input.setAttribute('aria-label',label);input.onchange=()=>{const v=Math.round(Number(input.value));if(Number.isFinite(v))onchange(Math.min(max,Math.max(min,v)))};return input}
  function paintRows(){const rows=$('#layoutRows');rows.replaceChildren();
   for(const item of items){const row=make('div','layout-row'),label=make('strong','',item.title),page=make('select'),where=make('div','layout-pair'),size=make('div','layout-pair'),order=make('div','layout-pair');
    page.setAttribute('aria-label','Página de '+item.title);for(const [id,title] of Object.entries(pageNames))page.add(new Option(title,id));page.value=item.page;
-   page.onchange=()=>{item.page=page.value;if(item.page==='operation'){item.rect={x:0,y:bottomRow(item),w:COLS,h:12}}else item.order=Math.max(...items.map(i=>i.order))+1;render();save()};
-   if(item.page==='operation'){const r=item.rect;const set=(k,v)=>{r[k]=v;if(k==='w')r.x=Math.min(r.x,COLS-r.w);if(k==='x')r.x=Math.min(v,COLS-r.w);settle(item);render();save()};
+   page.onchange=()=>{item.page=page.value;if(onGrid(item)){item.rect={x:0,y:bottomRow(item),w:COLS,h:12}}else item.order=Math.max(...items.map(i=>i.order))+1;render();save()};
+   if(onGrid(item)&&item.rect){const r=item.rect;const set=(k,v)=>{r[k]=v;if(k==='w')r.x=Math.min(r.x,COLS-r.w);if(k==='x')r.x=Math.min(v,COLS-r.w);settle(item);render();save()};
     where.append(numberInput('Coluna de '+item.title,r.x+1,1,COLS-r.w+1,v=>set('x',v-1)),numberInput('Linha de '+item.title,r.y+1,1,400,v=>set('y',v-1)));
     size.append(numberInput('Largura de '+item.title+' em colunas',r.w,MIN_W,COLS,v=>set('w',v)),numberInput('Altura de '+item.title+' em linhas',r.h,MIN_H,120,v=>set('h',v)));}
    else{const width=make('select');width.setAttribute('aria-label','Largura de '+item.title);width.add(new Option('Largura total','full'));width.add(new Option('Meia largura','half'));width.value=item.width;width.onchange=()=>{item.width=width.value;render();save()};size.append(width);where.append(make('small','','em fluxo'));
@@ -101,7 +107,7 @@
  // Monitores e câmeras se ajustam ao tamanho do painel: a imagem inteira em 16:9, sem rolagem.
  function chrome(shell,el){let extra=0,node=el;while(node&&node!==shell){const parent=node.parentElement;if(!parent)break;const cs=getComputedStyle(parent),column=cs.display.includes('flex')?cs.flexDirection.startsWith('column'):true;for(const c of parent.children){if(c===node||c.hidden)continue;const s=getComputedStyle(c);if(s.position==='absolute'||s.position==='fixed'||s.display==='none')continue;if(column)extra+=c.getBoundingClientRect().height}extra+=(parseFloat(cs.paddingTop)||0)+(parseFloat(cs.paddingBottom)||0)+(parseFloat(cs.rowGap)||0);node=parent}return extra}
  const freeMode=()=>window.innerWidth>900;
- function fitCameras(){const item=byId('cameras'),mv=multiview?.querySelector('.mv-grid');if(!item||!mv)return;if(item.page!=='operation'||!freeMode()){mv.style.gridTemplateColumns='';mv.style.maxWidth='';return}
+ function fitCameras(){const item=byId('cameras'),mv=multiview?.querySelector('.mv-grid');if(!item||!mv)return;if(!onGrid(item)||(item.page==='operation'&&!freeMode())){mv.style.gridTemplateColumns='';mv.style.maxWidth='';return}
   const n=[...mv.children].filter(c=>!c.hidden).length||1,W=item.shell.clientWidth-24,H=item.shell.clientHeight-chrome(item.shell,mv)-20;let best={c:Math.min(5,n),t:0};
   for(let c=1;c<=n;c++){const r=Math.ceil(n/c),t=Math.min((W-(c-1)*GAP)/c,((H-(r-1)*GAP)/r)*16/9);if(t>best.t+.5)best={c,t}}
   const t=Math.max(90,best.t);mv.style.gridTemplateColumns='repeat('+best.c+',minmax(0,1fr))';mv.style.maxWidth=Math.floor(best.c*t+(best.c-1)*GAP+24)+'px'}
@@ -114,17 +120,49 @@
  window.addEventListener('resize',()=>{fitRows();fitContents()});
  let lastCount=-1;setInterval(()=>{const n=$$('.mv-cell').filter(c=>!c.hidden).length;if(n!==lastCount){lastCount=n;fitContents()}},1000);
  // Arrastar: título move, canto redimensiona. A grade mostra o encaixe enquanto arrasta.
- function cell(){const r=grid.getBoundingClientRect();return {cw:(r.width+GAP)/COLS,rh:rowPx}}
- function startGesture(item,mode,e){if(!editing||item.page!=='operation'||e.button!==0)return;e.preventDefault();const {cw,rh}=cell();drag={item,mode,px:e.clientX,py:e.clientY,start:{...item.rect},cw,rh};item.shell.classList.add('free-active');e.currentTarget.setPointerCapture?.(e.pointerId)}
+ function cell(item){const g=item?.page==='second'&&second?second.grid:grid,r=g.getBoundingClientRect();return {cw:(r.width+GAP)/COLS,rh:item?.page==='second'&&second?second.rowPx:rowPx}}
+ function startGesture(item,mode,e){if(!editing||!onGrid(item)||e.button!==0)return;e.preventDefault();const {cw,rh}=cell(item);drag={item,mode,px:e.clientX,py:e.clientY,start:{...item.rect},cw,rh};item.shell.classList.add('free-active');e.currentTarget.setPointerCapture?.(e.pointerId)}
  function moveGesture(e){if(!drag)return;const {item,mode,start,cw,rh}=drag,dx=Math.round((e.clientX-drag.px)/cw),dy=Math.round((e.clientY-drag.py)/rh),r=item.rect;
   if(mode==='move'){r.x=Math.min(COLS-r.w,Math.max(0,start.x+dx));r.y=Math.max(0,start.y+dy)}else{r.w=Math.min(COLS-r.x,Math.max(MIN_W,start.w+dx));r.h=Math.max(MIN_H,start.h+dy)}place(item);if(mode==='size')fitContents()}
  function endGesture(){if(!drag)return;const {item}=drag;drag=null;item.shell.classList.remove('free-active');settle(item);render();save()}
  for(const item of items){item.header.addEventListener('pointerdown',e=>startGesture(item,'move',e));item.grip.addEventListener('pointerdown',e=>startGesture(item,'size',e));
   for(const el of [item.header,item.grip]){el.addEventListener('pointermove',moveGesture);el.addEventListener('pointerup',endGesture);el.addEventListener('pointercancel',endGesture)}
-  item.header.addEventListener('keydown',e=>{if(!editing||item.page!=='operation')return;const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!d)return;e.preventDefault();e.stopPropagation();const r=item.rect;
+  item.header.addEventListener('keydown',e=>{if(!editing||!onGrid(item))return;const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!d)return;e.preventDefault();e.stopPropagation();const r=item.rect;
    if(e.shiftKey){r.w=Math.min(COLS-r.x,Math.max(MIN_W,r.w+d[0]));r.h=Math.max(MIN_H,r.h+d[1])}else{r.x=Math.min(COLS-r.w,Math.max(0,r.x+d[0]));r.y=Math.max(0,r.y+d[1])}settle(item);render();save();item.header.focus()})}
- function setEditing(on){editing=on;document.body.classList.toggle('layout-editing',editing);editBar.hidden=!editing;navButton.setAttribute('aria-pressed',String(editing));$('#layoutEdit').textContent=editing?'Concluir edição':'Editar posições';render();fitRows()}
+ function setEditing(on){editing=on;document.body.classList.toggle('layout-editing',editing);second?.doc.body.classList.toggle('layout-editing',editing);editBar.hidden=!editing;navButton.setAttribute('aria-pressed',String(editing));$('#layoutEdit').textContent=editing?'Concluir edição':'Editar posições';render();fitRows()}
  function usePreset(name){applying=true;try{applyPreset(name);settle(null);render();save()}finally{applying=false}$('#layoutMessage').textContent='Modelo aplicado: '+PRESETS[name].name+'.'}
+ // ---------- Segunda tela (dois monitores) ----------
+ // Os painéis são MOVIDOS para a janela da segunda tela (nada é recriado: vídeo, áudio e canvas seguem funcionando) e o
+ // código da mesa continua achando cada elemento: as buscas do documento principal também olham a segunda janela.
+ let second=null;const SECOND_NAME='andromeda-segunda-tela';
+ const qs=Document.prototype.querySelector,qsa=Document.prototype.querySelectorAll,gid=Document.prototype.getElementById;
+ document.querySelector=function(sel){return qs.call(document,sel)||(second?qs.call(second.doc,sel):null)};
+ document.querySelectorAll=function(sel){const a=qsa.call(document,sel);if(!second)return a;const b=qsa.call(second.doc,sel);return b.length?[...a,...b]:a};
+ document.getElementById=function(id){return gid.call(document,id)||(second?gid.call(second.doc,id):null)};
+ const secondNotice=make('div','second-notice');secondNotice.setAttribute('role','status');secondNotice.hidden=true;
+ const noticeText=make('span'),noticeOpen=make('button','','Abrir segunda tela');noticeOpen.type='button';secondNotice.append(noticeText,noticeOpen);grid.before(secondNotice);
+ function paintSecond(){const n=opItems('second').length,open=!!second;secondNotice.hidden=!n||open;noticeText.textContent=n+(n===1?' painel está':' painéis estão')+' na segunda tela, que está fechada: '+opItems('second').map(i=>i.title).join(', ')+'.';
+  for(const id of ['layoutSecond','freeSecond']){const b=gid.call(document,id);if(b)b.textContent=open?'Fechar segunda tela':'Abrir segunda tela'}}
+ function fitSecond(){if(!second)return;const h=second.win.innerHeight||900;second.rowPx=Math.max(18,Math.floor((h-16)/ROWS*100)/100);second.grid.style.setProperty('--free-row',second.rowPx+'px')}
+ // Teclas na segunda janela valem como na principal (CUT, AUTO, atalhos), menos quando se digita num campo.
+ function forwardKey(e){const t=e.target;if(t?.closest?.('input,select,textarea,[contenteditable="true"]'))return;const ev=new KeyboardEvent('keydown',{key:e.key,code:e.code,ctrlKey:e.ctrlKey,shiftKey:e.shiftKey,altKey:e.altKey,metaKey:e.metaKey,repeat:e.repeat,bubbles:true,cancelable:true});document.body.dispatchEvent(ev);if(ev.defaultPrevented)e.preventDefault()}
+ function openSecond(){if(second&&!second.win.closed){second.win.focus();return true}
+  const win=window.open('',SECOND_NAME,'width=1600,height=900');if(!win){flash('O sistema bloqueou a janela da segunda tela. Permita janelas novas e tente de novo.');return false}
+  const doc=win.document;doc.open();doc.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><base href="'+location.origin+'/"><title>Andrômeda Live · Segunda tela</title></head><body></body></html>');doc.close();
+  for(const n of qsa.call(document,'link[rel="stylesheet"], style'))doc.head.append(doc.importNode(n,true));
+  for(const a of document.documentElement.attributes)if(a.name!=='lang')doc.documentElement.setAttribute(a.name,a.value);
+  doc.body.className=document.body.className+' second-screen';const g=doc.createElement('div');g.className='free-grid second-grid';const bar=doc.createElement('div');bar.className='second-bar';bar.textContent='ANDRÔMEDA LIVE · SEGUNDA TELA';doc.body.append(bar,g);
+  second={win,doc,grid:g,rowPx:20};
+  win.addEventListener('keydown',forwardKey,true);win.addEventListener('resize',()=>{fitSecond();fitContents()});
+  win.addEventListener('pagehide',()=>closeSecond(false));
+  render();window.andromedaAudit?.('info','segunda-tela','Segunda tela aberta: '+opItems('second').map(i=>i.title).join(', '));return true}
+ // Fechou (pelo botão ou pela própria janela): os painéis voltam para o documento principal, guardados e funcionando.
+ function closeSecond(closeWindow=true){if(!second)return;const s=second;second=null;for(const it of opItems('second'))secondHolder.append(document.adoptNode(it.shell));if(closeWindow&&!s.win.closed)s.win.close();render()}
+ addEventListener('pagehide',()=>{if(second&&!second.win.closed)second.win.close()});
+ setInterval(()=>{if(second&&second.win.closed)closeSecond(false)},1000);
+ for(const b of [noticeOpen])b.onclick=()=>openSecond();
+ for(const id of ['layoutSecond','freeSecond'])gid.call(document,id).onclick=()=>{if(second)closeSecond();else{if(!opItems('second').length){applying=true;try{applyPreset('duas');settle(null);currentModel='duas';save();paintModels()}finally{applying=false}}openSecond()}};
+ window.andromedaSecondScreen={open:openSecond,close:closeSecond,get window(){return second?.win||null}};
  $('#layoutEdit').onclick=()=>{if(!editing)openWorkspace('operation');setEditing(!editing)};
  $('#freeDone').onclick=()=>setEditing(false);
  for(const id of ['layoutPreset','freePreset'])$('#'+id).onchange=e=>{const v=e.target.value;if(v.startsWith('meu:'))useSaved(Number(v.slice(4)));else if(PRESETS[v]){currentModel=v;usePreset(v);paintModels()}};

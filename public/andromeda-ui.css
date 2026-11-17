@@ -949,3 +949,11 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .master-meters .vu-caption { display: flex; justify-content: center; gap: 6px; min-width: 0; margin: 0; font-size: 9.5px; }
 .free-grid > .dock-panel[data-tool="layers"] .master-panel { flex: 1 1 auto; grid-template-rows: auto minmax(96px, 1fr) auto auto auto; min-height: 0; gap: 6px; padding: 8px 12px; }
 .free-grid > .dock-panel[data-tool="layers"] .master-meters { min-height: 0; display: grid; }
+
+/* ---------- Segunda tela (dois monitores) ---------- */
+.second-holder { display: none !important; }
+.second-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--brand-blue, #00a3ff); border-radius: var(--d-r-sm, 8px); background: rgba(0, 163, 255, .08); color: var(--d-text); font-size: 12.5px; }
+.second-notice span { flex: 1 1 320px; }
+.second-notice button { min-height: 30px; }
+body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: border-box; background: var(--d-bg, #060817); color: var(--d-text, #e6e8f2); overflow: auto; }
+.second-bar { margin: 0 0 8px; color: var(--d-faint, #7078a6); font: 700 11px var(--d-display, sans-serif); letter-spacing: .14em; }
