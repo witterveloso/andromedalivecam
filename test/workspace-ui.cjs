@@ -56,7 +56,7 @@ console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','vt','vtnext','vinheta','black','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','vt','vtnext','vtpause','vtstop','vinheta','black','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
 assert(q('[data-tool=bus] .key-panel'),'KEY 1 monitor next to the PiP command');
 // Regressiva direto no AR; tempo no ajuste (duplo clique).
@@ -76,6 +76,11 @@ assert.equal(vm.runInContext('state.pgm',ctx),rd.VT_SOURCE);assert.match(rd.vtNe
 assert.equal(rd.vtNext(),true,'VT NEXT on air jumps to the next VT');assert.equal(rd.vtPlayer.item.name,'Encerramento');assert.equal(rd.vt.cue,1);assert(rd.vtPlayer.running);
 assert.equal(rd.vtNext(),false,'last VT: nothing more to fire');assert.equal(rd.vtNextLabel(),'último VT');
 assert.equal(q('.cmd-btn[data-cmd=vtnext] .cmd-key').textContent,'⇧F9','VT NEXT has its own shortcut');
+// PAUSAR / CONTINUAR e PARAR do VT.
+{let elPaused=false;const el=rd.vtPlayer.item.el;el.pause=()=>{elPaused=true};el.play=()=>{elPaused=false;return Promise.resolve()};
+assert.equal(rd.vtPause(),true);assert(rd.vtPlayer.paused&&elPaused,'PAUSAR freezes the VT on air');cmd.paint();assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-name').textContent,'CONTINUAR VT');assert.equal(q('.cmd-btn[data-cmd=vtpause]').getAttribute('aria-pressed'),'true');assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-key').textContent,'⇧F7');
+assert.equal(rd.vtPause(),true);assert(!rd.vtPlayer.paused&&!elPaused,'CONTINUAR resumes the VT');
+const held=rd.vtPlayer.item;assert.equal(rd.vtStop(),true,'PARAR takes the VT off air');assert.equal(rd.vt.holdCue,held,'and keeps the same VT ready');assert.equal(q('.cmd-btn[data-cmd=vtstop] .cmd-key').textContent,'⇧F8');}
 vm.runInContext('cut()',ctx);
 assert.equal(rd.vinhetaToPreview(),false,'no vinheta loaded yet');
 // BLACK (F1) e BARRAS (F2) direto no AR; atalhos configuráveis; ESC volta à Operação.
@@ -89,7 +94,7 @@ assert(q('[data-tool=layers] #masterFader')&&q('[data-tool=layers] #masterFade')
 assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera and mosaic tools in the Câmeras bar');
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
-q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,9,'and hidden');
+q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,11,'and hidden');
 console.log('PASS: commands panel (GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');

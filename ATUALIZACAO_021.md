@@ -5,6 +5,10 @@
   - Com um VT tocando no AR, troca **na hora** para o seguinte, sem sair do AR. No último VT da lista não faz nada e avisa no registro.
   - Sem VT no AR, leva o próximo da playlist ao PREVIEW, como o botão VT.
   - O botão mostra qual VT vem a seguir e a posição na lista (por exemplo, `2/3 · Reportagem`). Em layouts já salvos ele entra logo depois do VT.
+- **PAUSAR e PARAR o VT**, no painel do VT e no painel Comandos (botões **PAUSAR VT** e **PARAR VT**; atalhos **⇧F7** e **⇧F8**, configuráveis):
+  - **PAUSAR / CONTINUAR:** congela o VT que está no AR (imagem parada e sem som) e retoma do mesmo ponto.
+  - **PARAR:** tira o VT do ar com a transição de volta configurada e deixa o **mesmo VT** pronto para começar de novo. (No fim normal do VT, o próximo da lista é que fica pronto.) O antigo botão "Tirar VT do ar" virou este.
+  - Sem VT no ar, os dois avisam no registro e não fazem nada.
 - **Botão PiP retirado** do painel Comandos (e o atalho F8). O PiP continua em *GC e efeitos*.
 - **Logo de cada plataforma nos destinos** (Transmissão): YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn e RTMP próprio. O logo aparece no bloco colorido de cada destino, no lugar das duas letras. Marcas desenhadas pelo próprio programa (sem imagens externas), com o nome da plataforma como texto de acessibilidade. O contorno azul do bloco continua marcando os destinos verticais 9:16.
 

@@ -52,6 +52,8 @@
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
     { id: 'vtnext', name: () => 'PRÓXIMO VT', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
+    { id: 'vtpause', name: () => vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT', sub: () => vtPlayer.running ? (vtPlayer.paused ? 'pausado' : 'tocando') : 'sem VT no ar', run: () => R.vtPause(), on: () => !!vtPlayer.paused, prv: () => false, settings: () => openVT() },
+    { id: 'vtstop', name: () => 'PARAR VT', sub: () => state.pgm === VT_SOURCE ? 'tira do ar' : 'sem VT no ar', run: () => R.vtStop(), on: () => false, prv: () => false, settings: () => openVT() },
     { id: 'vinheta', name: () => 'VINHETA', sub: () => vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo', run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
     { id: 'black', name: () => 'BLACK', run: () => R.toggleBlack(), on: () => black.on, settings: b => popBlack(b) },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.toggleBars(), on: () => bars.on, settings: b => popBars(b) },
@@ -61,7 +63,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  if (!cmdLayout.order.includes('vtnext') && cmdLayout.order.includes('vt')) cmdLayout.order.splice(cmdLayout.order.indexOf('vt') + 1, 0, 'vtnext');
+  for (const [add, after] of [['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
 
@@ -86,7 +88,7 @@
       b.querySelector('.cmd-name').textContent = c.name(); b.querySelector('.cmd-sub').textContent = sub;
       const key = keyOf(id); b.querySelector('.cmd-key').textContent = key ? prettyKey(key) : '';
       b.setAttribute('aria-pressed', String(on)); b.dataset.prv = String(prv);
-      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vtnext: 'dispara o próximo VT da playlist (com VT no AR, troca já; senão leva ao PREVIEW)', vinheta: 'leva ao PREVIEW', countdown: 'entra/sai do AR', black: 'fade para o preto / volta', bars: 'barras no AR / retira' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
+      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vtpause: 'pausa o VT no AR / continua', vtstop: 'para o VT e o tira do ar', vtnext: 'dispara o próximo VT da playlist (com VT no AR, troca já; senão leva ao PREVIEW)', vinheta: 'leva ao PREVIEW', countdown: 'entra/sai do AR', black: 'fade para o preto / volta', bars: 'barras no AR / retira' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
     }
   }
   setInterval(paint, 200);
@@ -252,6 +254,8 @@
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
     { id: 'vt', label: 'VT no PREVIEW', key: 'F9', run: () => R.vtToPreview() },
     { id: 'vtnext', label: 'VT PRÓXIMO (dispara o próximo da playlist)', key: 'Shift+F9', run: () => R.vtNext() },
+    { id: 'vtpause', label: 'VT PAUSAR / CONTINUAR', key: 'Shift+F7', run: () => R.vtPause() },
+    { id: 'vtstop', label: 'VT PARAR (tira do ar)', key: 'Shift+F8', run: () => R.vtStop() },
     { id: 'vinheta', label: 'VINHETA no PREVIEW', key: 'F10', run: () => R.vinhetaToPreview() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
   ];
