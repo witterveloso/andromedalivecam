@@ -1,5 +1,9 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.2
+- **Botão PiP de volta** no painel Comandos (atalho F8). Na 0.21.1 ele foi retirado por engano: o que devia sair era a **janela do monitor "KEY 1 · PiP"** que ficava na mesa.
+- **Janela do KEY 1 (PiP) retirada da mesa.** O PiP continua funcionando normalmente (botão, F8 e *GC e efeitos*), só não há mais a janelinha de monitor, e a mesa deixa de desenhá-la a cada quadro.
+
 ## 0.21.1
 - **Botão PRÓXIMO VT** no painel Comandos, ao lado do VT (atalho **⇧F9**, configurável): dispara o próximo VT da playlist sem descer a página até ela.
   - Com um VT tocando no AR, troca **na hora** para o seguinte, sem sair do AR. No último VT da lista não faz nada e avisa no registro.
@@ -10,7 +14,7 @@
   - **PARAR:** tira o VT do ar com a transição de volta configurada e deixa o **mesmo VT** pronto para começar de novo. (No fim normal do VT, o próximo da lista é que fica pronto.) O antigo botão "Tirar VT do ar" virou este.
   - Sem VT no ar, os dois avisam no registro e não fazem nada.
   - Cada botão traz o **sinal da função antes do nome** (⏸ pausar, ▶ continuar, ■ parar, ⏭ próximo), desenhado pelo programa para ter o mesmo tamanho em qualquer computador.
-- **Botão PiP retirado** do painel Comandos (e o atalho F8). O PiP continua em *GC e efeitos*.
+- ~~Botão PiP retirado~~ (corrigido na 0.21.2: o botão voltou).
 - **Logo de cada plataforma nos destinos** (Transmissão): YouTube, Facebook, Instagram, Twitch, Kick, TikTok, LinkedIn e RTMP próprio. O logo aparece no bloco colorido de cada destino, no lugar das duas letras. Marcas desenhadas pelo próprio programa (sem imagens externas), com o nome da plataforma como texto de acessibilidade. O contorno azul do bloco continua marcando os destinos verticais 9:16.
 
 Até a 0.20 o caminho do vídeo era: **navegador codifica VP8 → serviço decodifica → x264 codifica de novo → plataforma**. São duas codificações e uma decodificação por quadro, mais um gravador do navegador que entrega pedaços de 100 ms. É o que pesa em computadores comuns e o que acumula atraso.

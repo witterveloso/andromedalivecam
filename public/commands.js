@@ -3,7 +3,7 @@
  * Operação reorganizada (0.19).
  *
  * - "Comandos" no lugar da seleção de fontes: o PREVIEW passa a ser escolhido no multiview (clique) e o painel
- *   ganha os comandos de produção: GC 1–3, LOGO, REGRESSIVA (direto no AR), VT, VT PRÓXIMO e VINHETA (vão ao PREVIEW),
+ *   ganha os comandos de produção: GC 1–3, LOGO, REGRESSIVA (direto no AR), PiP, VT, VT PRÓXIMO e VINHETA (vão ao PREVIEW),
  *   BLACK (F1) e BARRAS (F2). Clique executa; duplo clique abre os ajustes do comando.
  * - "Áudio master" no lugar de "Camadas no ar": modulação L/R, fader master e FADE OUT com tempo ajustável.
  *   O monitor do AR fica só com a imagem; o áudio liga sozinho na primeira interação.
@@ -41,7 +41,7 @@
   bus.querySelectorAll('.bus-row').forEach(row => { row.hidden = true; });
   const grid = make('div', 'cmd-grid'); grid.setAttribute('role', 'toolbar'); grid.setAttribute('aria-label', 'Comandos de produção');
   bus.append(grid);
-  bus.append(keyPanel); // monitor do KEY 1 (PiP; o PiP agora só se liga em GC e efeitos)
+  keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
   const gcName = n => (fx.live.layers[n]?.name || 'GC ' + (n + 1));
   const COMMANDS = [
@@ -50,6 +50,7 @@
     { id: 'gc2', name: () => 'GC · ' + gcName(2), run: () => $('#fxGC2').click(), on: () => fx.live.layers[2]?.on, settings: () => openGC(2) },
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
+    { id: 'pip', name: () => 'PiP', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
     { id: 'vtnext', name: () => 'PRÓXIMO VT', icon: () => 'next', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
     { id: 'vtpause', name: () => vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT', icon: () => vtPlayer.paused ? 'play' : 'pause', sub: () => vtPlayer.running ? (vtPlayer.paused ? 'pausado' : 'tocando') : 'sem VT no ar', run: () => R.vtPause(), on: () => !!vtPlayer.paused, prv: () => false, settings: () => openVT() },
@@ -63,7 +64,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
 
@@ -252,6 +253,7 @@
     { id: 'gc2', label: 'GC 3', key: 'F5', run: () => byId('gc2').run() },
     { id: 'logo', label: 'LOGO', key: 'F6', run: () => byId('logo').run() },
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
+    { id: 'pip', label: 'PiP', key: 'F8', run: () => byId('pip').run() },
     { id: 'vt', label: 'VT no PREVIEW', key: 'F9', run: () => R.vtToPreview() },
     { id: 'vtnext', label: 'VT PRÓXIMO (dispara o próximo da playlist)', key: 'Shift+F9', run: () => R.vtNext() },
     { id: 'vtpause', label: 'VT PAUSAR / CONTINUAR', key: 'Shift+F7', run: () => R.vtPause() },
