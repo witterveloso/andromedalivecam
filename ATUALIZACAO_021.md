@@ -1,5 +1,19 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.6
+- **Correção: faixas do PREVIEW e do PGM piscando** "Aguardando fonte neste canal · SEM SINAL" com a vinheta no PREVIEW e o VT no AR (bug enviado pelo operador em vídeo). Duas partes da mesa escreviam na mesma faixa, uma a cada segundo e a outra a cada troca, e uma apagava a outra. Agora, com VT ou vinheta, a faixa tem um único dono e fica estável (testado: 60 leituras seguidas sem nenhuma troca; na 0.21.5 o mesmo teste mostrava as duas mensagens se alternando).
+- **Linha do tempo do VT manipulável, com dois cliques.** No painel do VT:
+  - **Dois cliques** em qualquer ponto da barra levam o VT até ali. Com o VT no AR ele salta na hora e continua no AR; com o VT armado (fora do AR) ele passa a **começar daquele ponto** (marca amarela na barra e o relógio mostra `▸01:20`).
+  - **Um clique não faz nada** (só pisca a barra): ninguém muda o AR sem querer.
+  - Passando o mouse, a barra engrossa e mostra o tempo daquele ponto ("00:32 · duplo clique").
+  - Pelo teclado: com a barra selecionada, **← / →** voltam ou avançam 5 s e **Home** volta ao começo.
+  - Cada salto fica no registro e na auditoria.
+- **Áudio no MASTER, com botões novos.** A caixinha "Ouvir em fones" e a barra antiga do mixer saíram. No painel **Áudio master** há dois botões com ícone e LED:
+  - **HABILITAR ÁUDIO** liga o áudio da mesa (medidores, mixer e saída) e passa a mostrar **ÁUDIO HABILITADO** com LED verde.
+  - **FONES** liga e desliga o retorno do PGM nos fones deste computador (LED azul aceso = ouvindo).
+  - No mixer, a legenda virou selos coloridos: **OFF** sem áudio, **AFV** segue a imagem no AR e **ON** sempre no ar.
+- **Novos estilos de botão**, para os Comandos e o Master: **Vidro** (o novo padrão), **Neon**, **Console** (tecla em relevo com LED que acende vermelho no AR e verde no PREVIEW), **Sólido** e **Clássico** (o visual antigo). Escolha em *Personalizar* (barra do painel Comandos → **Estilo**) ou em *Ajustes → Comandos*. A escolha fica salva.
+
 ## 0.21.5
 - **Botões de COMANDOS personalizáveis.** Em *Personalizar*, o painel Comandos ganha uma barra de ajuste:
   - **Arrastar para trocar de lugar:** pegue um botão e solte antes ou depois de outro; uma marca azul mostra onde ele vai entrar. A ordem também continua no *Ajustes → Comandos*.

@@ -43,9 +43,13 @@
   // Barra de ajuste dos botões: aparece no modo Personalizar, acima dos botões.
   const tools = make('div', 'cmd-tools'); tools.setAttribute('role', 'group'); tools.setAttribute('aria-label', 'Ajuste dos botões de comando');
   tools.innerHTML = '<label class="cmd-size">Tamanho dos botões <input type="range" min="50" max="200" step="5" aria-label="Tamanho dos botões de comando"><output></output></label>' +
-    '<label class="cmd-cols">Por linha <select aria-label="Botões por linha"></select></label><button type="button" class="cmd-reset">Restaurar</button>' +
+    '<label class="cmd-cols">Por linha <select aria-label="Botões por linha"></select></label>' +
+    '<label class="cmd-style">Estilo <select aria-label="Estilo dos botões"></select></label><button type="button" class="cmd-reset">Restaurar</button>' +
     '<span class="cmd-hint">Arraste um botão para trocar de lugar · ⇔ deixa o botão largo</span>';
-  for (let n = 2; n <= 8; n++) tools.querySelector('select').add(new Option(String(n), String(n)));
+  for (let n = 2; n <= 8; n++) tools.querySelector('.cmd-cols select').add(new Option(String(n), String(n)));
+  // Estilos modernos dos botões (Comandos e Master). "Clássico" é o visual de antes.
+  const BUTTON_STYLES = [['vidro', 'Vidro'], ['neon', 'Neon'], ['console', 'Console (tecla com LED)'], ['solido', 'Sólido'], ['classico', 'Clássico']];
+  for (const [v, t] of BUTTON_STYLES) tools.querySelector('.cmd-style select').add(new Option(t, v));
   bus.append(tools, grid);
   keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
@@ -77,6 +81,8 @@
   const clampSize = v => Math.min(200, Math.max(50, Math.round(Number(v) / 5) * 5 || 100)), clampCols = v => Math.min(8, Math.max(2, Math.round(Number(v)) || 4));
   cmdLayout.size = clampSize(cmdLayout.size ?? 100); cmdLayout.cols = clampCols(cmdLayout.cols ?? 4);
   cmdLayout.wide = (cmdLayout.wide || []).filter(byId); cmdLayout.custom = !!cmdLayout.custom;
+  const styleOk = v => BUTTON_STYLES.some(([k]) => k === v) ? v : 'vidro';
+  cmdLayout.style = styleOk(cmdLayout.style);
   const editingIn = el => !!el?.ownerDocument?.body?.classList.contains('layout-editing');
 
   const buttons = new Map();
@@ -89,14 +95,18 @@
   function setWide(id, on) { cmdLayout.wide = on ? [...new Set([...cmdLayout.wide, id])] : cmdLayout.wide.filter(x => x !== id); saveCmdLayout(); }
   function setSize(v) { cmdLayout.size = clampSize(v); saveCmdLayout(); }
   function setCols(v) { cmdLayout.cols = clampCols(v); saveCmdLayout(); }
-  function resetLook() { cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [], size: 100, cols: 4, wide: [], custom: false }; saveCmdLayout(); }
+  function setStyle(v) { cmdLayout.style = styleOk(v); saveCmdLayout(); }
+  // O estilo vale nos painéis Comandos e Master, mesmo que estejam na segunda tela.
+  function applyStyle() { for (const el of [grid, document.querySelector('.master-panel')]) if (el) el.dataset.btnStyle = cmdLayout.style; }
+  function resetLook() { cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [], size: 100, cols: 4, wide: [], custom: false, style: cmdLayout.style }; saveCmdLayout(); }
   let dragId = null;
   function buildGrid() {
     grid.replaceChildren(); buttons.clear();
     grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); grid.style.setProperty('--cmd-cols', String(cmdLayout.cols));
     grid.dataset.custom = String(cmdLayout.custom);
-    const range = tools.querySelector('input'), sel = tools.querySelector('select');
+    const range = tools.querySelector('input'), sel = tools.querySelector('.cmd-cols select');
     range.value = String(cmdLayout.size); tools.querySelector('output').textContent = cmdLayout.size + '%'; sel.value = String(cmdLayout.cols);
+    tools.querySelector('.cmd-style select').value = cmdLayout.style; applyStyle();
     for (const id of cmdLayout.order) {
       if (cmdLayout.hidden.includes(id)) continue;
       const c = byId(id), b = make('button', 'cmd-btn'); b.type = 'button'; b.dataset.cmd = id; b.dataset.wide = String(cmdLayout.wide.includes(id)); b.draggable = true;
@@ -132,7 +142,7 @@
   { const range = tools.querySelector('input');
     range.addEventListener('input', () => { cmdLayout.size = clampSize(range.value); tools.querySelector('output').textContent = cmdLayout.size + '%'; grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); });
     range.addEventListener('change', () => setSize(range.value));
-    tools.querySelector('select').onchange = e => setCols(e.target.value); tools.querySelector('.cmd-reset').onclick = () => resetLook(); }
+    tools.querySelector('.cmd-cols select').onchange = e => setCols(e.target.value); tools.querySelector('.cmd-style select').onchange = e => setStyle(e.target.value); tools.querySelector('.cmd-reset').onclick = () => resetLook(); }
 
   /* ---------- ajustes de cada comando ---------- */
   function openFx(selector) {
@@ -201,7 +211,12 @@
   const layersShell = fxQuick.closest('.dock-panel');
   fxQuick.hidden = true;
   const master = make('section', 'master-panel'); master.setAttribute('aria-label', 'Áudio master');
+  const SPK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  const PHONES = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 14v-2a7.5 7.5 0 0 1 15 0v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3.5" y="13.5" width="4.5" height="6.5" rx="1.6" fill="currentColor"/><rect x="16" y="13.5" width="4.5" height="6.5" rx="1.6" fill="currentColor"/></svg>';
   master.innerHTML = '<div class="master-top"><span class="master-label">MASTER</span><span id="masterAudioState" class="master-state">—</span></div>' +
+    '<div class="master-switches">' +
+    '<button type="button" id="masterAudioOn" class="master-switch" aria-pressed="false"><i class="ms-led"></i>' + SPK + '<span><b>HABILITAR ÁUDIO</b><small>medidores e saída de som</small></span></button>' +
+    '<button type="button" id="masterPhones" class="master-switch" aria-pressed="false"><i class="ms-led"></i>' + PHONES + '<span><b>FONES</b><small>desligados</small></span></button></div>' +
     '<div class="master-meters"></div>' +
     '<label class="master-fader"><span>Volume</span><input id="masterFader" type="range" min="0" max="100" aria-label="Volume master"><output id="masterFaderOut"></output></label>' +
     '<div class="master-fade-row"><button type="button" id="masterFade" class="master-fade">FADE OUT</button><label>Tempo <input id="masterFadeTime" type="number" min="0.5" max="30" step="0.5" aria-label="Tempo do fade em segundos"> s</label></div>' +
@@ -212,6 +227,19 @@
   const audioState = $('#pgmAudioState'); if (audioState) master.querySelector('#masterAudioState').replaceWith(audioState);
   const pgmMonitor = $('.pgm-audio-monitor'); if (pgmMonitor) pgmMonitor.hidden = true;
   const enableButton = $('#enableMixer'); if (enableButton) enableButton.hidden = true;
+  // Habilitar áudio e fones ficam no MASTER, como botões com LED; a caixa "Ouvir em fones" do mixer sai.
+  const audioOn = master.querySelector('#masterAudioOn'), phones = master.querySelector('#masterPhones');
+  audioOn.onclick = async () => { try { await audioMixer.enable(); $('#pgmAudioEnable')?.click(); log('Áudio da mesa habilitado'); } catch (e) { log('Áudio indisponível: ' + e.message); } paintSwitches(); };
+  phones.onclick = async () => { const b = $('#pgmListen'); if (b) await b.onclick?.(); paintSwitches(); };
+  function paintSwitches() {
+    const running = audioMixer.context?.state === 'running', listening = running && !!$('#listenMixer')?.checked;
+    audioOn.setAttribute('aria-pressed', String(running)); audioOn.querySelector('b').textContent = running ? 'ÁUDIO HABILITADO' : 'HABILITAR ÁUDIO';
+    audioOn.querySelector('small').textContent = running ? 'medidores e saída ativos' : 'medidores e saída de som';
+    audioOn.title = running ? 'O áudio da mesa está ativo.' : 'Liga o áudio da mesa: medidores, mixer e saída para a transmissão.';
+    phones.setAttribute('aria-pressed', String(listening)); phones.querySelector('small').textContent = listening ? 'ouvindo o PGM' : 'desligados';
+    phones.title = listening ? 'Desliga o retorno do PGM nos fones.' : 'Ouve o áudio do PGM nos fones deste computador.';
+  }
+  setInterval(paintSwitches, 250); paintSwitches(); applyStyle();
 
   const level = $('#masterLevel'), fader = $('#masterFader'), faderOut = $('#masterFaderOut');
   const dbOf = v => v <= 0 ? '−∞ dB' : (20 * Math.log10(v / 100)).toFixed(1).replace('-', '−').replace(/^0\.0$/, '0') + ' dB';
@@ -342,7 +370,7 @@
   if (settings) {
     const box = make('section', 'shortcut-settings');
     box.innerHTML = '<h3>Atalhos do teclado</h3><p>Clique no atalho e pressione a tecla (ou combinação com Ctrl/Alt). <b>Backspace</b> limpa; <b>Esc</b> cancela. Funcionam em qualquer página, menos quando você digita num campo. <b>Esc</b> sempre volta para a Operação.</p><div class="shortcut-list" role="table" aria-label="Atalhos do teclado"></div><button type="button" id="shortcutsReset">Restaurar atalhos padrão</button>' +
-      '<h3>Botões de comando</h3><p>Ordem, visibilidade, largura e tamanho dos botões do painel Comandos. Na Operação, em <b>Personalizar</b>, dá para arrastar os botões direto no painel.</p><div class="cmd-order-tools"><label>Tamanho dos botões <input type="range" id="cmdSizeSetting" min="50" max="200" step="5"><output id="cmdSizeOut"></output></label><label>Botões por linha <select id="cmdColsSetting"></select></label></div><ol class="cmd-order" aria-label="Ordem dos botões de comando"></ol>';
+      '<h3>Botões de comando</h3><p>Ordem, visibilidade, largura e tamanho dos botões do painel Comandos. Na Operação, em <b>Personalizar</b>, dá para arrastar os botões direto no painel.</p><div class="cmd-order-tools"><label>Tamanho dos botões <input type="range" id="cmdSizeSetting" min="50" max="200" step="5"><output id="cmdSizeOut"></output></label><label>Botões por linha <select id="cmdColsSetting"></select></label><label>Estilo <select id="cmdStyleSetting"></select></label></div><ol class="cmd-order" aria-label="Ordem dos botões de comando"></ol>';
     settings.append(box);
     const list = box.querySelector('.shortcut-list'), order = box.querySelector('.cmd-order');
     function paintShortcuts() {
@@ -383,9 +411,10 @@
       const size = $('#cmdSizeSetting'), cols = $('#cmdColsSetting');
       if (size) { size.value = String(cmdLayout.size); $('#cmdSizeOut').textContent = cmdLayout.size + '%'; }
       if (cols) { if (!cols.options.length) for (let n = 2; n <= 8; n++) cols.add(new Option(String(n), String(n))); cols.value = String(cmdLayout.cols); }
+      const st = $('#cmdStyleSetting'); if (st) { if (!st.options.length) for (const [v, t] of BUTTON_STYLES) st.add(new Option(t, v)); st.value = cmdLayout.style; }
     }
     function saveLayout() { cmdLayout.custom = true; saveCmdLayout(); }
-    { const size = $('#cmdSizeSetting'); size.oninput = () => { $('#cmdSizeOut').textContent = clampSize(size.value) + '%'; }; size.onchange = () => setSize(size.value); $('#cmdColsSetting').onchange = e => setCols(e.target.value); }
+    { const size = $('#cmdSizeSetting'); size.oninput = () => { $('#cmdSizeOut').textContent = clampSize(size.value) + '%'; }; size.onchange = () => setSize(size.value); $('#cmdColsSetting').onchange = e => setCols(e.target.value); $('#cmdStyleSetting').onchange = e => setStyle(e.target.value); }
     orderPainter = paintOrder;
     paintShortcuts(); paintOrder();
   }
@@ -395,16 +424,22 @@
   sync = function () {
     baseSync();
     if (camTitle?.shown && camTitle.shadow.textContent) camTitle.shown.textContent = camTitle.shadow.textContent;
-    // Faixas do PREVIEW e do PGM: VT/vinheta mostram o vídeo (preparado ou no ar) em vez de "aguardando fonte".
-    for (const bus of ['prv', 'pgm']) {
-      const strip = $('.preview-strip[data-bus="' + bus + '"]'), p = state[bus] === VT_SOURCE ? vtPlayer : state[bus] === VINHETA_SOURCE ? vinhetaPlayer : null;
-      if (!strip || !p) continue;
-      const ok = !!p.item && !p.item.error;
-      strip.querySelector('span').textContent = p.label + ' · ' + (p.item ? p.item.name + (p.item.duration ? ' · ' + R.formatClock(Math.round(p.item.duration)) : '') : 'nenhum vídeo');
-      strip.querySelector('b').textContent = !ok ? 'SEM VÍDEO' : bus === 'pgm' ? (p.paused ? 'PAUSADO' : 'NO AR') : 'PRONTO'; strip.dataset.ok = String(ok);
-    }
+    for (const bus of ['prv', 'pgm']) { const strip = $('.preview-strip[data-bus="' + bus + '"]'); if (strip) playerInfo(bus, strip); }
     paint();
   };
+  // Faixas do PREVIEW e do PGM: VT/vinheta mostram o vídeo (preparado ou no ar) em vez de "aguardando fonte".
+  // A faixa é desenhada por um só lugar: o relógio das faixas (stage.js) pergunta aqui antes de escrever,
+  // senão as duas pinturas brigavam e a faixa piscava "Aguardando fonte · SEM SINAL" com VT/vinheta.
+  function playerInfo(bus, strip) {
+    const p = state[bus] === VT_SOURCE ? vtPlayer : state[bus] === VINHETA_SOURCE ? vinhetaPlayer : null;
+    if (!p) return false;
+    const ok = !!p.item && !p.item.error, text = p.label + ' · ' + (p.item ? p.item.name + (p.item.duration ? ' · ' + R.formatClock(Math.round(p.item.duration)) : '') : 'nenhum vídeo'),
+      badge = !ok ? 'SEM VÍDEO' : bus === 'pgm' ? (p.paused ? 'PAUSADO' : p.loop ? 'NO AR · LOOP' : 'NO AR') : 'PRONTO';
+    const span = strip.querySelector('span'), b = strip.querySelector('b');
+    if (span.textContent !== text) span.textContent = text; if (b.textContent !== badge) b.textContent = badge; strip.dataset.ok = String(ok);
+    return true;
+  }
+  window.andromedaPlayerInfo = playerInfo;
 
   function paintFooter() {
     const span = $$('.sim-footer span').find(el => /Atalhos/.test(el.textContent)); if (!span) return;
@@ -413,5 +448,5 @@
   }
   const basePaint = paint; paint = function () { basePaint(); paintFooter(); };
   buildGrid(); sync();
-  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout, moveCommand, setWide, setSize, setCols, resetLook, paintOrder: () => orderPainter?.() };
+  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout, moveCommand, setWide, setSize, setCols, setStyle, resetLook, paintOrder: () => orderPainter?.() };
 })();

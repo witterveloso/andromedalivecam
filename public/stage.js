@@ -232,6 +232,7 @@
   };
   function paintInfo() {
     for (const [bus, { el, text, badge }] of Object.entries(strips)) {
+      if (window.andromedaPlayerInfo?.(bus, el)) continue; // VT/vinheta: a faixa é dos reprodutores
       const i = state[bus];
       const ok = i === MOSAIC || i === 10 || live(i);
       if (i === MOSAIC) text.textContent = 'MOSAICO · ' + stage.members.length + ' câmera(s)';
