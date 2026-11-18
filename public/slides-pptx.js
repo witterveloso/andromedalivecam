@@ -13,7 +13,7 @@
   async function readZip(buf) {
     const dv = new DataView(buf); let eocd = -1;
     for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    if (eocd < 0) throw new Error('Arquivo PPTX inválido (não é um ZIP).');
+    if (eocd < 0) throw new Error('O arquivo está danificado, incompleto ou não é uma apresentação PPTX. Abra-o no PowerPoint e salve de novo (ou exporte em PDF).');
     const count = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true); const entries = new Map();
     for (let k = 0; k < count; k++) {
       if (dv.getUint32(p, true) !== 0x02014b50) break;
@@ -147,27 +147,30 @@
         };
         async function drawShapes(tree, part, group, onlyDecor) {
           for (const el of tree.children) {
+            try { await drawOne(el); } catch (e) { ctx.restore?.(); console.warn('Slides: elemento ignorado —', e?.message || e); }
+          }
+          async function drawOne(el) {
             const kind = el.localName;
             if (kind === 'grpSp') {
               const pr = kid(el, 'grpSpPr'), x = kid(pr, 'xfrm'); let g = group;
               if (x) { const off = kid(x, 'off'), ext = kid(x, 'ext'), co = kid(x, 'chOff'), ce = kid(x, 'chExt'); const cw = num(ce?.getAttribute('cx'), 1) || 1, chh = num(ce?.getAttribute('cy'), 1) || 1; const sx = num(ext?.getAttribute('cx')) / cw, sy = num(ext?.getAttribute('cy')) / chh; g = { x: group.x + (num(off?.getAttribute('x')) - num(co?.getAttribute('x')) * sx) * group.sx, y: group.y + (num(off?.getAttribute('y')) - num(co?.getAttribute('y')) * sy) * group.sy, sx: sx * group.sx, sy: sy * group.sy }; }
-              await drawShapes(el, part, g, onlyDecor); continue;
+              await drawShapes(el, part, g, onlyDecor); return;
             }
-            if (!['sp', 'pic', 'cxnSp', 'graphicFrame'].includes(kind)) continue;
-            const ph = phOf(el); if (onlyDecor && ph) continue; // layout e mestre: só o que é decoração (logos, faixas), nunca os campos de texto
-            if (kind === 'graphicFrame') { await drawTable(el, group, part); continue; }
+            if (!['sp', 'pic', 'cxnSp', 'graphicFrame'].includes(kind)) return;
+            const ph = phOf(el); if (onlyDecor && ph) return; // layout e mestre: só o que é decoração (logos, faixas), nunca os campos de texto
+            if (kind === 'graphicFrame') { await drawTable(el, group, part); return; }
             const spPr = kid(el, 'spPr');
             // Posição própria → do layout → do mestre (os campos de título e corpo quase sempre herdam a posição).
             let box = xfrmOf(spPr), inherited = null;
             if (ph) { const fromLayout = findPlaceholder(path(layout?.doc.documentElement, 'cSld', 'spTree'), ph), fromMaster = findPlaceholder(path(master?.doc.documentElement, 'cSld', 'spTree'), ph); inherited = fromLayout || fromMaster; if (!box) box = xfrmOf(kid(fromLayout, 'spPr')) || xfrmOf(kid(fromMaster, 'spPr')); }
-            if (!box) continue;
+            if (!box) return;
             const b = place(box, group), X = px(b.x), Y = px(b.y), Wd = px(b.w), Ht = px(b.h);
             ctx.save();
             if (box.rot || box.flipH || box.flipV) { ctx.translate(X + Wd / 2, Y + Ht / 2); ctx.rotate(box.rot * Math.PI / 180); ctx.scale(box.flipH ? -1 : 1, box.flipV ? -1 : 1); ctx.translate(-(X + Wd / 2), -(Y + Ht / 2)); }
             if (kind === 'pic') {
               const rid = kid(kid(el, 'blipFill'), 'blip')?.getAttributeNS(NS_R, 'embed'), target = rid && part.rels.get(rid)?.target, bmp = target && await cacheImage(target);
               if (bmp) { const crop = kid(kid(el, 'blipFill'), 'srcRect'), l = num(crop?.getAttribute('l')) / 100000, t = num(crop?.getAttribute('t')) / 100000, r = num(crop?.getAttribute('r')) / 100000, bt = num(crop?.getAttribute('b')) / 100000; ctx.drawImage(bmp, bmp.width * l, bmp.height * t, bmp.width * (1 - l - r), bmp.height * (1 - t - bt), X, Y, Wd, Ht); }
-              ctx.restore(); continue;
+              ctx.restore(); return;
             }
             // forma: preenchimento e contorno
             const style = kid(el, 'style'), styleFill = num(kid(style, 'fillRef')?.getAttribute('idx')) > 0 ? colorOf(kid(style, 'fillRef'), colors, clrMap) : null, styleLine = num(kid(style, 'lnRef')?.getAttribute('idx')) > 0 ? colorOf(kid(style, 'lnRef'), colors, clrMap) : null, styleFont = colorOf(kid(style, 'fontRef'), colors, clrMap);
@@ -248,7 +251,8 @@
             y += rowH;
           }
         }
-        await drawTree(master, true); await drawTree(layout, true); await drawTree(slide, false);
+        // Um item que o leitor não entende (forma exótica, imagem em formato não suportado) não derruba o slide: o resto é desenhado.
+        for (const [part, decor] of [[master, true], [layout, true], [slide, false]]) { try { await drawTree(part, decor); } catch (e) { console.warn('Slides: parte do slide ignorada —', e?.message || e); } }
       },
     }));
     return { size: { w: W, h: H }, slides };

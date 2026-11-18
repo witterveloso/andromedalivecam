@@ -4,7 +4,7 @@
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 
-const POWERPOINT_EXT = new Set(['ppt', 'pptx', 'pps', 'ppsx', 'pot', 'potx', 'pptm', 'ppsm', 'potm']);
+const POWERPOINT_EXT = new Set(['odp', 'otp', 'ppt', 'pptx', 'pps', 'ppsx', 'pot', 'potx', 'pptm', 'ppsm', 'potm']);
 const LIMIT = 500 * 1024 * 1024, TIMEOUT_MS = 240000;
 
 function run(cmd, args, { timeout = TIMEOUT_MS, env } = {}) {
@@ -105,7 +105,7 @@ function createSlidesConverter({ dataDir = path.join(__dirname, 'dados'), tmpRoo
           fs.mkdirSync(profileDir, { recursive: true });
           const r = await convertWithLibreOffice(e.soffice, dir, input, profileDir);
           if (r.ok) { onEvent('info', 'slides-libreoffice', 'Apresentação convertida pelo LibreOffice'); return r.file; }
-          throw Object.assign(new Error('Não foi possível converter este arquivo.' + (r.detail ? ' (' + r.detail + ')' : '')), { status: 422 });
+          throw Object.assign(new Error('Não foi possível converter este arquivo: ele pode estar danificado, protegido por senha ou em um formato que o conversor não conhece. Abra-o no programa de origem e exporte em PDF.'), { status: 422 });
         }
         throw Object.assign(new Error('Não foi possível converter este arquivo com o PowerPoint.'), { status: 422 });
       });

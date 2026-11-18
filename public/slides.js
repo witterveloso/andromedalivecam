@@ -93,8 +93,9 @@
     if (!r.ok) { let m = {}; try { m = await r.json(); } catch { /* sem corpo */ } throw Object.assign(new Error(m.error || 'A conversão falhou (' + r.status + ').'), { code: m.code || 'failed' }); }
     return new Uint8Array(await r.arrayBuffer());
   }
-  let engines = null;
-  async function engineStatus() { if (!engines) { try { engines = await (await fetch('/api/slides/status', { cache: 'no-store' })).json(); } catch { engines = { ready: false }; } } return engines; }
+  let engines = null, enginesAt = 0;
+  // Só confia na resposta "tem conversor"; sem conversor pergunta de novo a cada arquivo (o usuário pode ter instalado o LibreOffice agora).
+  async function engineStatus() { if (!engines || !engines.ready || Date.now() - enginesAt > 600000) { try { engines = await (await fetch('/api/slides/status', { cache: 'no-store' })).json(); } catch { engines = { ready: false }; } enginesAt = Date.now(); } return engines; }
 
   /* ---------- apresentações (decks) ---------- */
   let uid = 0;
@@ -119,14 +120,26 @@
     const ready = d.cache.get(i); if (ready) apply(ready); else pageCanvas(d, i).then(apply, () => log('Slides: não foi possível desenhar o slide ' + (i + 1) + '.'));
     paintPanel(); return true;
   }
+  // Sem apresentação pronta, os comandos avisam (antes ficavam mudos) e levam ao painel para abrir uma.
+  function usable(what) {
+    const d = slides.active;
+    if (d?.status === 'ready') return true;
+    log('Slides: ' + (d?.status === 'loading' ? 'a apresentação ainda está abrindo.' : d?.status === 'error' ? 'a apresentação não abriu (' + d.error + ')' : 'nenhuma apresentação aberta. Abra um arquivo no painel Slides (ou arraste para ele).') + ' · ' + what);
+    if (d?.status !== 'loading') openPanel();
+    return false;
+  }
+  // Passar o slide com os slides fora do PREVIEW e do AR não mostraria nada: leva ao PREVIEW (se nenhuma transição estiver rodando).
+  function showIfHidden() { if (state.pgm !== SLIDES_SOURCE && state.prv !== SLIDES_SOURCE && !state.busy && !(state.progress > 0)) { select('prv', SLIDES_SOURCE); log('Slides levados ao PREVIEW.'); } }
+  function openPanel() { try { openWorkspace('operation'); const p = document.querySelector('[data-tool=slides]'); p?.scrollIntoView({ block: 'center', behavior: 'smooth' }); p?.classList.add('flash'); setTimeout(() => p?.classList.remove('flash'), 1600); } catch { /* painel ainda não montado */ } }
   function next() {
-    const d = slides.active; if (!d || d.status !== 'ready') return false;
+    if (!usable('PRÓXIMO')) return false; showIfHidden();
+    const d = slides.active;
     if (d.want >= d.count - 1) { if (settings.loop) return go(0, d); log('Slides: último slide.'); return false; }
     return go(d.want + 1, d);
   }
-  function prev() { const d = slides.active; if (!d || d.status !== 'ready') return false; if (d.want <= 0) { log('Slides: primeiro slide.'); return false; } return go(d.want - 1, d); }
-  const first = () => go(0), last = () => { const d = slides.active; return d ? go(d.count - 1) : false; };
-  const goto1 = n => { const d = slides.active; return d && Number.isFinite(n) ? go(n - 1) : false; };
+  function prev() { if (!usable('ANTERIOR')) return false; showIfHidden(); const d = slides.active; if (d.want <= 0) { log('Slides: primeiro slide.'); return false; } return go(d.want - 1, d); }
+  const first = () => (usable('PRIMEIRO') ? (showIfHidden(), go(0)) : false), last = () => { if (!usable('ÚLTIMO')) return false; showIfHidden(); return go(slides.active.count - 1); };
+  const goto1 = n => { const d = slides.active; return d?.status === 'ready' && Number.isFinite(n) ? (showIfHidden(), go(n - 1)) : false; };
 
   function toPreview() {
     const d = slides.active;
@@ -190,6 +203,17 @@
     if (!slides.active || slides.active.status !== 'ready') slides.active = d;
     try { finish(d, imageReader(files)); log('Slides: ' + d.name + ' aberto.'); audit('info', 'slides-aberto', d.name); } catch (e) { fail(d, e); }
     paintPanel();
+  }
+  // Soltar uma PASTA (ou vários arquivos) funciona: as pastas são percorridas e só entram os arquivos que a apresentação entende.
+  async function filesFromDrop(dt) {
+    const out = [], walk = async entry => {
+      if (!entry) return;
+      if (entry.isFile) { await new Promise(r => entry.file(f => { out.push(f); r(); }, r)); return; }
+      if (entry.isDirectory) { const reader = entry.createReader(); for (;;) { const batch = await new Promise(r => reader.readEntries(r, () => r([]))); if (!batch.length) break; for (const e of batch) await walk(e); } }
+    };
+    const items = [...dt?.items || []].map(i => (i.kind === 'file' && i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
+    if (items.some(e => e.isDirectory)) { for (const e of items) await walk(e); return out.sort(natural); }
+    return [...dt?.files || []];
   }
   async function openFiles(list) {
     const files = [...list || []]; if (!files.length) return;
@@ -291,7 +315,14 @@
   $p('#slGoBtn').onclick = doGo; $p('#slGo').addEventListener('keydown', e => { if (e.key === 'Enter') { e.stopPropagation(); doGo(); } });
   panel.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); panel.classList.add('dropping'); } });
   panel.addEventListener('dragleave', () => panel.classList.remove('dropping'));
-  panel.addEventListener('drop', e => { e.preventDefault(); panel.classList.remove('dropping'); openFiles(e.dataTransfer?.files); });
+  panel.addEventListener('drop', async e => { e.preventDefault(); panel.classList.remove('dropping'); openFiles(await filesFromDrop(e.dataTransfer)); });
+  // Soltar um arquivo em QUALQUER lugar da mesa nunca a faz abrir o arquivo (o navegador navegaria para ele): apresentações e imagens vão para os Slides, o resto é ignorado.
+  window.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+  window.addEventListener('drop', async e => {
+    if (e.defaultPrevented || ![...(e.dataTransfer?.types || [])].includes('Files')) return; e.preventDefault();
+    const files = (await filesFromDrop(e.dataTransfer)).filter(f => !/^(video|audio)\//.test(f.type) && !/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|ogg|m4a|aac|flac)$/i.test(f.name));
+    if (files.length) { openPanel(); openFiles(files); } else log('Arquivo ignorado: arraste vídeos para o VT e músicas para a Trilha.');
+  });
   for (const [id, key] of [['#slTransition', 'transition'], ['#slFit', 'fit'], ['#slBg', 'bg']]) { $p(id).value = settings[key]; $p(id).onchange = e => { settings[key] = e.target.value; saveSettings(); }; }
   $p('#slAuto').value = String(settings.auto); $p('#slAuto').onchange = e => { settings.auto = Number(e.target.value) || 0; saveSettings(); const d = slides.active; if (d) d.changedAt = performance.now(); };
   $p('#slLoop').checked = !!settings.loop; $p('#slLoop').onchange = e => { settings.loop = e.target.checked; saveSettings(); paintPanel(); };
@@ -305,7 +336,7 @@
 
   const info = () => { const d = slides.active, ok = d?.status === 'ready'; return { loaded: !!ok, name: d?.name || '', index: ok ? d.want : 0, total: ok ? d.count : 0, air: state.pgm === SLIDES_SOURCE, prv: state.prv === SLIDES_SOURCE, status: d?.status || 'idle' }; };
   sources[SLIDES_SOURCE] = 'SLIDES';
-  const api = { openFiles, next, prev, first, last, go: goto1, goto: goto1, toPreview, info, drawSlides, settings, decks: slides.decks, state: slides, sniff, closeDeck, paint: paintPanel };
+  const api = { openFiles, filesFromDrop, next, prev, first, last, go: goto1, goto: goto1, toPreview, info, drawSlides, settings, decks: slides.decks, state: slides, sniff, closeDeck, paint: paintPanel };
   Object.assign(R, { SLIDES_SOURCE, slides: api, drawSlides });
   window.andromedaSlides = api;
   paintPanel();

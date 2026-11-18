@@ -1354,3 +1354,92 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .trk-opts select { min-height: 34px; }
 .trk-opts button { min-height: 34px; padding: 0 12px; }
 .trk-note { color: var(--d-faint); font-size: 11.5px; line-height: 1.45; }
+
+/* ---------- ÁUDIO MASTER · visual moderno (0.25): estado, botões lado a lado, medidores horizontais em LED, volume e fade ---------- */
+.master-panel { container-type: inline-size; }
+.free-grid > .dock-panel[data-tool="layers"] .master-panel.master-panel { grid-template-rows: none; grid-auto-rows: auto; align-content: start; gap: 10px; padding: 12px; }
+.master-panel .master-top { gap: 8px; }
+.master-panel .master-label { color: var(--d-faint); font: 700 10px var(--d-display); letter-spacing: .16em; }
+.master-panel #pgmAudioState { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 9px; border: 1px solid var(--d-line-2); border-radius: 999px; background: var(--d-inset); color: var(--d-muted); font: 700 10px var(--d-display); letter-spacing: .1em; white-space: nowrap; }
+.master-panel #pgmAudioState::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #3a4266; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+.master-panel[data-level="signal"] #pgmAudioState { border-color: rgba(95, 227, 156, .5); color: var(--d-pvw-text); }
+.master-panel[data-level="signal"] #pgmAudioState::before { background: #2bff8a; box-shadow: 0 0 8px #2bff8a; }
+.master-panel[data-level="silent"] #pgmAudioState { border-color: rgba(245, 166, 35, .5); color: var(--d-amber); }
+.master-panel[data-level="silent"] #pgmAudioState::before { background: var(--d-amber); box-shadow: 0 0 8px rgba(245, 166, 35, .7); }
+.master-panel[data-level="clip"] #pgmAudioState { border-color: var(--d-pgm); color: #fff; background: rgba(255, 0, 51, .25); }
+.master-panel[data-level="clip"] #pgmAudioState::before { background: var(--d-pgm); box-shadow: 0 0 10px var(--d-pgm); }
+/* Botões lado a lado, sempre do mesmo tamanho, sem cortar o texto */
+.master-panel .master-switches { grid-template-columns: 1fr 1fr; gap: 8px; }
+.master-panel .master-switch { min-height: 50px; padding: 8px 10px 8px 12px; gap: 9px; }
+.master-panel .master-switch svg { width: 20px; height: 20px; }
+.master-panel .master-switch b { font-size: 11.5px; letter-spacing: .05em; white-space: normal; line-height: 1.15; }
+.master-panel .master-switch small { white-space: normal; font-size: 10px; line-height: 1.2; }
+@container (max-width: 320px) { .master-panel .master-switch small { display: none; } .master-panel .master-switch { min-height: 44px; } }
+/* Medidores: duas barras horizontais em LED (L e R), com a leitura em dBFS ao lado */
+.master-panel .master-meters { padding: 10px 12px 8px; border: 1px solid var(--d-line); border-radius: 10px; background: linear-gradient(180deg, rgba(255, 255, 255, .03), transparent), var(--d-inset); }
+.master-panel .master-meters .pgm-audio-channels { display: grid; grid-template-columns: 1fr; gap: 7px; justify-content: stretch; align-items: stretch; height: auto; min-height: 0; }
+.master-panel .master-meters .pgm-audio-channels > div { display: grid; grid-template-columns: 14px minmax(0, 1fr); grid-template-rows: auto; align-items: start; gap: 8px; width: auto; margin: 0; }
+.master-panel .master-meters .pgm-audio-channels > div > b { order: 0; padding-top: 1px; color: var(--d-muted); font: 800 12px var(--d-display); text-align: center; }
+.master-panel .master-meters .vu-widget { order: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; justify-items: stretch; gap: 3px 10px; width: auto; height: auto; }
+.master-panel .master-meters .vu-track { position: relative; grid-column: 1; grid-row: 1; width: auto; height: 16px; min-height: 0; border-radius: 6px; background: #04060d; border: 1px solid #262c55; }
+.master-panel .master-meters .vu-track::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 30 - 2px), #04060d calc(100% / 30 - 2px) calc(100% / 30)); }
+.master-panel .master-meters .vu-lit { left: 2px; right: auto; top: 2px; bottom: 2px; width: max(0px, calc(var(--vu-level) - 4px)); height: auto; border-radius: 4px; background: var(--vu-fill-h); transition: width .06s linear; }
+.master-panel .master-meters .vu-caption { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 6px; min-width: 0; margin: 0; font-size: 11px; }
+.master-panel .master-meters .vu-number { min-width: 74px; color: var(--d-text); font: 600 11px var(--d-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.master-panel .master-meters .vu-clip { padding: 1px 5px; border-radius: 4px; font: 800 8.5px var(--d-display); letter-spacing: .06em; }
+.master-panel .master-meters .vu-scale { display: none; grid-column: 1; grid-row: 2; justify-content: space-between; padding: 0 2px; font-size: 9px; }
+.master-panel .master-meters .pgm-audio-channels > div:last-child .vu-scale { display: flex; }
+@container (max-width: 300px) { .master-panel .master-meters .vu-number { min-width: 62px; font-size: 10px; } .master-panel .master-meters .vu-clip { display: none; } }
+/* Volume: leitura grande em dB e barra de largura total */
+.master-panel .master-fader { grid-template-columns: 1fr auto; grid-template-areas: "lbl out" "rng rng"; align-items: center; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--d-line); border-radius: 10px; background: var(--d-inset); }
+.master-panel .master-fader > span { grid-area: lbl; color: var(--d-faint); font: 700 10px var(--d-display); letter-spacing: .16em; text-transform: uppercase; }
+.master-panel .master-fader > input { grid-area: rng; width: 100%; }
+.master-panel .master-fader > output { grid-area: out; min-width: 0; color: var(--d-text); font: 700 15px var(--d-mono); }
+/* Fade: botão grande e o tempo ao lado */
+.master-panel .master-fade-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; }
+.master-panel .master-fade { min-height: 44px; padding: 0 14px; font: 800 12px var(--d-display); letter-spacing: .08em; }
+.master-panel .master-fade-row label { display: flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--d-line); border-radius: var(--d-r-sm); background: var(--d-inset); color: var(--d-muted); font-size: 11px; }
+.master-panel .master-fade-row input { width: 52px; min-height: 30px; padding: 0 4px; font: 700 13px var(--d-mono); }
+/* Link discreto para a mesa de áudio remota */
+.master-panel .master-remote { justify-self: start; min-height: 0; padding: 2px 0; border: 0; background: none; box-shadow: none; color: var(--d-accent); font: 600 11.5px var(--d-sans); letter-spacing: 0; }
+.master-panel .master-remote::before { content: '⇄ '; }
+.master-panel .master-remote:hover { text-decoration: underline; background: none; }
+.master-panel .master-meters .pgm-audio-channels > div > meter { display: none; }
+.master-panel .master-meters .pgm-audio-channels > div > b { grid-column: 1; grid-row: 1; }
+.master-panel .master-meters .pgm-audio-channels > div > .vu-widget { grid-column: 2; grid-row: 1; width: 100%; min-width: 0; }
+.master-panel .master-meters { display: grid; justify-items: stretch; }
+.master-panel .master-meters .pgm-audio-channels { width: 100%; justify-self: stretch; }
+.master-panel .master-meters .pgm-audio-channels > div { width: 100%; }
+.master-panel .master-meters .pgm-audio-channels { grid-area: auto; }
+/* compacto: cabe no tamanho padrão do painel sem rolar */
+.free-grid > .dock-panel[data-tool="layers"] .master-panel.master-panel { gap: 8px; padding: 10px 12px; }
+.master-panel .master-switch { min-height: 46px; }
+.master-panel .master-meters { padding: 8px 12px 6px; }
+.master-panel .master-meters .pgm-audio-channels { gap: 5px; }
+.master-panel .master-meters .vu-track { height: 14px; }
+.master-panel .master-fader { padding: 8px 12px; gap: 4px 10px; }
+.master-panel .master-fade { min-height: 40px; }
+/* topo numa linha só: estado do áudio e atalho para a mesa de áudio em outro aparelho */
+.master-panel .master-label { display: none; }
+.master-panel .master-top { justify-content: space-between; }
+.master-panel .master-top .master-remote { justify-self: auto; padding: 5px 10px; border: 1px solid var(--d-line-2); border-radius: 999px; background: var(--d-raise); color: var(--d-muted); font: 700 10.5px var(--d-display); letter-spacing: .04em; white-space: nowrap; }
+.master-panel .master-top .master-remote:hover { border-color: var(--d-accent); color: var(--d-text); text-decoration: none; background: var(--d-hover); }
+.master-panel .master-links { display: none; }
+.free-grid > .dock-panel[data-tool="layers"] .master-panel.master-panel { gap: 7px; padding: 9px 12px; }
+.master-panel .master-meters { padding: 7px 12px 5px; }
+.master-panel .master-fader { padding: 7px 12px; }
+.master-panel .master-switch { min-height: 44px; }
+.master-panel .master-switches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.master-panel .master-switch { min-width: 0; }
+@container (max-width: 320px) {
+  .master-panel .master-switch { gap: 6px; padding: 8px 8px 8px 10px; }
+  .master-panel .master-switch svg { width: 16px; height: 16px; }
+  .master-panel .master-switch b { font-size: 10.5px; letter-spacing: .02em; overflow-wrap: anywhere; }
+}
+.master-panel { grid-template-columns: minmax(0, 1fr); }
+.master-panel .master-top { flex-wrap: wrap; row-gap: 6px; }
+.master-panel #pgmAudioState { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.master-panel .master-top { flex-wrap: nowrap; }
+.master-panel #pgmAudioState { flex: 0 1 auto; }
+.master-panel .master-top .master-remote { flex: none; }
+.master-panel .master-top .master-remote::before { content: '⇄ '; }
