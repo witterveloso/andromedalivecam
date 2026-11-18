@@ -250,6 +250,7 @@ const ICONS = {
   play: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M3 1.4v9.2L10.4 6z" fill="currentColor"/></svg>',
   stop: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1" fill="currentColor"/></svg>',
   next: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M1.5 1.6v8.8L7.4 6z" fill="currentColor"/><rect x="8.2" y="1.6" width="2.4" height="8.8" rx=".5" fill="currentColor"/></svg>',
+  prev: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M10.5 1.6v8.8L4.6 6z" fill="currentColor"/><rect x="1.4" y="1.6" width="2.4" height="8.8" rx=".5" fill="currentColor"/></svg>',
   mic: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="4" y="1" width="4" height="6" rx="2" fill="currentColor"/><path d="M2.5 5.5a3.5 3.5 0 0 0 7 0M6 9v2M4 11h4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
 };
 // Rótulo com o sinal antes do nome. Só mexe no botão quando muda, para não refazer o desenho a cada tique.
