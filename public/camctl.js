@@ -30,7 +30,7 @@ camCtlPanel.innerHTML = '<div class="camctl-top"><button type="button" id="camCt
   '<label class="camctl-glide">Chegar em <select id="camCtlGlide" aria-label="Tempo para chegar à posição"><option value="0">na hora</option><option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option><option value="5">5 s</option></select></label></div>' +
   '<div class="camctl-presets" id="camCtlPresets" role="group" aria-label="Posições salvas"></div><small class="camctl-pnote" id="camCtlPNote"></small></div></div>' +
   '<p class="camctl-empty" id="camCtlEmpty">Esta fonte não é um celular com o Andromeda Cam conectado.</p></div>' +
-  '<aside class="camctl-preview" id="camCtlPreviewBox" aria-label="Preview da câmera"><div class="camctl-pv-head"><b id="camCtlPvName">CAM 1</b><span id="camCtlPvState" class="camctl-pv-state"></span><label class="camctl-gridopt"><input id="camCtlGrid" type="checkbox"> Grade</label></div><canvas id="camCtlPreview" width="640" height="360"></canvas><div class="camctl-pv-foot" id="camCtlPvFoot"></div></aside></div>';
+  '<aside class="camctl-preview" id="camCtlPreviewBox" aria-label="Preview da câmera"><div class="camctl-pv-head"><b id="camCtlPvName">CAM 1</b><span id="camCtlPvState" class="camctl-pv-state"></span><label class="camctl-gridopt"><input id="camCtlGrid" type="checkbox"> Grade</label></div><canvas id="camCtlPreview" width="640" height="360"></canvas><div class="camctl-pv-foot" id="camCtlPvFoot"></div><div class="camctl-sec camctl-track" id="camCtlTrackHost"></div></aside></div>';
 operation.append(camCtlPanel);
 
 const ccq = s => camCtlPanel.querySelector(s);
@@ -69,6 +69,7 @@ function camCtlDraw() {
   if (sw > 0 && sh > 0 && (typeof cams === 'undefined' || cams[camCtl.slot]?.conn !== false)) {
     const k = Math.min(w / sw, h / sh), dw = sw * k, dh = sh * k, dx = (w - dw) / 2, dy = (h - dh) / 2;
     try { pvCtx.drawImage(el, dx, dy, dw, dh); } catch { /* quadro ainda não disponível */ }
+    window.andromedaTracking?.draw(pvCtx, dx, dy, dw, dh, dpr);
     if (camCtl.grid) { pvCtx.strokeStyle = 'rgba(255,255,255,.35)'; pvCtx.lineWidth = Math.max(1, dpr); pvCtx.beginPath(); for (let i = 1; i < 3; i++) { pvCtx.moveTo(dx + dw * i / 3, dy); pvCtx.lineTo(dx + dw * i / 3, dy + dh); pvCtx.moveTo(dx, dy + dh * i / 3); pvCtx.lineTo(dx + dw, dy + dh * i / 3); } pvCtx.stroke(); }
   } else {
     pvCtx.fillStyle = '#5c668f'; pvCtx.font = '700 ' + Math.round(14 * dpr) + 'px system-ui, sans-serif'; pvCtx.textAlign = 'center'; pvCtx.fillText('SEM SINAL', w / 2, h / 2);
