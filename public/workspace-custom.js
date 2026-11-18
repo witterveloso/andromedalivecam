@@ -20,7 +20,7 @@
  // [coluna, linha, largura, altura] na grade de 48 × 48 (uma tela).
  const PRESETS={
   // Padrão: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.
-  padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
+  padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,20,22],camctl:[20,66,28,22]}},
   cameras:{name:'Câmeras em destaque',rects:{cameras:[0,0,30,28],preview:[30,0,18,14],program:[30,14,18,14],cut:[0,28,48,9],bus:[0,37,24,11],layers:[24,37,24,11],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
   // Duas telas: comandos, monitores, áudio, corte e VT no monitor principal; câmeras, mixer e intercom na segunda tela.
   duas:{name:'Duas telas · câmeras e mixer na segunda tela',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cut:[0,18,48,9],vt:[0,27,30,16],camctl:[30,27,18,16]},second:{cameras:[0,0,48,30],audio:[0,30,28,18],intercom:[28,30,20,18]}},
@@ -177,7 +177,9 @@
  try{const saved=localStorage.getItem(key);if(saved){const d=JSON.parse(saved);load(d);currentModel=typeof d.model==='string'?d.model:'';
   // Quem estava com o Padrão antigo (comandos e áudio empilhados à direita) passa ao Padrão novo; layout mexido pelo operador fica como está.
   const OLD={preview:[0,0,16,22],program:[16,0,16,22],bus:[32,0,16,11],layers:[32,11,16,11]},same=(id,r)=>{const x=byId(id)?.rect;return !!x&&x.x===r[0]&&x.y===r[1]&&x.w===r[2]&&x.h===r[3]};
-  if(Object.entries(OLD).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['bus','preview','program','layers',...(same('cameras',[0,22,48,17])?['cameras']:[])]){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}}}catch{applyPreset('padrao');currentModel='padrao'}
+  if(Object.entries(OLD).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['bus','preview','program','layers',...(same('cameras',[0,22,48,17])?['cameras']:[])]){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}
+  // Controle de câmera maior (preview ao lado): quem ainda tem o tamanho antigo do VT e do controle passa ao novo.
+  const OLD2={vt:[0,66,30,16],camctl:[30,66,18,16]};if(Object.entries(OLD2).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['vt','camctl']){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}}}catch{applyPreset('padrao');currentModel='padrao'}
  if(currentModel.startsWith('meu:')&&!savedLayouts[Number(currentModel.slice(4))])currentModel='';
  settle(null);render();paintModels();
  // A barra do topo termina de se montar depois deste script: medir de novo quando a página assenta.

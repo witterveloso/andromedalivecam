@@ -230,7 +230,7 @@
     if (sender && out && sender.track !== out) sender.replaceTrack(out).catch(e => say('Ajuste de imagem: ' + e.message, 'warn'));
     paintBar();
   }
-  function changed() { store(); applyNative(); route(); paintBar(); if (open) paintDrawer(); }
+  function changed() { store(); applyNative(); route(); paintBar(); if (open) paintDrawer(); notify(); }
 
   /* ---------- zoom: barra e pinça ---------- */
   function setZoom(value, quiet) {
@@ -391,19 +391,33 @@
       if (!raw || typeof send !== 'function') return;
       const r = zoomRange(), select = $('#lens');
       const lenses = select ? [...select.options].map((o, i) => ({ o, info: lensInfo(o.text, i) })).filter(x => !x.info.virtual).sort((a, b) => a.info.rank - b.info.rank).map(({ o, info }) => ({ id: o.value, name: info.name, kind: info.kind, active: o.value === select.value })) : [];
-      const msg = { type: 'caps', lenses, zoom: { min: r.min, max: r.max, value: st.zoom, native: native().zoom }, pan: st.pan, model: deviceModel };
+      const msg = { type: 'caps', lenses, zoom: { min: r.min, max: r.max, value: st.zoom, native: native().zoom }, pan: st.pan, model: deviceModel,
+        exp: { mode: st.exp, ev: st.ev, ...evRange(), native: native().exp }, wb: { mode: st.wb, kelvin: st.kelvin, ...kelvinRange(), native: native().wb } };
       const text = JSON.stringify(msg); if (text === lastCaps) return; lastCaps = text; send(msg);
     }, 250);
   }
   let deviceModel = '';
   navigator.userAgentData?.getHighEntropyValues?.(['model']).then(v => { deviceModel = v.model || ''; notify(); }).catch(() => {});
-  // Comandos da mesa: zoom, lente e enquadramento.
+  const evRange = () => range(caps.exposureCompensation) ? { min: caps.exposureCompensation.min, max: caps.exposureCompensation.max, step: caps.exposureCompensation.step || 0.1 } : EV;
+  const kelvinRange = () => native().wb ? { min: caps.colorTemperature.min, max: caps.colorTemperature.max, step: caps.colorTemperature.step || 50 } : KELVIN;
+  // Comandos da mesa: zoom, lente, enquadramento, exposição e balanço de branco.
   function remote(m) {
     if (!raw) return;
     if (typeof m.lens === 'string') { const select = $('#lens'); if (select && [...select.options].some(o => o.value === m.lens) && select.value !== m.lens) { select.value = m.lens; select.onchange?.(); say('A mesa trocou a lente.', 'info'); } }
     if (Number.isFinite(m.zoom)) setZoom(m.zoom);
     if (m.center) setPan(0, 0);
     else if (m.pan && Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y)) setPan(m.pan.x, m.pan.y);
+    // Exposição (automática ou manual, com compensação em EV) e balanço de branco (automático ou manual, em Kelvin).
+    const next = {};
+    if (m.exp && typeof m.exp === 'object') {
+      if (m.exp.mode === 'auto' || m.exp.mode === 'manual') next.exp = m.exp.mode;
+      if (Number.isFinite(m.exp.ev)) { const r = evRange(); next.ev = clamp(m.exp.ev, r.min, r.max); if (next.exp === undefined) next.exp = 'manual'; }
+    }
+    if (m.wb && typeof m.wb === 'object') {
+      if (m.wb.mode === 'auto' || m.wb.mode === 'manual') next.wb = m.wb.mode;
+      if (Number.isFinite(m.wb.kelvin)) { const r = kelvinRange(); next.kelvin = clamp(m.wb.kelvin, r.min, r.max); if (next.wb === undefined) next.wb = 'manual'; }
+    }
+    if (Object.keys(next).length) { Object.assign(st, next); changed(); }
   }
   mount(); paintBar();
   window.AndromedaOptics = {
