@@ -45,12 +45,23 @@
   tools.innerHTML = '<label class="cmd-size">Tamanho dos botões <input type="range" min="50" max="200" step="5" aria-label="Tamanho dos botões de comando"><output></output></label>' +
     '<label class="cmd-cols">Por linha <select aria-label="Botões por linha"></select></label>' +
     '<label class="cmd-style">Estilo <select aria-label="Estilo dos botões"></select></label><button type="button" class="cmd-reset">Restaurar</button>' +
-    '<span class="cmd-hint">Arraste um botão para trocar de lugar · ⇔ deixa o botão largo</span>';
+    '<span class="cmd-hint">Arraste um botão para trocar de lugar, ou use ‹ › · ⇔ deixa o botão largo</span>';
   for (let n = 2; n <= 8; n++) tools.querySelector('.cmd-cols select').add(new Option(String(n), String(n)));
   // Estilos modernos dos botões (Comandos e Master). "Clássico" é o visual de antes.
   const BUTTON_STYLES = [['vidro', 'Vidro'], ['neon', 'Neon'], ['console', 'Console (tecla com LED)'], ['solido', 'Sólido'], ['classico', 'Clássico']];
   for (const [v, t] of BUTTON_STYLES) tools.querySelector('.cmd-style select').add(new Option(t, v));
   bus.append(tools, grid);
+  const moveBtn = make('button', 'cmd-move-toggle'); moveBtn.type = 'button'; moveBtn.setAttribute('aria-pressed', 'false');
+  function setMove(on) {
+    bus.dataset.move = String(!!on); moveBtn.setAttribute('aria-pressed', String(!!on));
+    moveBtn.textContent = on ? '✓ Concluir' : '✥ Mover botões';
+    moveBtn.title = on ? 'Termina a reorganização: os botões voltam a funcionar.' : 'Reorganiza os botões deste painel: arraste ou use ‹ ›. Enquanto isso, os botões não disparam nada.';
+  }
+  setMove(false);
+  { const handle = busShell.querySelector(':scope > .dock-handle');
+    if (handle) { const box = make('span', 'dock-tools cmd-move-box'); box.append(moveBtn); for (const type of ['pointerdown', 'keydown']) box.addEventListener(type, e => e.stopPropagation()); handle.insertBefore(box, handle.querySelector('.free-size')); }
+    else bus.prepend(moveBtn); }
+  moveBtn.onclick = () => { setMove(bus.dataset.move !== 'true'); buildGrid(); };
   keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
   const gcName = n => (fx.live.layers[n]?.name || 'GC ' + (n + 1));
@@ -61,7 +72,7 @@
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
     { id: 'pip', name: () => 'PiP', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
-    { id: 'vinheta', name: () => 'VINHETA', sub: () => (vinhetaPlayer.loop ? '↻ ' : '') + (vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo') + (vinhetaPlayer.loop && !vinhetaPlayer.running ? ' · LOOP' : ''), run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
+    { id: 'vinheta', name: () => 'VINHETA', sub: () => (vinhetaPlayer.loop ? '↻ ' : '') + (vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo') + (vinhetaPlayer.loop && !vinhetaPlayer.running ? ' · LOOP' : '') + (vinhetaPlayer.audio === false ? ' · SEM ÁUDIO' : ''), run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
     { id: 'black', name: () => 'BLACK', run: () => R.toggleBlack(), on: () => black.on, settings: b => popBlack(b) },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
     { id: 'vtnext', name: () => 'PRÓXIMO VT', icon: () => 'next', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
@@ -83,7 +94,9 @@
   cmdLayout.wide = (cmdLayout.wide || []).filter(byId); cmdLayout.custom = !!cmdLayout.custom;
   const styleOk = v => BUTTON_STYLES.some(([k]) => k === v) ? v : 'vidro';
   cmdLayout.style = styleOk(cmdLayout.style);
-  const editingIn = el => !!el?.ownerDocument?.body?.classList.contains('layout-editing');
+  // Os botões podem ser reorganizados de dois jeitos: no Personalizar (mesa inteira) ou pelo botão "Mover botões" do próprio painel.
+  const editingIn = el => !!el?.ownerDocument?.body?.classList.contains('layout-editing') || bus.dataset.move === 'true';
+  let chipPainter = null;
 
   const buttons = new Map();
   // Move um comando para antes de outro (ou para o fim). Usado pelo arrastar e pelos testes.
@@ -91,6 +104,12 @@
     if (!byId(id) || id === beforeId) return;
     const order = cmdLayout.order.filter(x => x !== id), at = beforeId ? order.indexOf(beforeId) : -1;
     order.splice(at < 0 ? order.length : at, 0, id); cmdLayout.order = order; cmdLayout.custom = true; saveCmdLayout();
+  }
+  // Uma posição para trás (-1) ou para frente (+1) na ordem visível; o toque e o teclado usam isto no lugar de arrastar.
+  function nudge(id, dir) {
+    const visible = cmdLayout.order.filter(x => !cmdLayout.hidden.includes(x)), at = visible.indexOf(id), to = at + dir;
+    if (at < 0 || to < 0 || to >= visible.length) return;
+    moveCommand(id, dir < 0 ? visible[to] : visible[to + 1] || null);
   }
   function setWide(id, on) { cmdLayout.wide = on ? [...new Set([...cmdLayout.wide, id])] : cmdLayout.wide.filter(x => x !== id); saveCmdLayout(); }
   function setSize(v) { cmdLayout.size = clampSize(v); saveCmdLayout(); }
@@ -104,6 +123,7 @@
     grid.replaceChildren(); buttons.clear();
     grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); grid.style.setProperty('--cmd-cols', String(cmdLayout.cols));
     grid.dataset.custom = String(cmdLayout.custom);
+    grid.dataset.fit = String(cmdLayout.size === 100); // 100% = os botões ocupam o painel inteiro, sem rolar
     const range = tools.querySelector('input'), sel = tools.querySelector('.cmd-cols select');
     range.value = String(cmdLayout.size); tools.querySelector('output').textContent = cmdLayout.size + '%'; sel.value = String(cmdLayout.cols);
     tools.querySelector('.cmd-style select').value = cmdLayout.style; applyStyle();
@@ -112,7 +132,10 @@
       const c = byId(id), b = make('button', 'cmd-btn'); b.type = 'button'; b.dataset.cmd = id; b.dataset.wide = String(cmdLayout.wide.includes(id)); b.draggable = true;
       const wide = make('span', 'cmd-wide-toggle', '⇔'); wide.title = 'Botão largo (2 colunas) / normal'; wide.setAttribute('aria-hidden', 'true');
       wide.addEventListener('click', e => { e.stopPropagation(); setWide(id, !cmdLayout.wide.includes(id)); });
-      b.append(make('span', 'cmd-name'), make('small', 'cmd-sub'), make('kbd', 'cmd-key'), wide);
+      const left = make('span', 'cmd-nudge cmd-nudge-l', '‹'), right = make('span', 'cmd-nudge cmd-nudge-r', '›');
+      left.title = 'Move este botão uma posição para trás'; right.title = 'Move este botão uma posição para frente';
+      left.addEventListener('click', e => { e.stopPropagation(); nudge(id, -1); }); right.addEventListener('click', e => { e.stopPropagation(); nudge(id, 1); });
+      b.append(make('span', 'cmd-name'), make('small', 'cmd-sub'), make('kbd', 'cmd-key'), left, right, wide);
       // Clique executa (com uma folga curta para reconhecer o duplo clique); teclado (Enter/Espaço no botão) executa na hora.
       // No modo Personalizar o botão não dispara nada: ele só é arrastado.
       let timer = null;
@@ -130,6 +153,7 @@
   }
   function saveCmdLayout() { store.set(LAYOUT_KEY, cmdLayout); buildGrid(); window.andromedaCommands?.paintOrder?.(); }
   function paint() {
+    chipPainter?.();
     for (const [id, b] of buttons) {
       const c = byId(id), on = !!c.on(), prv = !!c.prv?.(), sub = c.sub?.() || '';
       if (c.icon) R.iconLabel(b.querySelector('.cmd-name'), c.icon(), c.name()); else b.querySelector('.cmd-name').textContent = c.name(); b.querySelector('.cmd-sub').textContent = sub;
@@ -184,6 +208,10 @@
     const end = make('label', 'cmd-pop-field', 'Ao terminar'), sel = make('select');
     for (const [v, t] of [['return', 'Voltar para a câmera'], ['hold', 'Congelar no último quadro']]) sel.add(new Option(t, v));
     sel.value = vinhetaPlayer.end; sel.onchange = () => { vinhetaPlayer.end = sel.value; }; end.append(sel);
+    // Áudio da vinheta: COM áudio (padrão) ou SEM áudio (o vídeo toca e o som não entra no programa).
+    const aud = make('label', 'cmd-pop-field', 'Áudio da vinheta'), audSel = make('select'); audSel.id = 'vinhetaAudio';
+    for (const [v, t] of [['on', 'Com áudio'], ['off', 'Sem áudio (só a imagem)']]) audSel.add(new Option(t, v));
+    audSel.value = vinhetaPlayer.audio === false ? 'off' : 'on'; audSel.onchange = () => { R.setVinhetaAudio(audSel.value === 'on'); }; aud.append(audSel);
     const loop = make('label', 'cmd-pop-check'), chk = make('input'); chk.type = 'checkbox'; chk.id = 'vinhetaLoop'; chk.checked = vinhetaPlayer.loop;
     loop.append(chk, make('span', '', 'LOOP: repetir direto até tirar do AR'));
     const syncLoop = () => { sel.disabled = chk.checked; tr.disabled = chk.checked; };
@@ -192,7 +220,7 @@
     for (const [v, t] of [['mix', 'AUTO (transição escolhida)'], ['cut', 'CUT seco']]) tr.add(new Option(t, v));
     tr.value = vinhetaPlayer.transition; tr.onchange = () => { vinhetaPlayer.transition = tr.value; }; how.append(tr);
     syncLoop();
-    openPop(b, 'Vinheta', note(vinhetaPlayer.item ? 'Carregada: ' + vinhetaPlayer.item.name + (vinhetaPlayer.item.duration ? ' (' + R.formatClock(Math.round(vinhetaPlayer.item.duration)) + ')' : '') : 'Nenhum vídeo carregado.'), label, loop, end, how,
+    openPop(b, 'Vinheta', note(vinhetaPlayer.item ? 'Carregada: ' + vinhetaPlayer.item.name + (vinhetaPlayer.item.duration ? ' (' + R.formatClock(Math.round(vinhetaPlayer.item.duration)) + ')' : '') : 'Nenhum vídeo carregado.'), label, aud, loop, end, how,
       note('Clique em VINHETA para levá-la ao PREVIEW; ela toca quando vai ao AR (CUT/AUTO). Sem loop, a mesa volta sozinha para a câmera; com LOOP ela repete até você cortar para outra fonte.'));
   }
   function popBlack(b) {
@@ -352,12 +380,30 @@
     if (!hasSignal(i)) { log(sources[i] + ' sem sinal: ficou só no PREVIEW (não foi ao ar)'); return false; }
     cut(); log(sources[i] + ' direto no AR'); return true;
   }
+  // O número de atalho aparece em cada câmera do multiview; clicar nele faz o mesmo que a tecla: a câmera corta direto para o AR.
+  // O resto do quadro continua como antes (um clique escolhe o PREVIEW, duplo clique abre as fontes).
+  { const chips = [];
+    $$('.mv-cell').forEach((cell, i) => {
+      const chip = make('button', 'cell-key'); chip.type = 'button';
+      for (const type of ['pointerdown', 'keydown', 'dblclick']) chip.addEventListener(type, e => e.stopPropagation());
+      chip.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); if (editingIn(cell)) return; camToAir(i); paint(); });
+      (cell.querySelector('.mv-cam-label') || cell).prepend(chip); chips.push(chip);
+    });
+    chipPainter = () => chips.forEach((chip, i) => {
+      const k = keyOf('cam' + i), label = k ? prettyKey(k) : '';
+      if (chip.textContent !== label) chip.textContent = label;
+      chip.hidden = !k;
+      chip.title = 'Câmera ' + (i + 1) + ' direto no AR' + (k ? ' (tecla ' + label + ')' : '') + '. Sem sinal: fica só no PREVIEW.';
+      chip.setAttribute('aria-label', chip.title);
+    });
+  }
   const keyOf = id => keymap[id] || '';
   const comboOf = e => {
     const base = e.code === 'Space' ? 'Space' : e.key === 'Enter' ? 'Enter' : /^F\d{1,2}$/.test(e.key) ? e.key : e.key.length === 1 ? e.key.toUpperCase() : e.key;
     return [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && base.length > 1 && 'Shift', base].filter(Boolean).join('+');
   };
   const prettyKey = k => k.replace('Space', 'Espaço').replace('Enter', 'Enter').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→').replace('Shift+', '⇧');
+  chipPainter?.();
   const LEGACY = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', 'M', 'Space', 'Enter']);
   const typing = t => t.isContentEditable || !!t.closest?.('input,select,textarea');
   let capturing = null;
@@ -365,6 +411,7 @@
   addEventListener('keydown', e => {
     if (capturing) return;
     if (e.key === 'Escape') {
+      if (bus.dataset.move === 'true') { setMove(false); buildGrid(); return; } // ESC termina o "Mover botões"
       // ESC volta para a Operação (fora de janelas, edição de layout e campos de texto).
       if (document.querySelector('dialog[open]') || document.body.classList.contains('layout-editing') || typing(e.target) || !pop.hidden) return;
       openWorkspace('operation'); return;
@@ -471,5 +518,5 @@
   }
   const basePaint = paint; paint = function () { basePaint(); paintFooter(); };
   buildGrid(); sync();
-  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout, moveCommand, setWide, setSize, setCols, setStyle, resetLook, paintOrder: () => orderPainter?.() };
+  window.andromedaCommands = { COMMANDS, ACTIONS, paint, keyOf, openSources, runFade, fade, layout: () => cmdLayout, moveCommand, nudge, setMove, setWide, setSize, setCols, setStyle, resetLook, paintOrder: () => orderPainter?.() };
 })();
