@@ -79,6 +79,8 @@
     // TRILHA: música de fundo direto no AR (sem PREVIEW), com fade in ao ligar e fade out ao desligar.
     { id: 'trilha', name: () => 'TRILHA', icon: () => 'note', sub: () => { const t = R.trilha.info(); return t.state === 'out' ? 'saindo do AR…' : t.state === 'in' ? 'entrando…' : t.on ? '♪ ' + (t.name || 'no ar') : t.total ? t.name : 'playlist vazia'; }, run: () => R.trilha.toggle(), on: () => R.trilha.info().on, prv: () => R.trilha.info().out, settings: () => R.trilha.openPanel() },
     { id: 'trilhanext', name: () => 'PRÓXIMA FAIXA', icon: () => 'next', sub: () => { const t = R.trilha.info(); return t.total > 1 ? 'troca suave' : 'sem outra faixa'; }, run: () => R.trilha.next(), on: () => false, prv: () => false, settings: () => R.trilha.openPanel() },
+    // TRACKING: liga e desliga o seguimento automático da câmera selecionada no Controle de câmera (a que segue o PREVIEW).
+    { id: 'tracking', name: () => 'TRACKING', icon: () => 'target', sub: () => { const T = window.andromedaTracking; if (!T) return ''; const cam = String(sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)).split('—')[0].trim(); return T.info().on ? cam + ' · seguindo' : camCtl.enabled && camCtl.caps.has(camCtl.slot) ? cam + ' · desligado' : 'ative o controle de câmera'; }, run: () => window.andromedaTracking?.toggle(), on: () => false, prv: () => !!window.andromedaTracking?.info().on, settings: () => openCamCtl() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
@@ -92,12 +94,13 @@
   // Duplo clique no MOSAICO: leva às câmeras do multiview, onde cada uma tem o botão M para entrar ou sair do mosaico.
   function openMosaic() { openWorkspace('operation'); const panel = $('[data-tool=cameras]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   function openSlides() { openWorkspace('operation'); const panel = $('[data-tool=slides]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
+  function openCamCtl() { openWorkspace('operation'); const panel = $('[data-tool=camctl]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   function openIntercom() { openWorkspace('operation'); const panel = $('[data-tool=intercom]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   const LAYOUT_KEY = 'andromeda.commands.v1';
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['slides', 'mosaic'], ['slideprev', 'slides'], ['slidenext', 'slideprev'], ['trilha', 'slidenext'], ['trilhanext', 'trilha']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['slides', 'mosaic'], ['slideprev', 'slides'], ['slidenext', 'slideprev'], ['trilha', 'slidenext'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.

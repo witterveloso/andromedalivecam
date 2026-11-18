@@ -45,9 +45,21 @@
   // Zona de conforto (em larguras da imagem): fora de "out" a câmera passa a andar; dentro de "in" ela para.
   const COMFORT = { pequena: { out: 0.06, inn: 0.02, label: 'Pequena' }, media: { out: 0.12, inn: 0.04, label: 'Média' }, grande: { out: 0.2, inn: 0.07, label: 'Grande' } };
   // Atraso entre mandar um comando e ver o resultado na imagem que volta (rede + codificação + análise + suavização do celular).
-  const LATENCY = { lan: { value: 0.22, label: 'Rede local (Wi-Fi)' }, normal: { value: 0.35, label: 'Internet (Wi-Fi/4G)' }, lenta: { value: 0.6, label: 'Internet lenta (4G/5G fraco)' } };
+  const LATENCY = { auto: { value: 0.35, label: 'Automático (mede a rede)' }, lan: { value: 0.22, label: 'Rede local (Wi-Fi)' }, normal: { value: 0.35, label: 'Internet (Wi-Fi/4G)' }, lenta: { value: 0.6, label: 'Internet lenta (4G/5G fraco)' } };
 
   const room = zoom => Math.max(0, 0.5 - 0.5 / Math.max(1, zoom)); // folga total do recorte, em quadros inteiros
+  // Coordenadas: "vista" = o que a câmera mostra (0–1); "mundo" = o quadro inteiro do sensor (0–1). s = { cx, cy, z } é a janela.
+  const viewToWorld = (s, vx, vy) => ({ x: s.cx + (vx - 0.5) / s.z, y: s.cy + (vy - 0.5) / s.z });
+  const worldToView = (s, wx, wy) => ({ x: 0.5 + (wx - s.cx) * s.z, y: 0.5 + (wy - s.cy) * s.z });
+  const inAreas = (areas, wx, wy) => !!areas && areas.some(a => wx >= Math.min(a.x0, a.x1) && wx <= Math.max(a.x0, a.x1) && wy >= Math.min(a.y0, a.y1) && wy <= Math.max(a.y0, a.y1));
+  /**
+   * Atraso do laço (segundos) entre mandar um comando e ver o efeito na imagem que volta, a partir do que a conexão informa:
+   * ida do comando (rtt/2) + suavização do celular + captura/codificação + volta da imagem (rtt/2 + buffer de jitter + decodificação) + análise.
+   */
+  function estimateLatency({ rtt = 0.12, jitterBuffer = 0.05, decode = 0.01, detect = 0.06, ease = 0.1, capture = 0.06 } = {}) {
+    const v = x => (Number.isFinite(x) && x >= 0 ? x : 0);
+    return clamp(v(rtt) / 2 + v(ease) + capture + v(rtt) / 2 + v(jitterBuffer) + v(decode) + v(detect), 0.12, 1.5);
+  }
   // 1 unidade de pan desloca o conteúdo (zoom − 1)/2 larguras visíveis; sem zoom não há folga para andar.
   const travel = zoom => Math.max(0, (zoom - 1) / 2);
 
@@ -101,6 +113,9 @@
       this.st = { cx: 0.5 + view.pan.x * r, cy: 0.5 + view.pan.y * r, z, vx: 0, vy: 0, vz: 0 }; this.hist = []; this.mv = { x: false, y: false, z: false }; this.sent = null;
     }
     // O que a câmera mostrava no instante `t` (a partir dos comandos já enviados).
+    // Onde a detecção está no quadro inteiro do sensor (para áreas de pausa que ficam paradas na cena mesmo com a câmera andando).
+    worldOf(det, t) { const s = this._stateAt(t - this.options.latency) || this.st; return s ? viewToWorld(s, det.cx, det.cy) : null; }
+    window() { return this.st ? { cx: this.st.cx, cy: this.st.cy, z: this.st.z } : null; }
     _stateAt(t) {
       const h = this.hist; if (!h.length) return this.st;
       if (t <= h[0].t) return h[0]; if (t >= h[h.length - 1].t) return h[h.length - 1];
@@ -192,12 +207,12 @@
   class MotionDetector {
     constructor(w = 96, h = 54, options = {}) { this.w = w; this.h = h; this.prev = null; this.acc = new Float32Array(w * h); this.o = { threshold: 22, decay: 0.55, minFraction: 0.004, ...options }; }
     reset() { this.prev = null; this.acc.fill(0); }
-    update(gray) {
+    update(gray, mask) {
       const { w, h, acc, o } = this, n = w * h;
       if (!this.prev || this.prev.length !== n) { this.prev = Uint8Array.from(gray); acc.fill(0); return null; }
       let count = 0, sx = 0, sy = 0, sw = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
       for (let i = 0; i < n; i++) {
-        const d = Math.abs(gray[i] - this.prev[i]); acc[i] = acc[i] * o.decay + (d > o.threshold ? 1 : 0); this.prev[i] = gray[i];
+        const d = mask && mask[i] ? 0 : Math.abs(gray[i] - this.prev[i]); acc[i] = acc[i] * o.decay + (d > o.threshold ? 1 : 0); this.prev[i] = gray[i];
         if (acc[i] >= 0.9) { const x = i % w, y = (i / w) | 0, wt = acc[i]; count++; sx += x * wt; sy += y * wt; sw += wt; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
       }
       if (count < n * o.minFraction || sw === 0) return null;
@@ -205,5 +220,5 @@
     }
   }
 
-  return { Tracker, Kalman1D, MotionDetector, pickSubject, spring, room, travel, FRAMES, AIM, SPEEDS, COMFORT, LATENCY, clamp };
+  return { Tracker, Kalman1D, MotionDetector, pickSubject, spring, room, travel, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, AIM, SPEEDS, COMFORT, LATENCY, clamp };
 });
