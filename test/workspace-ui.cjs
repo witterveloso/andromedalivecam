@@ -56,7 +56,7 @@ console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vinheta','black','vt','vtnext','vtpause','vtstop','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','gc1','gc2','logo','countdown','pip','vinheta','black','vt','vtnext','vtpause','vtstop','mosaic','intercom','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
 // Botões personalizáveis: ordem, tamanho, por linha e largo; a barra de ajuste só aparece no Personalizar.
 {const grid=q('[data-tool=bus] .cmd-grid'),tools=q('[data-tool=bus] .cmd-tools');assert(tools&&tools.querySelector('input[type=range]')&&tools.querySelector('select'),'size bar and buttons-per-row in the commands panel');
@@ -75,8 +75,8 @@ assert(q('.master-panel #masterAudioOn')&&q('.master-panel #masterPhones'),'enab
 cmd.setStyle('neon');assert.equal(q('[data-tool=bus] .cmd-grid').dataset.btnStyle,'neon');assert.equal(q('.master-panel').dataset.btnStyle,'neon');cmd.setStyle('nada');assert.equal(cmd.layout().style,'vidro','unknown style falls back to Vidro');
 assert(w.andromedaPlayerInfo,'VT/vinheta own the PREVIEW/PGM info strips (no flicker)');
 // Mover botões direto no painel (sem Personalizar), setas, número de atalho nas câmeras e vinheta com/sem áudio.
-{const bus=q('[data-tool=bus] .me-bus')||q('.me-bus'),grid=q('[data-tool=bus] .cmd-grid');assert(q('.cmd-move-toggle'),'Mover botões lives in the Comandos panel');
-cmd.setMove(true);assert.equal(bus.dataset.move,'true');const before=[...grid.children].map(b=>b.dataset.cmd);q('.cmd-btn[data-cmd=black]').click();assert(!rd.black.on,'buttons do not fire while moving');
+{const bus=q('[data-tool=bus] .me-bus')||q('.me-bus'),grid=q('[data-tool=bus] .cmd-grid');assert(!q('.cmd-move-toggle')||getComputedStyle?.(q('.cmd-move-toggle')),'no Mover botões button in the Comandos panel (moving lives in Personalizar)');assert(!w.document.querySelector('.arr-toggle'),'and none in the other panels');assert(w.document.querySelector('[data-tool=cut] .arr-tools'),'Personalizar tools (‹ › Restaurar) exist in the panels');
+cmd.setMove(true);assert.equal(bus.dataset.move,'true');const before=[...grid.children].map(b=>b.dataset.cmd);const prv0=vm.runInContext('state.prv',ctx);q('.cmd-btn[data-cmd=black]').click();assert.equal(vm.runInContext('state.prv',ctx),prv0,'buttons do not fire while moving');assert(!rd.black.on);
 cmd.nudge('gc1',-1);assert.equal(grid.children[0].dataset.cmd,'gc1','a button moves one place with the arrows');cmd.nudge('gc1',1);assert.deepEqual([...grid.children].map(b=>b.dataset.cmd),before,'and back');cmd.setMove(false);
 assert.equal(q('.mv-cell .cell-key').textContent,'1','the camera number is on the camera');
 assert.equal([...w.document.querySelectorAll('.mv-cell .cell-key')].slice(0,10).map(c=>c.textContent).join(''),'1234567890');
@@ -116,7 +116,16 @@ assert.equal(rd.vtNext(),false,'the armed VT is the last one');
 assert.equal(rd.vinhetaToPreview(),false,'no vinheta loaded yet');
 // BLACK (F1) e BARRAS (F2) direto no AR; atalhos configuráveis; ESC volta à Operação.
 const key=(k,code)=>w.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,code:code||k,bubbles:true,cancelable:true}));
-key('F1');assert(rd.black.on,'F1 = BLACK');key('F1');assert(!rd.black.on);key('F2');assert(rd.bars.on,'F2 = BARRAS');key('F2');assert(!rd.bars.on);
+// BLACK (F1) e BARRAS (F2) passam pelo PREVIEW; o direto no AR (emergência) ficou em Shift+F1 / Shift+F2.
+{const S=()=>vm.runInContext('({pgm:state.pgm,prv:state.prv})',ctx),keep=S(),BARS=rd.BARS_SOURCE;vm.runInContext('state.busy=false;state.progress=0;state.pgm=0;state.prv=1',ctx);
+key('F1');assert.equal(S().prv,10,'F1 puts BLACK (the black source) in PREVIEW');assert.equal(S().pgm,0,'and does not touch the air');assert(!rd.black.on);
+key('F2');assert.equal(S().prv,BARS,'F2 puts the BARS in PREVIEW');assert.equal(S().pgm,0);assert(!rd.bars.on,'no overlay on air');
+assert.equal(q('.cmd-btn[data-cmd=bars]').dataset.prv,'true','the BARRAS button shows it is in PREVIEW');
+vm.runInContext('cut()',ctx);assert.equal(S().pgm,BARS,'CUT takes the bars to air');assert.equal(q('.cmd-btn[data-cmd=bars]').getAttribute('aria-pressed'),'true','and the button shows it is on air');
+key('F1');vm.runInContext('cut()',ctx);assert.equal(S().pgm,10,'BLACK then CUT = black on air');
+key('F1','F1');const shiftKey=(k)=>w.dispatchEvent(new w.KeyboardEvent('keydown',{key:k,code:k,shiftKey:true,bubbles:true,cancelable:true}));
+shiftKey('F1');assert(rd.black.on,'Shift+F1 = BLACK direct on air (emergency)');shiftKey('F1');assert(!rd.black.on);shiftKey('F2');assert(rd.bars.on,'Shift+F2 = BARS direct on air');shiftKey('F2');assert(!rd.bars.on);
+vm.runInContext('state.pgm='+keep.pgm+';state.prv='+keep.prv,ctx);}
 // Números 1–9 e 0 = câmera direto no AR (CUT); F1–F12 são sempre da mesa (o navegador nunca recarrega, abre ajuda ou busca).
 {const A=Object.fromEntries(cmd.ACTIONS.map(x=>[x.id,x.key]));for(let i=0;i<10;i++)assert.equal(A['cam'+i],i<9?String(i+1):'0','key '+(i<9?i+1:0)+' = camera '+(i+1)+' straight to air');assert.equal(A.prv0,'','the old PREVIEW numbers are free');
 for(const f of ['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']){const ev=new w.KeyboardEvent('keydown',{key:f,bubbles:true,cancelable:true});w.dispatchEvent(ev);assert(ev.defaultPrevented,f+' never reaches the browser');}
@@ -132,7 +141,7 @@ assert(q('[data-tool=layers] #masterFader')&&q('[data-tool=layers] #masterFade')
 assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera and mosaic tools in the Câmeras bar');
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
-q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,12,'and hidden');
+q('.cmd-order-row:nth-child(2) button').click();assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'gc1','buttons can be reordered');q('.cmd-order-row:first-child input').click();assert.equal(q('[data-tool=bus] .cmd-grid').children.length,14,'and hidden');
 console.log('PASS: commands panel (button styles, audio switches in MASTER, VT timeline seek, custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');

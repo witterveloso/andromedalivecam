@@ -11,7 +11,7 @@
  */
 const rundownEl = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
 const audit = (level, code, message, data) => { try { window.andromedaAudit?.(level, code, message, data); } catch { /* auditoria opcional */ } };
-const VT_SOURCE = 12, VINHETA_SOURCE = 13;
+const VT_SOURCE = 12, VINHETA_SOURCE = 13, BARS_SOURCE = 14; // fontes que passam pelo PREVIEW (BLACK é a fonte 10, que já existia)
 
 /* ---------- tempo ---------- */
 // "5" = 5 min · "4:30" = 4 min 30 s · "1:00:00" = 1 h. Até 23:59:59.
@@ -55,7 +55,9 @@ function drawCountdown(ctx, W, H, left, preview = false) {
     ctx.font = '700 ' + size + "px 'JetBrains Mono', Consolas, 'Courier New', monospace"; const tw = ctx.measureText(text).width;
     ctx.font = '600 ' + Math.round(size * .34) + "px 'Exo 2', 'Segoe UI', sans-serif"; const lw = title ? ctx.measureText(title).width : 0;
     const bw = Math.max(tw, lw) + pad * 2, bh = size + pad * 2 + (title ? size * .46 : 0), m = Math.round(H * .035);
-    const x = c.corner.endsWith('right') ? W - bw - m : m, y = c.corner.startsWith('bottom') ? H - bh - m : m;
+    // Posição do relógio: 3 × 3 (em cima/meio/embaixo × esquerda/centro/direita). Os valores antigos (os 4 cantos) continuam valendo.
+    const pos = String(c.corner || 'bottom-right'), col = pos.endsWith('left') ? 0 : pos.endsWith('right') ? 2 : 1, row = pos.startsWith('top') ? 0 : pos.startsWith('bottom') ? 2 : 1;
+    const x = col === 0 ? m : col === 2 ? W - bw - m : (W - bw) / 2, y = row === 0 ? m : row === 2 ? H - bh - m : (H - bh) / 2;
     ctx.fillStyle = 'rgba(8, 11, 32, .86)'; ctx.fillRect(x, y, bw, bh); ctx.fillStyle = c.accent; ctx.fillRect(x, y + bh - Math.max(3, size * .06), bw * fraction, Math.max(3, size * .06));
     if (title) { ctx.fillStyle = c.color; ctx.globalAlpha = .85; ctx.fillText(title, x + bw / 2, y + pad + size * .2); ctx.globalAlpha = 1; }
     ctx.fillStyle = digits; ctx.font = '700 ' + size + "px 'JetBrains Mono', Consolas, 'Courier New', monospace"; ctx.fillText(text, x + bw / 2, y + bh - pad - size / 2);
@@ -110,22 +112,42 @@ function paintCountdown() {
   cdRow.dataset.state = !countdown.on ? 'off' : countdown.finished ? 'done' : left <= 10 ? 'last' : 'on';
 }
 
+/* ---------- onde fica o relógio da regressiva ---------- */
+const CD_POSITIONS = [['top-left', 'Em cima, à esquerda'], ['top-center', 'Em cima, no centro'], ['top-right', 'Em cima, à direita'], ['middle-left', 'No meio, à esquerda'], ['center', 'No centro da tela'], ['middle-right', 'No meio, à direita'], ['bottom-left', 'Embaixo, à esquerda'], ['bottom-center', 'Embaixo, no centro'], ['bottom-right', 'Embaixo, à direita']];
+const cdPickers = [];
+function paintCdPickers() {
+  for (const box of cdPickers) for (const btn of box.querySelectorAll('[data-pos]')) btn.setAttribute('aria-checked', String(countdown.style === 'full' ? btn.dataset.pos === 'full' : btn.dataset.pos === countdown.corner));
+  const style = document.querySelector('#cdStyle'); if (style) style.value = countdown.style;
+}
+// Um miniatura da tela com 9 posições: clicar escolhe onde o relógio compacto aparece; "Tela cheia" volta à abertura grande.
+function cdPositionPicker() {
+  const box = rundownEl('div', 'cd-pos'); box.setAttribute('role', 'radiogroup'); box.setAttribute('aria-label', 'Onde fica o relógio da regressiva');
+  const grid = rundownEl('div', 'cd-pos-grid');
+  for (const [id, label] of CD_POSITIONS) {
+    const b = rundownEl('button', 'cd-pos-btn'); b.type = 'button'; b.dataset.pos = id; b.title = label; b.setAttribute('role', 'radio'); b.setAttribute('aria-label', label);
+    b.onclick = () => { countdown.style = 'corner'; countdown.corner = id; saveCountdown(); paintCdPickers(); }; grid.append(b);
+  }
+  const full = rundownEl('button', 'cd-pos-full', 'Tela cheia (abertura)'); full.type = 'button'; full.dataset.pos = 'full'; full.setAttribute('role', 'radio');
+  full.onclick = () => { countdown.style = 'full'; saveCountdown(); paintCdPickers(); };
+  box.append(grid, full); cdPickers.push(box); paintCdPickers(); return box;
+}
+
 /* ---------- página GC e efeitos: estilo da regressiva ---------- */
 const cdCard = rundownEl('section', 'fx-card cd-card');
 cdCard.innerHTML = '<h3>Regressiva</h3><p class="cd-help">O botão <b>REGRESSIVA</b> fica em <b>Comandos</b> e entra direto no AR; o tempo se ajusta com duplo clique nele. Estes ajustes valem na hora, inclusive com a regressiva no AR.</p>' +
   '<label>Texto acima dos números<input id="cdTitle" maxlength="60" placeholder="Ex.: Começamos em"></label>' +
   '<label>Estilo<select id="cdStyle"><option value="full">Tela cheia · abertura (imagem do PGM escurecida ao fundo)</option><option value="corner">No canto · relógio compacto</option></select></label>' +
-  '<label>Canto<select id="cdCorner">' + corners + '</select></label>' +
+  '<div class="cd-pos-field"><span>Onde fica o relógio</span><div id="cdPosHost"></div></div>' +
   '<label>Ao zerar<select id="cdEnd"><option value="hold">Manter 00:00 no AR até retirar</option><option value="hide">Sair do AR sozinha</option><option value="cut">Sair do AR e cortar para o Preview (CUT)</option></select></label>' +
   '<div class="fx-colors"><label>Números e texto<input id="cdColor" type="color"></label><label>Destaque (barra e últimos 10 s)<input id="cdAccent" type="color"></label></div>' +
   '<small>Na saída 9:16 com recorte, prefira Tela cheia: o canto pode ficar fora do recorte vertical.</small>';
-$('.effects-editor').append(cdCard);
-function loadCdForm() { $('#cdTitle').value = countdown.title; $('#cdStyle').value = countdown.style; $('#cdCorner').value = countdown.corner; $('#cdEnd').value = countdown.end; $('#cdColor').value = countdown.color; $('#cdAccent').value = countdown.accent; $('#cdCorner').closest('label').hidden = countdown.style !== 'corner'; }
+$('.effects-editor').append(cdCard); $('#cdPosHost').append(cdPositionPicker());
+function loadCdForm() { $('#cdTitle').value = countdown.title; $('#cdStyle').value = countdown.style; $('#cdEnd').value = countdown.end; $('#cdColor').value = countdown.color; $('#cdAccent').value = countdown.accent; paintCdPickers(); }
 loadCdForm();
 cdCard.addEventListener('input', () => {
-  countdown.title = $('#cdTitle').value; countdown.style = $('#cdStyle').value === 'corner' ? 'corner' : 'full'; countdown.corner = $('#cdCorner').value;
+  countdown.title = $('#cdTitle').value; countdown.style = $('#cdStyle').value === 'corner' ? 'corner' : 'full';
   countdown.end = ['hold', 'hide', 'cut'].includes($('#cdEnd').value) ? $('#cdEnd').value : 'hold'; countdown.color = $('#cdColor').value; countdown.accent = $('#cdAccent').value;
-  $('#cdCorner').closest('label').hidden = countdown.style !== 'corner'; saveCountdown();
+  saveCountdown(); paintCdPickers();
 });
 const inspectCountdown = () => { inspecting = 'countdown'; $('#fxInspectLabel').textContent = 'Regressiva em edição'; };
 for (const type of ['focusin', 'pointerdown', 'input']) cdCard.addEventListener(type, inspectCountdown);
@@ -228,6 +250,7 @@ const ICONS = {
   play: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M3 1.4v9.2L10.4 6z" fill="currentColor"/></svg>',
   stop: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1" fill="currentColor"/></svg>',
   next: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d="M1.5 1.6v8.8L7.4 6z" fill="currentColor"/><rect x="8.2" y="1.6" width="2.4" height="8.8" rx=".5" fill="currentColor"/></svg>',
+  mic: '<svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><rect x="4" y="1" width="4" height="6" rx="2" fill="currentColor"/><path d="M2.5 5.5a3.5 3.5 0 0 0 7 0M6 9v2M4 11h4" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
 };
 // Rótulo com o sinal antes do nome. Só mexe no botão quando muda, para não refazer o desenho a cada tique.
 function iconLabel(el, icon, text) {
@@ -446,8 +469,12 @@ function toggleBars(force) {
   syncTone();
   log(bars.on ? 'BARRAS no AR' + (bars.tone ? ' com tom de 1 kHz' : '') : 'BARRAS fora do AR'); audit('info', bars.on ? 'barras-no-ar' : 'barras-fora', bars.on ? 'Barras de cor no AR' : 'Barras de cor fora do AR');
 }
+// BLACK e BARRAS entram pelo PREVIEW como qualquer fonte (CUT/AUTO levam ao AR); o "direto no AR" (emergência) continua nos atalhos Shift+F1 / Shift+F2.
+function blackToPreview() { select('prv', 10); return true; }
+function barsToPreview() { select('prv', BARS_SOURCE); return true; }
 async function syncTone() {
-  const want = bars.on && bars.tone;
+  // O tom de 1 kHz acompanha as barras: no AR pelo atalho direto ou quando a fonte BARRAS está no AR.
+  const want = (bars.on || (typeof state !== 'undefined' && state.pgm === BARS_SOURCE)) && bars.tone;
   if (want && !bars.osc) {
     try {
       const ac = await audioMixer.enable();
@@ -484,6 +511,7 @@ drawFx = function (ctx, canvas, settings, logo, t) {
 const rundownBaseInspection = inspectionSettings;
 inspectionSettings = function () { return inspecting === 'countdown' ? structuredClone(fx.draft) : rundownBaseInspection(); };
 
+setInterval(() => { const want = (bars.on || state.pgm === BARS_SOURCE) && bars.tone; if (want !== !!bars.osc) syncTone(); }, 250);
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
-window.andromedaRundown = { vtSeek, setVinhetaLoop, setVinhetaAudio, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
-  addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };
+window.andromedaRundown = { cdPositionPicker, CD_POSITIONS, vtSeek, setVinhetaLoop, setVinhetaAudio, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
+  addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, blackToPreview, barsToPreview, drawBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE, BARS_SOURCE };

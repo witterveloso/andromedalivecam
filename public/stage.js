@@ -234,9 +234,10 @@
     for (const [bus, { el, text, badge }] of Object.entries(strips)) {
       if (window.andromedaPlayerInfo?.(bus, el)) continue; // VT/vinheta: a faixa é dos reprodutores
       const i = state[bus];
-      const ok = i === MOSAIC || i === 10 || live(i);
+      const ok = i === MOSAIC || i === 10 || i === 14 || live(i);
       if (i === MOSAIC) text.textContent = 'MOSAICO · ' + stage.members.length + ' câmera(s)';
       else if (i === 10) text.textContent = 'PRETO';
+      else if (i === 14) text.textContent = 'BARRAS DE COR · 75%' + (window.andromedaRundown?.bars.tone ? ' · TOM 1 kHz' : '');
       else if (!live(i)) text.textContent = 'Aguardando fonte neste canal';
       else { const [w, h] = dims(media[i].element); text.textContent = kind(i) + ' · ' + w + '×' + h + (h > w ? ' · VERTICAL' : ''); }
       badge.textContent = ok ? 'VÍDEO OK' : 'SEM SINAL'; el.dataset.ok = String(ok);
