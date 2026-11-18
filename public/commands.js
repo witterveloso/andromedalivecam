@@ -12,17 +12,17 @@
  */
 (() => {
   const R = window.andromedaRundown; if (!R) return;
-  const { VT_SOURCE, VINHETA_SOURCE, countdown, vtPlayer, vinhetaPlayer, black, bars } = R;
+  const { VT_SOURCE, VINHETA_SOURCE, BARS_SOURCE, countdown, vtPlayer, vinhetaPlayer, black, bars } = R;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const store = { get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sem armazenamento */ } } };
 
   /* ---------- VT e vinheta como fontes (12 e 13) ---------- */
-  sources[VT_SOURCE] = sources[VT_SOURCE] || 'VT'; sources[VINHETA_SOURCE] = sources[VINHETA_SOURCE] || 'VINHETA';
+  sources[VT_SOURCE] = sources[VT_SOURCE] || 'VT'; sources[VINHETA_SOURCE] = sources[VINHETA_SOURCE] || 'VINHETA'; sources[BARS_SOURCE] = 'BARRAS';
   const baseSource = source;
-  source = function (ctx, i, t, clean = false) { if (i === VT_SOURCE || i === VINHETA_SOURCE) { R.drawPlayer(ctx, ctx.canvas.width, ctx.canvas.height, i, clean); return; } baseSource(ctx, i, t, clean); };
+  source = function (ctx, i, t, clean = false) { if (i === VT_SOURCE || i === VINHETA_SOURCE) { R.drawPlayer(ctx, ctx.canvas.width, ctx.canvas.height, i, clean); return; } if (i === BARS_SOURCE) { R.drawBars(ctx, ctx.canvas.width, ctx.canvas.height); return; } baseSource(ctx, i, t, clean); };
   const baseSelect = select;
   select = function (bus, i) {
-    if (i !== VT_SOURCE && i !== VINHETA_SOURCE) { baseSelect(bus, i); return; }
+    if (i !== VT_SOURCE && i !== VINHETA_SOURCE && i !== BARS_SOURCE) { baseSelect(bus, i); return; }
     if (state.busy || state.progress > 0) return;
     state[bus] = i; sync(); log(sources[i] + ' no ' + (bus === 'prv' ? 'PREVIEW' : 'AR'));
   };
@@ -51,17 +51,9 @@
   const BUTTON_STYLES = [['vidro', 'Vidro'], ['neon', 'Neon'], ['console', 'Console (tecla com LED)'], ['solido', 'Sólido'], ['classico', 'Clássico']];
   for (const [v, t] of BUTTON_STYLES) tools.querySelector('.cmd-style select').add(new Option(t, v));
   bus.append(tools, grid);
-  const moveBtn = make('button', 'cmd-move-toggle'); moveBtn.type = 'button'; moveBtn.setAttribute('aria-pressed', 'false');
-  function setMove(on) {
-    bus.dataset.move = String(!!on); moveBtn.setAttribute('aria-pressed', String(!!on));
-    moveBtn.textContent = on ? '✓ Concluir' : '✥ Mover botões';
-    moveBtn.title = on ? 'Termina a reorganização: os botões voltam a funcionar.' : 'Reorganiza os botões deste painel: arraste ou use ‹ ›. Enquanto isso, os botões não disparam nada.';
-  }
+  // O modo de mover os botões dos Comandos é o do Personalizar (arrastar, ‹ › e a barra de tamanho). Sem botão no painel.
+  function setMove(on) { bus.dataset.move = String(!!on); }
   setMove(false);
-  { const handle = busShell.querySelector(':scope > .dock-handle');
-    if (handle) { const box = make('span', 'dock-tools cmd-move-box'); box.append(moveBtn); for (const type of ['pointerdown', 'keydown']) box.addEventListener(type, e => e.stopPropagation()); handle.insertBefore(box, handle.querySelector('.free-size')); }
-    else bus.prepend(moveBtn); }
-  moveBtn.onclick = () => { setMove(bus.dataset.move !== 'true'); buildGrid(); };
   keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
   const gcName = n => (fx.live.layers[n]?.name || 'GC ' + (n + 1));
@@ -71,16 +63,28 @@
     { id: 'gc2', name: () => 'GC · ' + gcName(2), run: () => $('#fxGC2').click(), on: () => fx.live.layers[2]?.on, settings: () => openGC(2) },
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
-    { id: 'pip', name: () => 'PiP', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
+    { id: 'pip', name: () => 'JANELA', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
     { id: 'vinheta', name: () => 'VINHETA', sub: () => (vinhetaPlayer.loop ? '↻ ' : '') + (vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo') + (vinhetaPlayer.loop && !vinhetaPlayer.running ? ' · LOOP' : '') + (vinhetaPlayer.audio === false ? ' · SEM ÁUDIO' : ''), run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
-    { id: 'black', name: () => 'BLACK', run: () => R.toggleBlack(), on: () => black.on, settings: b => popBlack(b) },
+    { id: 'black', name: () => 'BLACK', sub: () => black.on ? 'direto no AR' : '', run: () => R.blackToPreview(), on: () => state.pgm === 10 || black.on, prv: () => state.prv === 10, settings: b => popBlack(b) },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
     { id: 'vtnext', name: () => 'PRÓXIMO VT', icon: () => 'next', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
     { id: 'vtpause', name: () => vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT', icon: () => vtPlayer.paused ? 'play' : 'pause', sub: () => vtPlayer.running ? (vtPlayer.paused ? 'pausado' : 'tocando') : 'sem VT no ar', run: () => R.vtPause(), on: () => !!vtPlayer.paused, prv: () => false, settings: () => openVT() },
     { id: 'vtstop', name: () => 'PARAR VT', icon: () => 'stop', sub: () => state.pgm === VT_SOURCE ? 'tira do ar' : 'sem VT no ar', run: () => R.vtStop(), on: () => false, prv: () => false, settings: () => openVT() },
-    { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.toggleBars(), on: () => bars.on, settings: b => popBars(b) },
+    // MOSAICO: as câmeras marcadas com o M (no multiview) numa grade só; entra pelo PREVIEW como as demais fontes.
+    { id: 'mosaic', name: () => 'MOSAICO', sub: () => { const n = (window.andromedaStage?.members || []).length; return n ? n + (n === 1 ? ' câmera' : ' câmeras') : 'marque com M'; }, run: () => select('prv', 11), on: () => state.pgm === 11, prv: () => state.prv === 11, settings: () => openMosaic() },
+    // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
+    { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
+    { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
   ];
   const byId = id => COMMANDS.find(c => c.id === id);
+  const intercomState = () => !camDesk.mic ? 'toque para ativar' : camDesk.talking ? '● falando' : 'ativo · toque p/ falar';
+  function intercomToggle() {
+    if (!camDesk.mic) { $('#dtvEnable')?.click(); return true; } // pede o microfone; a página do intercom mostra o resultado
+    if ($('#dtvTalk')?.disabled) return false; setDtvTalk(!camDesk.talking); return true;
+  }
+  // Duplo clique no MOSAICO: leva às câmeras do multiview, onde cada uma tem o botão M para entrar ou sair do mosaico.
+  function openMosaic() { openWorkspace('operation'); const panel = $('[data-tool=cameras]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
+  function openIntercom() { openWorkspace('operation'); const panel = $('[data-tool=intercom]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   const LAYOUT_KEY = 'andromeda.commands.v1';
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
@@ -118,12 +122,19 @@
   // O estilo vale nos painéis Comandos e Master, mesmo que estejam na segunda tela.
   function applyStyle() { for (const el of [grid, document.querySelector('.master-panel')]) if (el) el.dataset.btnStyle = cmdLayout.style; }
   function resetLook() { cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [], size: 100, cols: 4, wide: [], custom: false, style: cmdLayout.style }; saveCmdLayout(); }
+  // Todos os botões usam a MESMA fonte: o tamanho acompanha a largura da coluna (e a barra de tamanho), igual para todos.
+  function fitFont() {
+    const cs = getComputedStyle(grid), inner = grid.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), gap = parseFloat(cs.columnGap) || 0, col = (inner - gap * (cmdLayout.cols - 1)) / cmdLayout.cols;
+    if (!(col > 20)) return; grid.style.setProperty('--cmd-font', (Math.max(9, Math.min(12.5, col * 0.14)) * cmdLayout.size / 100).toFixed(2) + 'px');
+  }
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => fitFont()).observe(grid);
   let dragId = null;
   function buildGrid() {
     grid.replaceChildren(); buttons.clear();
     grid.style.setProperty('--cmd-scale', String(cmdLayout.size / 100)); grid.style.setProperty('--cmd-cols', String(cmdLayout.cols));
     grid.dataset.custom = String(cmdLayout.custom);
     grid.dataset.fit = String(cmdLayout.size === 100); // 100% = os botões ocupam o painel inteiro, sem rolar
+    fitFont();
     const range = tools.querySelector('input'), sel = tools.querySelector('.cmd-cols select');
     range.value = String(cmdLayout.size); tools.querySelector('output').textContent = cmdLayout.size + '%'; sel.value = String(cmdLayout.cols);
     tools.querySelector('.cmd-style select').value = cmdLayout.style; applyStyle();
@@ -159,7 +170,7 @@
       if (c.icon) R.iconLabel(b.querySelector('.cmd-name'), c.icon(), c.name()); else b.querySelector('.cmd-name').textContent = c.name(); b.querySelector('.cmd-sub').textContent = sub;
       const key = keyOf(id); b.querySelector('.cmd-key').textContent = key ? prettyKey(key) : '';
       b.setAttribute('aria-pressed', String(on)); b.dataset.prv = String(prv);
-      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vtpause: 'pausa o VT no AR / continua', vtstop: 'para o VT e o tira do ar', vtnext: 'com VT no AR troca já para o seguinte; sem VT no AR arma o próximo da playlist', vinheta: 'leva ao PREVIEW', countdown: 'entra/sai do AR', black: 'fade para o preto / volta', bars: 'barras no AR / retira' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
+      b.title = (on ? 'No AR. ' : prv ? 'No PREVIEW. ' : '') + 'Clique: ' + ({ vt: 'leva ao PREVIEW', vtpause: 'pausa o VT no AR / continua', vtstop: 'para o VT e o tira do ar', vtnext: 'com VT no AR troca já para o seguinte; sem VT no AR arma o próximo da playlist', vinheta: 'leva ao PREVIEW', mosaic: 'leva o mosaico das câmeras marcadas com M ao PREVIEW', intercom: 'ativa o intercom; depois abre e fecha o microfone para as câmeras', countdown: 'entra/sai do AR', black: 'leva o PRETO ao PREVIEW (CUT ou AUTO levam ao AR)', bars: 'leva as BARRAS ao PREVIEW (CUT ou AUTO levam ao AR)' }[id] || 'coloca/retira do AR') + '. Duplo clique: ajustes.' + (key ? ' Atalho: ' + prettyKey(key) + '.' : '');
     }
   }
   setInterval(paint, 200);
@@ -200,7 +211,8 @@
   function popCountdown(b) {
     R.cdRow.hidden = false;
     const more = make('button', 'cmd-pop-link', 'Texto, estilo e cores…'); more.type = 'button'; more.onclick = () => { closePop(); openFx('#cdTitle'); };
-    openPop(b, 'Regressiva', R.cdRow, note('Ajuste o tempo (ex.: 5:00) antes de colocar no AR. Com ela no AR: pausar ou reiniciar.'), more);
+    const where = make('div', 'cmd-pop-field'); where.append(make('span', '', 'Onde fica o relógio'), R.cdPositionPicker());
+    openPop(b, 'Regressiva', R.cdRow, where, note('Ajuste o tempo (ex.: 5:00) antes de colocar no AR. Escolha a posição do relógio (ou Tela cheia); vale na hora, inclusive com ela no AR. Com ela no AR: pausar ou reiniciar.'), more);
   }
   function popVinheta(b) {
     const label = make('label', 'cmd-pop-field', 'Vídeo da vinheta'), input = make('input'); input.type = 'file'; input.accept = 'video/*'; label.append(input);
@@ -226,13 +238,13 @@
   function popBlack(b) {
     const label = make('label', 'cmd-pop-field', 'Tempo do fade (segundos)'), input = make('input'); input.type = 'number'; input.min = '0'; input.max = '10'; input.step = '0.1'; input.value = String(black.seconds);
     input.onchange = () => { const v = Number(input.value); if (v >= 0 && v <= 10) { black.seconds = v; store.set('andromeda.black.v1', v); } }; label.append(input);
-    openPop(b, 'BLACK', label, note('BLACK escurece toda a saída do AR (inclusive GC, logotipo e regressiva). Clique de novo para voltar.'));
+    openPop(b, 'BLACK', label, note('BLACK leva o PRETO ao PREVIEW; CUT ou AUTO levam ao AR (com AUTO a saída escurece pela transição escolhida). Para voltar, escolha uma câmera no PREVIEW e dê CUT/AUTO. O tempo acima vale só para o BLACK direto no AR (atalho Shift+F1, para emergência), que escurece tudo, inclusive GC, logotipo e regressiva.'));
   }
   black.seconds = Number(store.get('andromeda.black.v1', .5)) || 0;
   function popBars(b) {
     const label = make('label', 'cmd-pop-check'), input = make('input'); input.type = 'checkbox'; input.checked = bars.tone; label.append(input, ' Tom de referência 1 kHz (−18 dBFS)');
     input.onchange = () => { bars.tone = input.checked; R.syncTone(); paint(); };
-    openPop(b, 'Barras de cor', label, note('BARRAS cobre a saída do AR com barras de cor (75%), para alinhar monitores e plataformas antes do programa.'));
+    openPop(b, 'Barras de cor', label, note('BARRAS leva as barras de cor (75%) ao PREVIEW; CUT ou AUTO levam ao AR, para alinhar monitores e plataformas antes do programa. O tom liga junto com as barras no AR. Atalho Shift+F2 coloca as barras direto no AR (emergência).'));
   }
 
   /* ---------- Áudio master (no lugar de "Camadas no ar") ---------- */
@@ -349,14 +361,17 @@
     { id: 'mosaic', label: 'Mosaico no PREVIEW', key: 'M', run: () => select('prv', 11) },
     { id: 'cut', label: 'CUT', key: 'Space', run: () => cut() },
     { id: 'auto', label: 'AUTO', key: 'Enter', run: () => auto() },
-    { id: 'black', label: 'BLACK (fade para o preto)', key: 'F1', run: () => R.toggleBlack() },
-    { id: 'bars', label: 'BARRAS de cor', key: 'F2', run: () => R.toggleBars() },
+    { id: 'black', label: 'BLACK no PREVIEW', key: 'F1', run: () => R.blackToPreview() },
+    { id: 'blackNow', label: 'BLACK direto no AR (fade, emergência)', key: 'Shift+F1', run: () => R.toggleBlack() },
+    { id: 'intercom', label: 'INTERCOM (ativar / abrir e fechar o microfone)', key: '', run: () => intercomToggle() },
+    { id: 'bars', label: 'BARRAS de cor no PREVIEW', key: 'F2', run: () => R.barsToPreview() },
+    { id: 'barsNow', label: 'BARRAS direto no AR (emergência)', key: 'Shift+F2', run: () => R.toggleBars() },
     { id: 'gc0', label: 'GC 1', key: 'F3', run: () => byId('gc0').run() },
     { id: 'gc1', label: 'GC 2', key: 'F4', run: () => byId('gc1').run() },
     { id: 'gc2', label: 'GC 3', key: 'F5', run: () => byId('gc2').run() },
     { id: 'logo', label: 'LOGO', key: 'F6', run: () => byId('logo').run() },
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
-    { id: 'pip', label: 'PiP', key: 'F8', run: () => byId('pip').run() },
+    { id: 'pip', label: 'JANELA (imagem dentro da imagem)', key: 'F8', run: () => byId('pip').run() },
     { id: 'vt', label: 'VT no PREVIEW', key: 'F9', run: () => R.vtToPreview() },
     { id: 'vtnext', label: 'VT PRÓXIMO (dispara o próximo da playlist)', key: 'Shift+F9', run: () => R.vtNext() },
     { id: 'vtpause', label: 'VT PAUSAR / CONTINUAR', key: 'Shift+F7', run: () => R.vtPause() },
@@ -428,7 +443,6 @@
   addEventListener('keydown', e => {
     if (capturing) return;
     if (e.key === 'Escape') {
-      if (bus.dataset.move === 'true') { setMove(false); buildGrid(); return; } // ESC termina o "Mover botões"
       // ESC volta para a Operação (fora de janelas, edição de layout e campos de texto).
       if (document.querySelector('dialog[open]') || document.body.classList.contains('layout-editing') || typing(e.target) || !pop.hidden) return;
       openWorkspace('operation'); return;

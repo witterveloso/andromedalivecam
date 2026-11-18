@@ -1,8 +1,8 @@
 'use strict';
 /*
  * Trocar os botões de lugar em todas as funções.
- * Cada painel com grupos de botões ganha o botão "✥ Mover botões" no título. Ligado, os botões do painel deixam de disparar,
- * podem ser arrastados ou escolhidos com um clique e movidos com ‹ › (ou as setas do teclado). A ordem fica salva por grupo.
+ * Com o PERSONALIZAR aberto, os botões dos painéis deixam de disparar e podem ser arrastados, ou escolhidos com um clique e movidos
+ * com ‹ › (ou as setas do teclado), com Restaurar no título do painel. Fora do Personalizar não há nenhum botão de mover. A ordem fica salva por grupo.
  * O painel Comandos tem o seu próprio modo (commands.js); aqui ficam os outros: corte e transições, áudio master, VT, intercom e
  * o controle de câmera (lentes, posições salvas e exposição).
  */
@@ -50,7 +50,6 @@
   function setMoving(panel, on) {
     const p = panels.get(panel); if (!p) return;
     p.moving = on; panel.dataset.arrange = String(on);
-    p.toggle.setAttribute('aria-pressed', String(on)); p.toggle.textContent = on ? '✓ Concluir' : '✥ Mover botões';
     p.tools.hidden = !on; if (!on) select(p, null);
     for (const g of p.groups) for (const el of groupItems(g)) { el.draggable = on; }
   }
@@ -88,7 +87,6 @@
     let p = panels.get(panel);
     if (!p) {
       p = { groups: [], moving: false, selected: null };
-      p.toggle = make('button', 'arr-toggle', '✥ Mover botões'); p.toggle.type = 'button'; p.toggle.setAttribute('aria-pressed', 'false'); p.toggle.title = 'Troca os botões deste painel de lugar: arraste, ou clique num botão e use ‹ ›. Enquanto isso, os botões não disparam nada.';
       p.tools = make('span', 'arr-tools'); p.tools.hidden = true;
       const left = make('button', 'arr-step', '‹'), right = make('button', 'arr-step', '›'), reset = make('button', 'arr-reset', 'Restaurar');
       for (const b of [left, right, reset]) b.type = 'button';
@@ -96,18 +94,18 @@
       left.onclick = () => nudge(p, -1); right.onclick = () => nudge(p, 1);
       reset.onclick = () => { for (const x of p.groups) { delete orders[x.key]; apply(x); } store.set(orders); };
       p.tools.append(left, right, reset);
-      const box = make('span', 'dock-tools arr-box'); box.append(p.toggle, p.tools); for (const type of ['pointerdown', 'keydown']) box.addEventListener(type, e => e.stopPropagation());
+      const box = make('span', 'dock-tools arr-box'); box.append(p.tools); for (const type of ['pointerdown', 'keydown']) box.addEventListener(type, e => e.stopPropagation());
       const handle = panel.querySelector(':scope > .dock-handle');
       if (handle) handle.insertBefore(box, handle.querySelector('.free-size')); else panel.prepend(box);
-      p.toggle.onclick = () => setMoving(panel, !p.moving);
       panels.set(panel, p);
     }
-    p.groups.push(g); wire(g, p); apply(g); g.observer.observe(el, { childList: true });
+    p.groups.push(g); wire(g, p); apply(g); g.observer.observe(el, { childList: true }); follow();
     if (p.moving) for (const x of groupItems(g)) x.draggable = true;
     return true;
   }
   // Os painéis nascem em momentos diferentes (alguns só quando o celular conecta); tenta de novo até achar todos.
   function scan() { for (const def of GROUPS) attach(def); }
-  scan(); setTimeout(scan, 400); setTimeout(scan, 1500); setInterval(scan, 3000);
+  const follow = () => { for (const [panel, p] of panels) { const want = !!panel.ownerDocument?.body?.classList.contains('layout-editing'); if (want !== p.moving) setMoving(panel, want); } };
+  scan(); setTimeout(scan, 400); setTimeout(scan, 1500); setInterval(scan, 3000); setInterval(follow, 250);
   window.andromedaArrange = { scan, orders: () => orders, groups: () => GROUPS.map(g => g.key), setMoving: (tool, on) => { const panel = document.querySelector('.dock-panel[data-tool="' + tool + '"]'); if (panel) setMoving(panel, on); }, nudgeSelected: (tool, dir) => { const panel = document.querySelector('.dock-panel[data-tool="' + tool + '"]'); const p = panels.get(panel); if (p) nudge(p, dir); }, select: (tool, el) => { const p = panels.get(document.querySelector('.dock-panel[data-tool="' + tool + '"]')); if (p) select(p, el); } };
 })();

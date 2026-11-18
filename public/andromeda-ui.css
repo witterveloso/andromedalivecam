@@ -1195,3 +1195,33 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .arr-dragging { opacity: .45; }
 .arr-drop-before { box-shadow: inset 4px 0 0 var(--brand-blue, #00a3ff); }
 .arr-drop-after { box-shadow: inset -4px 0 0 var(--brand-blue, #00a3ff); }
+
+/* 0.21.10: o mover botões só existe com o Personalizar aberto (sem botão "Mover botões" nos painéis). */
+.cmd-move-toggle, .cmd-move-box, .arr-toggle { display: none !important; }
+.layout-editing .free-grid > .dock-panel [data-arr-group] { pointer-events: auto; }
+.layout-editing .free-grid > .dock-panel > .dock-handle .arr-box { pointer-events: auto; }
+
+/* 0.21.10: mesma fonte em todos os botões dos Comandos (o tamanho vem da largura da coluna: --cmd-font) e o botão INTERCOM. */
+.cmd-btn[data-cmd="vtnext"] .cmd-name, .cmd-btn[data-cmd="vtpause"] .cmd-name, .cmd-btn[data-cmd="vtstop"] .cmd-name { font-size: inherit; letter-spacing: .02em; }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-btn { font-size: var(--cmd-font, calc(12px * var(--cmd-scale))); }
+.free-grid > .dock-panel[data-tool="bus"] .cmd-name { font-size: 1em; letter-spacing: .02em; }
+.cmd-btn[data-cmd="intercom"][data-prv="true"] .cmd-sub { color: var(--d-pvw-text); }
+.cmd-btn[data-cmd="intercom"][aria-pressed="true"] { animation: cmdTalk 1.2s ease-in-out infinite; }
+@keyframes cmdTalk { 50% { box-shadow: 0 0 0 3px rgba(255, 0, 51, .35), 0 0 18px rgba(255, 0, 51, .5); } }
+
+/* ---------- Regressiva: onde fica o relógio (miniatura da tela com 9 posições) ---------- */
+.cd-pos { display: grid; gap: 8px; justify-items: start; }
+.cd-pos-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 4px; width: 168px; aspect-ratio: 16 / 9; padding: 6px; border: 1px solid var(--d-line-2); border-radius: 8px; background: #05070b; }
+.cd-pos-btn { min-height: 0; min-width: 0; padding: 0; border: 1px dashed var(--d-line-2); border-radius: 4px; background: transparent; }
+.cd-pos-btn:hover { border-color: var(--brand-blue, #00a3ff); background: rgba(0, 163, 255, .14); }
+.cd-pos-btn[aria-checked="true"] { border: 1px solid #7fd0ff; background: var(--brand-blue, #00a3ff); box-shadow: 0 0 10px rgba(0, 163, 255, .55); }
+.cd-pos-full { min-height: 26px; padding: 2px 12px; font: 700 11px var(--d-display); }
+.cd-pos-full[aria-checked="true"] { background: var(--brand-blue, #00a3ff); border-color: #7fd0ff; color: #fff; }
+.cd-pos-field { display: grid; gap: 6px; color: var(--d-muted); font-size: 12px; }
+
+/* 0.21.10: o botão BARRAS usa as cores das barras de cor (as sete faixas SMPTE), em qualquer estilo de botão. */
+.cmd-grid .cmd-btn[data-cmd="bars"] { background: linear-gradient(90deg, #bfbfbf 0 14.285%, #bfbf00 0 28.57%, #00bfbf 0 42.855%, #00bf00 0 57.14%, #bf00bf 0 71.425%, #bf0000 0 85.71%, #0000bf 0 100%) !important; border-color: rgba(255, 255, 255, .55); color: #fff; }
+.cmd-grid .cmd-btn[data-cmd="bars"] .cmd-name { padding: 1px 7px; border-radius: 4px; background: rgba(0, 0, 0, .62); color: #fff; text-shadow: none; }
+.cmd-grid .cmd-btn[data-cmd="bars"] .cmd-sub, .cmd-grid .cmd-btn[data-cmd="bars"] .cmd-key { padding: 0 4px; border-radius: 3px; background: rgba(0, 0, 0, .55); color: #fff; }
+.cmd-grid .cmd-btn[data-cmd="bars"][data-prv="true"] { border-color: #5fe39c; box-shadow: 0 0 0 2px rgba(95, 227, 156, .75), 0 0 16px rgba(34, 195, 106, .5); }
+.cmd-grid .cmd-btn[data-cmd="bars"][aria-pressed="true"] { border-color: #ff5c7c; box-shadow: 0 0 0 2px #ff0033, 0 0 20px rgba(255, 0, 51, .6); }

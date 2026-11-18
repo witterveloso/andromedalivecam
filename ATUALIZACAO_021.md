@@ -1,5 +1,19 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.10
+- **Mover botões só no Personalizar.** O botão **✥ Mover botões** saiu de todos os painéis. Agora, ao abrir o **Personalizar**, os botões dos painéis (Comandos, Corte e transições, Áudio master, VT, Intercom e Controle de câmera) já ficam prontos para mover, sem clique extra: arraste, ou clique no botão e use **‹ ›**, e **Restaurar** no título do painel. Fechando o Personalizar, tudo volta a funcionar normalmente.
+- **Mesma fonte em todos os botões dos Comandos.** PRÓXIMO VT, PAUSAR VT e PARAR VT tinham letra menor que os demais. Agora todos usam o mesmo tamanho, calculado pela largura da coluna (e pela barra de tamanho), e os nomes longos quebram em duas linhas em vez de encolher.
+- **Botão INTERCOM nos Comandos.** O **1º toque ativa o intercom** (pede o microfone, igual ao "Habilitar fone e microfone" do painel Intercom); depois, **cada toque abre ou fecha o microfone** para as câmeras. Fica verde com o intercom ativo e **pulsa em vermelho enquanto você fala**. Duplo clique leva ao painel do Intercom. Pode receber uma tecla em *Personalizar → Atalhos do teclado* (a ação "INTERCOM"). Em instalações que já tinham os Comandos arrumados, o botão entra no fim.
+- **BLACK e BARRAS passam pelo PREVIEW.** Antes os dois iam direto para o ar. Agora, como o VT e a vinheta:
+  - **BLACK** (F1) leva o **PRETO** ao **PREVIEW**; **CUT** ou **AUTO** levam ao AR (com AUTO a saída escurece pela transição escolhida). Para voltar, escolha uma câmera no PREVIEW e dê CUT ou AUTO.
+  - **BARRAS** (F2) leva as **barras de cor (75%)** ao **PREVIEW**; CUT ou AUTO levam ao AR. O **tom de 1 kHz** (opção no ajuste das barras) só toca quando as barras estão **no AR**, não no PREVIEW.
+  - Os botões mostram o estado como os outros: verde com a fonte no PREVIEW e vermelho no AR. A faixa sob o monitor diz "PRETO" ou "BARRAS DE COR · 75%".
+  - **Direto no AR (emergência):** o comportamento antigo continua em **Shift+F1** (BLACK com fade, escurece tudo, inclusive GC, logotipo e regressiva) e **Shift+F2** (BARRAS por cima da saída). O tempo do fade nos ajustes do BLACK vale para o Shift+F1. Os atalhos podem ser trocados em *Personalizar → Atalhos do teclado*.
+- **MOSAICO nos Comandos.** Novo botão que leva o mosaico (as câmeras marcadas com **M**) ao **PREVIEW**; CUT ou AUTO levam ao AR. Mostra quantas câmeras estão no mosaico; sem câmeras marcadas ele avisa em vez de mudar. Duplo clique leva ao painel de câmeras.
+- **Regressiva: onde fica o relógio.** Nova miniatura da tela com **9 posições** (em cima, meio e embaixo × esquerda, centro e direita) e a opção **Tela cheia (abertura)**. Aparece no **duplo clique do botão REGRESSIVA** e no cartão da Regressiva em **GC e efeitos**; vale na hora, inclusive com a regressiva no AR, e a escolha fica salva.
+- **PiP agora se chama JANELA** (botão, rótulos de GC e efeitos, atalho e avisos).
+- **Botão BARRAS nas cores do color bar:** as 7 faixas (branco, amarelo, ciano, verde, magenta, vermelho, azul), mantendo o brilho verde no PREVIEW e vermelho no AR.
+
 ## 0.21.9
 ### Controle de câmera
 - **Botão para ativar o controle.** O painel nasce **desligado** ("⏻ Ativar controle de câmera") e nada é enviado ao celular enquanto estiver assim. Ativo, o botão mostra **● Controle ATIVO**, os comandos passam a valer e **abre um preview de vídeo ao lado** da câmera escolhida, com o nome, o selo **NO AR** ou **PREVIEW**, grade de enquadramento (opcional) e a leitura do zoom, da exposição e do branco. A escolha de ligado/desligado fica salva.

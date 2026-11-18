@@ -91,7 +91,7 @@
       // Sem texto (ou sem imagem), a mesa abriria a página de efeitos na tela do operador: o comando remoto é recusado.
       case 'gc': { const l = g.fx()?.live.layers[i]; if (!gcReady(l)) { refusal = 'Este GC está sem texto. Preencha na mesa (GC e efeitos) antes.'; return false; } done = click(document.querySelector('#fxGC' + i)); what = 'GC ' + l.name; break; }
       case 'logo': if (!g.fx()?.logo) { refusal = 'Nenhum logotipo carregado na mesa.'; return false; } done = click(document.querySelector('#fxLogo')); what = 'Logotipo'; break;
-      case 'pip': done = click(document.querySelector('#fxPip')); what = 'PiP'; break;
+      case 'pip': done = click(document.querySelector('#fxPip')); what = 'Janela'; break;
       case 'clear': done = click(document.querySelector('#fxClear')); what = 'Retirar camadas'; break;
       case 'amode': { const sel = document.querySelectorAll('.source-strip')[i]?.querySelector('select'); if (!sel || !['off', 'afv', 'on'].includes(cmd.value)) return false; sel.value = cmd.value; sel.dispatchEvent(new Event('change')); done = true; what = 'Áudio ' + ((typeof sources !== 'undefined' ? sources[i] : '') || i) + ': ' + cmd.value.toUpperCase(); break; }
       case 'avol': { const r = document.querySelectorAll('.source-strip')[i]?.querySelector('input[type=range]'); if (!r || !Number.isFinite(cmd.value)) return false; r.value = String(Math.round(Math.min(1, Math.max(0, cmd.value)) * 100)); r.dispatchEvent(new Event('input')); return true; }
