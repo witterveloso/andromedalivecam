@@ -264,7 +264,8 @@
       if (!slides.decks.includes(d) || d.reader == null) return;
       try { const dr = await d.reader.render(i, THUMB[0] * 2, THUMB[1] * 2); d.thumbs[i] = dr; } catch { d.thumbs[i] = null; }
       if (slides.active === d) paintThumb(i);
-      if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+      // As miniaturas são geradas aos poucos para não pesar na transmissão: uma pausa a cada página, maior em apresentações grandes.
+      await new Promise(r => setTimeout(r, d.count > 60 ? 90 : 35));
     }
   }
   function paintThumb(i) {

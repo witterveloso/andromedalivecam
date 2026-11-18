@@ -39,6 +39,7 @@
     return detectors[kind];
   }
   const grabCanvas = document.createElement('canvas'); grabCanvas.width = 96; grabCanvas.height = 54; const grabCtx = grabCanvas.getContext('2d', { willReadFrequently: true });
+  const feed = document.createElement('canvas'), feedCtx = feed.getContext('2d');
   let lastStamp = 0;
   async function detect(s) {
     const el = typeof media !== 'undefined' ? media[s.i]?.element : null, W = el ? (el.videoWidth || el.naturalWidth || 0) : 0, H = el ? (el.videoHeight || el.naturalHeight || 0) : 0;
@@ -50,8 +51,10 @@
       const d = s.motion.update(gray); return d ? [d] : [];
     }
     const det = await detector(kind), stamp = Math.max(performance.now(), lastStamp + 1); lastStamp = stamp;
-    if (kind === 'face') return det.detectForVideo(el, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height / 2) / H, w: b.width / W, h: b.height / H, kind: 'face', score: d.categories?.[0]?.score || 0 }; });
-    return det.detectForVideo(el, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height * (s.cfg.frame === 'corpo' ? 0.5 : 0.4)) / H, w: b.width / W, h: b.height / H, kind: 'person', score: d.categories?.[0]?.score || 0 }; });
+    // Fontes que não são <video> (imagem de entrada Blackmagic, por exemplo) passam por uma tela intermediária.
+    let src = el; if (!(el instanceof HTMLVideoElement)) { feed.width = Math.min(960, W); feed.height = Math.round(feed.width * H / W); feedCtx.drawImage(el, 0, 0, feed.width, feed.height); src = feed; }
+    if (kind === 'face') return det.detectForVideo(src, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height / 2) / H, w: b.width / W, h: b.height / H, kind: 'face', score: d.categories?.[0]?.score || 0 }; });
+    return det.detectForVideo(src, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height * (s.cfg.frame === 'corpo' ? 0.5 : 0.4)) / H, w: b.width / W, h: b.height / H, kind: 'person', score: d.categories?.[0]?.score || 0 }; });
   }
 
   /* ---------- um passo do seguimento ---------- */

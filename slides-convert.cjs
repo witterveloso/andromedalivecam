@@ -2,7 +2,7 @@
 // Slides: converte apresentações e documentos (PPTX, PPT, ODP, KEY, DOCX, XLSX…) em PDF para a mesa.
 // A mesa abre PDF e imagens sozinha; o resto passa por aqui. Ordem: Microsoft PowerPoint (Windows, melhor fidelidade) → LibreOffice.
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { spawn } = require('node:child_process'), { pathToFileURL } = require('node:url');
 
 const POWERPOINT_EXT = new Set(['odp', 'otp', 'ppt', 'pptx', 'pps', 'ppsx', 'pot', 'potx', 'pptm', 'ppsm', 'potm']);
 const LIMIT = 500 * 1024 * 1024, TIMEOUT_MS = 240000;
@@ -57,7 +57,8 @@ async function convertWithPowerPoint(dir, input, output) {
 }
 
 async function convertWithLibreOffice(soffice, dir, input, profileDir) {
-  const profile = (process.platform === 'win32' ? 'file:///' + profileDir.replace(/\\/g, '/') : 'file://' + profileDir);
+  // URL de verdade (espaços, acentos e # no caminho do usuário do Windows precisam ser codificados, senão o LibreOffice ignora o perfil e falha)
+  const profile = pathToFileURL(profileDir).href;
   const r = await run(soffice, ['-env:UserInstallation=' + profile, '--headless', '--norestore', '--nolockcheck', '--nodefault', '--convert-to', 'pdf:impress_pdf_Export', '--outdir', dir, input]);
   let out = path.join(dir, path.basename(input).replace(/\.[^.]*$/, '') + '.pdf');
   if (!fs.existsSync(out)) { // documentos e planilhas não usam o filtro do Impress
