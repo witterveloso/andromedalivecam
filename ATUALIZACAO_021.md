@@ -1,5 +1,16 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.9
+### Controle de câmera
+- **Botão para ativar o controle.** O painel nasce **desligado** ("⏻ Ativar controle de câmera") e nada é enviado ao celular enquanto estiver assim. Ativo, o botão mostra **● Controle ATIVO**, os comandos passam a valer e **abre um preview de vídeo ao lado** da câmera escolhida, com o nome, o selo **NO AR** ou **PREVIEW**, grade de enquadramento (opcional) e a leitura do zoom, da exposição e do branco. A escolha de ligado/desligado fica salva.
+- **Exposição controlada à distância.** Pela mesa: **AUTO / MANUAL** e o **brilho em EV** (compensação de exposição, nos limites do aparelho), mais o **balanço de branco** (**AUTO / MANUAL** e a cor em **Kelvin**). Mexer no brilho ou na cor já liga o modo manual. O celular aplica no aparelho e avisa a mesa, então o painel também acompanha quando o operador muda algo no próprio celular. Requer o app da câmera atualizado (o celular carrega a versão nova da página ao abrir).
+- **Banco de 6 posições de enquadramento** por câmera: **CHAMAR** (padrão), **GRAVAR** e **APAGAR**. Gravar guarda zoom, recorte, exposição e cor atuais; chamar leva a câmera até lá **na hora** ou com **movimento suave** (1, 2, 3 ou 5 s, o zoom, o recorte, o brilho e a cor andam juntos). Mexer em qualquer controle durante o movimento o interrompe. As posições ficam salvas por câmera. A lente não faz parte da posição, para não reiniciar a imagem no meio do AR.
+- O painel ficou maior no Padrão (quem tinha o tamanho antigo passa ao novo; quem mexeu no layout fica como está).
+
+### Trocar os botões de lugar em todas as funções
+- Cada painel com grupos de botões ganhou **✥ Mover botões** no título: **Corte e transições** (CUT/AUTO e MIX/DIP/WIPE/STNG), **Áudio master**, **VT**, **Intercom** e **Controle de câmera** (lentes, exposição, balanço de branco, modo e as 6 posições). O painel **Comandos** continua com o seu modo próprio.
+- Ligado, os botões do painel **não disparam nada**; **arraste** o botão ou **clique nele para escolher** e use **‹ ›** (ou as setas do teclado). **Restaurar** volta à ordem original e **✓ Concluir** termina. A ordem fica salva por grupo e volta ao abrir a mesa.
+
 ## 0.21.8
 ### Correções do vídeo do operador (mesa abrindo em janela pequena)
 - **A mesa abria depois de uns 16 segundos, mostrando antes a tela crua do simulador** (com "SIMULADOR", fotos de demonstração e painéis empilhados). Causa: a página buscava as fontes (Exo 2, Montserrat, JetBrains Mono) no Google, e os scripts da mesa só começavam depois que a internet respondesse. Com a rede lenta ou sem internet, a mesa travava na tela crua. Agora:
