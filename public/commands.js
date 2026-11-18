@@ -391,6 +391,7 @@
     { id: 'slideprev', label: 'SLIDES · slide anterior', key: 'PageUp', run: () => R.slides.prev(), slide: true },
     { id: 'slidefirst', label: 'SLIDES · primeiro slide', key: '', run: () => R.slides.first(), slide: true },
     { id: 'slidelast', label: 'SLIDES · último slide', key: '', run: () => R.slides.last(), slide: true },
+    { id: 'tracking', label: 'TRACKING da câmera selecionada (liga/desliga)', key: '', run: () => window.andromedaTracking?.toggle() },
     { id: 'trilha', label: 'TRILHA (liga com fade in / desliga com fade out)', key: 'T', run: () => R.trilha.toggle() },
     { id: 'trilhanext', label: 'TRILHA · próxima faixa', key: 'N', run: () => R.trilha.next() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
