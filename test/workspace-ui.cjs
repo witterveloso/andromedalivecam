@@ -74,6 +74,16 @@ q('.cmd-btn[data-cmd=countdown]').dispatchEvent(new w.MouseEvent('dblclick',{bub
 assert(q('.master-panel #masterAudioOn')&&q('.master-panel #masterPhones'),'enable audio and headphones live in the MASTER panel');
 cmd.setStyle('neon');assert.equal(q('[data-tool=bus] .cmd-grid').dataset.btnStyle,'neon');assert.equal(q('.master-panel').dataset.btnStyle,'neon');cmd.setStyle('nada');assert.equal(cmd.layout().style,'vidro','unknown style falls back to Vidro');
 assert(w.andromedaPlayerInfo,'VT/vinheta own the PREVIEW/PGM info strips (no flicker)');
+// Mover botões direto no painel (sem Personalizar), setas, número de atalho nas câmeras e vinheta com/sem áudio.
+{const bus=q('[data-tool=bus] .me-bus')||q('.me-bus'),grid=q('[data-tool=bus] .cmd-grid');assert(q('.cmd-move-toggle'),'Mover botões lives in the Comandos panel');
+cmd.setMove(true);assert.equal(bus.dataset.move,'true');const before=[...grid.children].map(b=>b.dataset.cmd);q('.cmd-btn[data-cmd=black]').click();assert(!rd.black.on,'buttons do not fire while moving');
+cmd.nudge('gc1',-1);assert.equal(grid.children[0].dataset.cmd,'gc1','a button moves one place with the arrows');cmd.nudge('gc1',1);assert.deepEqual([...grid.children].map(b=>b.dataset.cmd),before,'and back');cmd.setMove(false);
+assert.equal(q('.mv-cell .cell-key').textContent,'1','the camera number is on the camera');
+assert.equal([...w.document.querySelectorAll('.mv-cell .cell-key')].slice(0,10).map(c=>c.textContent).join(''),'1234567890');
+assert.equal(rd.vinhetaPlayer.audio,true);rd.setVinhetaAudio(false);assert.equal(rd.vinhetaPlayer.audio,false);assert.equal(w.localStorage.getItem('andromeda.vinheta.audio.v1'),'false');assert(/SEM ÁUDIO/.test(q('.cmd-btn[data-cmd=vinheta] .cmd-sub').textContent),'the button shows it');rd.setVinhetaAudio(true);}
+// Áudio de cada câmera: três botões fixos OFF / AR / ON no lugar do menu.
+{const g=q('.mv-cell .cell-mode');assert(g,'audio mode buttons on each camera');assert.deepEqual([...g.children].map(b=>b.textContent),['OFF','AR','ON']);
+g.querySelector('[data-mode=afv]').click();assert.equal(vm.runInContext('audioMixer.settings[0].mode',ctx),'afv','AR = audio follows the video (on air only)');g.querySelector('[data-mode=on]').click();assert.equal(vm.runInContext('audioMixer.settings[0].mode',ctx),'on');g.querySelector('[data-mode=off]').click();assert.equal(vm.runInContext('audioMixer.settings[0].mode',ctx),'off');}
 // VINHETA em LOOP: guarda a escolha e o ajuste mostra a opção.
 rd.setVinhetaLoop(true);assert(rd.vinhetaPlayer.loop);assert.equal(w.localStorage.getItem('andromeda.vinheta.loop.v1'),'true');assert(q('.cmd-btn[data-cmd=vinheta] .cmd-sub').textContent.startsWith('↻'),'the VINHETA button shows the loop');
 q('.cmd-btn[data-cmd=vinheta]').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#vinhetaLoop').checked,'loop option in the vinheta settings');q('.cmd-pop-close').click();rd.setVinhetaLoop(false);assert(!rd.vinhetaPlayer.loop);

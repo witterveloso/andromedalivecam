@@ -134,7 +134,7 @@ for (const type of ['focusin', 'pointerdown', 'input']) cdCard.addEventListener(
 // Cada reprodutor alimenta uma fonte. Começa quando a fonte entra no AR, para quando sai, e segue a transição no áudio.
 const players = new Map();
 function makePlayer(source, label) {
-  const p = { source, label, item: null, running: false, end: 'return', transition: 'mix', loop: false, volume: .9, gain: null, analyser: null, onEnd: null };
+  const p = { source, label, item: null, running: false, end: 'return', transition: 'mix', loop: false, audio: true, volume: .9, gain: null, analyser: null, onEnd: null };
   players.set(source, p);
   return p;
 }
@@ -194,7 +194,8 @@ setInterval(() => {
     const live = entering(p.source);
     if (live && !p.running && p.item && !p.item.error) startPlayer(p);
     else if (!live && p.running) stopPlayer(p);
-    if (p.gain && audioMixer.context) p.gain.gain.setTargetAtTime(p.running ? p.volume * weight(p.source) : 0, audioMixer.context.currentTime, .015);
+    // "Sem áudio" (opção da vinheta): o vídeo toca normalmente, mas o som dela não entra no programa.
+    if (p.gain && audioMixer.context) p.gain.gain.setTargetAtTime(p.running && p.audio !== false ? p.volume * weight(p.source) : 0, audioMixer.context.currentTime, .015);
     if (p.running && p.item?.el.ended) playerEnded(p);
   }
   paintVTClock(); paintCountdown();
@@ -418,6 +419,14 @@ function setVinhetaLoop(on) {
   window.andromedaCommands?.paint();
 }
 try { vinhetaPlayer.loop = JSON.parse(localStorage.getItem('andromeda.vinheta.loop.v1')) === true; } catch { /* sem armazenamento */ }
+// Com áudio (padrão) ou sem áudio: vale na hora, mesmo com a vinheta no ar, e fica salvo.
+function setVinhetaAudio(on) {
+  vinhetaPlayer.audio = on !== false;
+  try { localStorage.setItem('andromeda.vinheta.audio.v1', JSON.stringify(vinhetaPlayer.audio)); } catch { /* sem armazenamento */ }
+  log(vinhetaPlayer.audio ? 'Vinheta COM áudio' : 'Vinheta SEM áudio: o vídeo toca e o som não entra no programa');
+  window.andromedaCommands?.paint();
+}
+try { vinhetaPlayer.audio = JSON.parse(localStorage.getItem('andromeda.vinheta.audio.v1')) !== false; } catch { /* sem armazenamento */ }
 function vinhetaToPreview() {
   if (!vinhetaPlayer.item) { log('Vinheta: carregue o vídeo com duplo clique em VINHETA.'); return false; }
   audioMixer.enable().catch(() => {}); vinhetaPlayer.item.el.currentTime = 0;
@@ -476,5 +485,5 @@ const rundownBaseInspection = inspectionSettings;
 inspectionSettings = function () { return inspecting === 'countdown' ? structuredClone(fx.draft) : rundownBaseInspection(); };
 
 window.andromedaVtOnAir = () => state.pgm === VT_SOURCE || state.pgm === VINHETA_SOURCE;
-window.andromedaRundown = { vtSeek, setVinhetaLoop, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
+window.andromedaRundown = { vtSeek, setVinhetaLoop, setVinhetaAudio, countdown, vt, vtPlayer, vinhetaPlayer, players, black, bars, cdRow, parseClock, formatClock, countdownOn, countdownOff, toggleCountdown,
   addFiles, cue, iconLabel, vtToPreview, vtNext, vtNextLabel, vtPause, vtStop, vtOff, setVinheta, vinhetaToPreview, toggleBlack, toggleBars, syncTone, drawPlayer, VT_SOURCE, VINHETA_SOURCE };

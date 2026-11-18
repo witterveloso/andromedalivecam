@@ -1,5 +1,27 @@
 # Andrômeda Live 0.21 — Motor Andrômeda: nossa própria tecnologia de transmissão
 
+## 0.21.8
+### Correções do vídeo do operador (mesa abrindo em janela pequena)
+- **A mesa abria depois de uns 16 segundos, mostrando antes a tela crua do simulador** (com "SIMULADOR", fotos de demonstração e painéis empilhados). Causa: a página buscava as fontes (Exo 2, Montserrat, JetBrains Mono) no Google, e os scripts da mesa só começavam depois que a internet respondesse. Com a rede lenta ou sem internet, a mesa travava na tela crua. Agora:
+  - **As fontes vão dentro do programa** (pasta `fonts`): a mesa abre igual com ou sem internet, e não faz nenhum pedido à internet ao abrir.
+  - **Tela de abertura da marca** ("Abrindo a mesa…") cobre tudo até os painéis ficarem prontos, então a tela crua nunca mais aparece.
+  - Medido com a internet travada: a versão 0.21.7 ficou presa na tela crua; esta abre em **menos de 1 segundo**.
+- **Tudo cabe na janela de 1354 × 708** (e em janelas ainda menores):
+  - **Comandos:** no tamanho 100% os botões se ajustam sozinhos à altura do painel, sem rolagem e sem cortar o PARAR VT e o BARRAS (a barra de tamanho continua mandando nos outros tamanhos; em botões baixos o texto de apoio some para o nome caber).
+  - **Áudio master:** os botões HABILITAR ÁUDIO e FONES ficaram lado a lado e mais baixos, e o FADE OUT, o tempo e o botão da mesa de áudio remota aparecem sem rolar (antes ficavam cortados).
+  - Depois de abrir, a mesa reajusta todos os painéis ao tamanho real da janela.
+- **Ícone da aba do navegador** (`andromeda-icon-live.png`, da 0.21.7) dava erro 404: o serviço só entregava arquivos de uma lista fechada. Agora entrega as pastas `fonts` e `brand` inteiras.
+
+### Novidades
+- **Mudar os botões de lugar, direto no painel Comandos.** Agora o painel tem o botão **✥ Mover botões** no topo (não precisa mais entrar no *Personalizar*):
+  - Ligado, **os botões deixam de disparar** (clicar nunca muda o AR) e aparecem o **arrastar**, as setas **‹ ›** em cada botão (move uma posição, bom para toque ou sem mouse), o **⇔** (botão largo) e a barra com tamanho, botões por linha, estilo e Restaurar.
+  - **✓ Concluir** (ou Esc) termina e os botões voltam a funcionar. A ordem fica salva.
+  - O *Personalizar* continua funcionando do mesmo jeito.
+- **Número de atalho clicável em cada câmera.** Cada câmera do multiview mostra o seu número (1 a 9 e 0) no canto. **Clicar no número leva a câmera direto para o AR**, igual à tecla. Câmera sem sinal fica só no PREVIEW; clicar no resto do quadro continua escolhendo o PREVIEW (duplo clique abre as fontes). Se o operador trocar a tecla em *Personalizar → Atalhos*, o número mostrado acompanha.
+- **Áudio de cada câmera em três botões fixos.** O menu de opções de cada câmera (OFF · sem áudio / AFV / ON · contínuo) deu lugar a **três botões sempre à vista**, cada um de uma cor: **OFF** (branco: sem áudio), **AR** (vermelho: o áudio só entra enquanto a câmera está no AR, o antigo AFV) e **ON** (verde: áudio contínuo). O botão da escolha atual fica aceso e o mixer acompanha. Clicar neles não muda o PREVIEW nem o AR.
+- **Vinheta com ou sem áudio.** No ajuste da vinheta (duplo clique em VINHETA) há **Áudio da vinheta: Com áudio / Sem áudio (só a imagem)**. Sem áudio, o vídeo toca normalmente e o som dela não entra no programa. Vale na hora, mesmo com a vinheta no ar, o botão mostra **SEM ÁUDIO** e a escolha fica salva.
+- **VU do áudio master com metade do tamanho e mais juntos.** As barras L e R encolheram para a metade e ficam lado a lado, no meio do painel (antes ficavam bem separadas, uma em cada metade).
+
 ## 0.21.7
 - **Instalador personalizado com a marca Andrômeda Live.** Feito a partir da arte da identidade visual do projeto (o "A" com a órbita e o play, o nome ANDRÔMEDA e a pastilha vermelha LIVE):
   - **Painel lateral** das telas de boas-vindas e de conclusão (e do desinstalador): a galáxia da marca com o logo completo e a linha *Produção · Switcher · Transmissão · Multiplataforma*. No lugar da imagem azul genérica do Windows.
