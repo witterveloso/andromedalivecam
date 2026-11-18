@@ -1,5 +1,12 @@
 # Andrômeda Live 0.24 — TRACKING: a câmera segue a pessoa
 
+## 0.24.4
+Revisão geral do sistema (análise estática de todos os arquivos, revisão do código novo e toda a bateria de testes). Correções:
+- **Trilha:** (1) **mexer no volume durante o fade in** era ignorado e a trilha terminava no volume antigo; agora vale na hora; (2) uma **faixa quebrada no meio da lista** era tentada de novo a cada instante (enchendo a barra de eventos); agora é marcada com erro e **pulada**; (3) no fim da lista (ordem "uma vez") a música **era cortada seco**; agora sai com **fade out**; (4) religar a trilha no meio do fade out volta a subir sem recomeçar a faixa.
+- **Slides:** as **miniaturas** de apresentações grandes são geradas com pausas, para **não pesar na transmissão**; o **LibreOffice** agora recebe o caminho do perfil como URL de verdade (**nomes de usuário do Windows com espaço ou acento** faziam a conversão falhar).
+- **Tracking:** fontes que não são vídeo (entrada Blackmagic em imagem) agora também são reconhecidas.
+- Testes novos de borda da Trilha e dos Slides com arquivos ruins; verificação de dependências (0 vulnerabilidades).
+
 ## 0.24.3
 - **PRÓXIMO SLIDE e SLIDE ANTERIOR agora sempre dão resposta.** Antes, com a apresentação fora do PREVIEW e do AR, o slide mudava só dentro do painel e parecia que o comando não funcionava; agora, se os slides não estão no **PREVIEW nem no AR**, o comando os leva ao **PREVIEW** (sem atrapalhar uma transição em andamento) e passa o slide. Sem apresentação aberta, o comando **avisa na barra de eventos** e leva ao painel Slides, em vez de ficar mudo. O mesmo vale para os atalhos PageDown/PageUp, primeiro/último slide, "Ir para o slide" e o controle remoto.
 - **A mesa recebe qualquer arquivo de apresentação:**

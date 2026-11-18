@@ -82,16 +82,19 @@
     setTimeout(() => { tr.crossing = false; }, secs * 1000 + 50);
     audit('info', 'trilha-faixa', nameOf(item)); paint(); return true;
   }
+  // Próxima faixa que não deu erro (faixa quebrada é pulada, nunca fica sendo tentada de novo a cada instante).
   function nextIndex(from = tr.cur) {
-    const n = tr.items.length; if (!n) return -1;
-    if (settings.order === 'shuffle') { if (n === 1) return 0; let i; do { i = Math.floor(Math.random() * n); } while (i === from); return i; }
-    if (from + 1 < n) return from + 1;
-    return settings.order === 'once' ? -1 : 0;
+    const n = tr.items.length; if (!n) return -1; const ok = i => !tr.items[i].error;
+    if (settings.order === 'shuffle') { const pool = tr.items.map((_, i) => i).filter(i => ok(i) && (i !== from || n === 1)); return pool.length ? pool[Math.floor(Math.random() * pool.length)] : -1; }
+    for (let i = from + 1; i < n; i++) if (ok(i)) return i;
+    if (settings.order === 'once') return -1;
+    for (let i = 0; i <= from && i < n; i++) if (ok(i)) return i;
+    return -1;
   }
   function advance() {
     if (tr.state === 'off' || tr.state === 'out' || tr.crossing) return;
-    const i = nextIndex(); if (i < 0) { finishNow(); return; }
-    playIndex(i, 'cross');
+    const i = nextIndex(); if (i < 0) { stop(); return; } // fim da lista (ou só faixas com erro): sai com fade out, sem corte seco
+    playIndex(i, 'cross').then(ok => { if (!ok) { const j = nextIndex(); if (j < 0) stop(); } });
   }
   function trackFailed(deck) {
     const item = deck.item; if (!item || item.error) return;
@@ -117,7 +120,7 @@
     else if (resumable && deck.item && deck.item.kind !== 'device') { try { await deck.el.play(); } catch { await playIndex(tr.cur, 'in'); } }
     else { let i = tr.items[tr.cur] && !tr.items[tr.cur].error ? tr.cur : tr.items.findIndex(x => !x.error); if (i < 0) { tr.state = 'off'; return false; } if (!await playIndex(i, 'in')) { const j = nextIndex(); if (j < 0 || !await playIndex(j, 'in')) { tr.state = 'off'; paint(); return false; } } }
     ramp(tr.bus.gain, target(), settings.fadeIn);
-    tr.timer = setTimeout(() => { if (tr.state === 'in') tr.state = 'on'; paint(); }, settings.fadeIn * 1000 + 50);
+    tr.timer = setTimeout(() => { if (tr.state === 'in') { tr.state = 'on'; hold(tr.bus.gain, tr.ac.currentTime); tr.bus.gain.setTargetAtTime(target(), tr.ac.currentTime, .03); } paint(); }, settings.fadeIn * 1000 + 50);
     log('Trilha no AR (fade in ' + settings.fadeIn + ' s).'); audit('info', 'trilha-ligada', 'Trilha ligada'); paint(); return true;
   }
   function finishNow() {
@@ -230,7 +233,7 @@
   $p('#trOrder').value = settings.order; $p('#trOrder').onchange = e => { settings.order = e.target.value; persist(); };
   $p('#trResume').checked = !!settings.resume; $p('#trResume').onchange = e => { settings.resume = e.target.checked; persist(); };
   const vol = $p('#trVolume'); vol.value = String(settings.volume);
-  vol.oninput = () => { settings.volume = Number(vol.value); $p('#trVolOut').textContent = settings.volume + '%'; if (tr.bus && tr.state === 'on') { hold(tr.bus.gain, tr.ac.currentTime); tr.bus.gain.setTargetAtTime(target(), tr.ac.currentTime, .03); } }; vol.onchange = persist;
+  vol.oninput = () => { settings.volume = Number(vol.value); $p('#trVolOut').textContent = settings.volume + '%'; if (tr.bus && (tr.state === 'on' || tr.state === 'in')) { hold(tr.bus.gain, tr.ac.currentTime); tr.bus.gain.setTargetAtTime(target(), tr.ac.currentTime, .03); } }; vol.onchange = persist;
 
   // Relógio, progresso e nível; também decide a hora de começar a troca suave para a próxima faixa.
   setInterval(() => {
@@ -239,7 +242,7 @@
     let clockText = '--:--', pct = 0;
     if (item && d && tr.state !== 'off') {
       if (item.kind !== 'file' && !Number.isFinite(d.duration)) clockText = 'AO VIVO';
-      else if (Number.isFinite(d.duration) && d.duration > 0) { clockText = '−' + clock(d.duration - d.currentTime); pct = d.currentTime / d.duration * 100; if (!tr.crossing && (tr.state === 'in' || tr.state === 'on') && d.duration - d.currentTime <= Math.max(settings.cross, 0.05) + 0.05 && tr.items.length) advance(); }
+      else if (Number.isFinite(d.duration) && d.duration > 0) { clockText = '−' + clock(d.duration - d.currentTime); pct = d.currentTime / d.duration * 100; if (!tr.crossing && (tr.state === 'in' || tr.state === 'on') && d.duration - d.currentTime <= Math.max(nextIndex() < 0 ? settings.fadeOut : settings.cross, 0.05) + 0.05 && tr.items.length) advance(); }
     }
     if ($p('#trClock').textContent !== clockText) $p('#trClock').textContent = clockText; $p('#trProgress').style.width = pct.toFixed(1) + '%';
   }, 250);
@@ -247,7 +250,7 @@
   // Restaura links e entradas salvos
   for (const s of saved.saved || []) if (s?.kind === 'url' && s.url) addLink(s.url, s.name); else if (s?.kind === 'device') addDevice(s.deviceId, s.name);
   const info = () => ({ state: tr.state, on: tr.state === 'in' || tr.state === 'on', out: tr.state === 'out', index: tr.cur, total: tr.items.length, name: tr.items[tr.cur] ? nameOf(tr.items[tr.cur]) : '', gain: tr.bus ? tr.bus.gain.value : 0, level: tr.analyser ? meterValue(tr.analyser) : 0 });
-  const api = { start, stop, toggle, next, prev, go, addFiles, addLink, addDevice, info, settings, items: tr.items, openPanel, paint };
+  const api = { decks: () => tr.decks, start, stop, toggle, next, prev, go, addFiles, addLink, addDevice, info, settings, items: tr.items, openPanel, paint };
   Object.assign(R, { trilha: api }); window.andromedaTrilha = api;
   paint();
 })();
