@@ -26,6 +26,12 @@ test('a mesa controla a exposição e o balanço de branco do celular; os valore
     const lim = next(camera, 'control'); desk.send(JSON.stringify({ type: 'control', slot: 1, exp: { ev: -99 }, wb: { kelvin: 99999 } }));
     assert.deepEqual(await lim, { type: 'control', exp: { ev: -12 }, wb: { kelvin: 12000 } });
     // lixo não vira comando
+    // suavização do enquadramento (tracking): o tempo em ms chega limitado a 0–400 e sozinho não vale como comando
+    const sm = next(camera, 'control'); desk.send(JSON.stringify({ type: 'control', slot: 1, pan: { x: 0.2, y: -0.1 }, zoom: 2, ease: 120 }));
+    assert.deepEqual(await sm, { type: 'control', zoom: 2, pan: { x: 0.2, y: -0.1 }, ease: 120 });
+    const big = next(camera, 'control'); desk.send(JSON.stringify({ type: 'control', slot: 1, zoom: 2, ease: 99999 })); assert.equal((await big).ease, 400);
+    const neg = next(camera, 'control'); desk.send(JSON.stringify({ type: 'control', slot: 1, zoom: 2, ease: -5 })); assert.equal((await neg).ease, 0);
+    desk.send(JSON.stringify({ type: 'control', slot: 1, ease: 100 })); await assert.rejects(next(camera, 'control'), /Timed out/);
     desk.send(JSON.stringify({ type: 'control', slot: 1, exp: { mode: 'rm -rf', ev: 'a' }, wb: 5 })); await assert.rejects(next(camera, 'control'), /Timed out/);
     // um celular não comanda outro
     camera.send(JSON.stringify({ type: 'control', slot: 1, exp: { mode: 'manual' } })); await assert.rejects(next(camera, 'control'), /Timed out/);

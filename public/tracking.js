@@ -19,8 +19,8 @@
   const slots = new Map();
   function slotOf(i) {
     if (!slots.has(i)) {
-      const cfg = { target: 'face', frame: 'seguir', speed: 'normal', lostReturn: false, ...(saved[i] || {}) };
-      slots.set(i, { i, cfg, on: false, tracker: new Core.Tracker({ frame: cfg.frame, speed: cfg.speed, lostReturn: cfg.lostReturn }), dets: [], subject: null, last: null, lastAt: 0, period: 110, busy: false, status: '', fps: 0, frames: [], motion: new Core.MotionDetector(96, 54), error: '', dims: null });
+      const cfg = { target: 'face', frame: 'seguir', speed: 'normal', comfort: 'media', net: 'normal', lostReturn: false, ...(saved[i] || {}) };
+      slots.set(i, { i, cfg, on: false, tracker: new Core.Tracker({ frame: cfg.frame, speed: cfg.speed, comfort: cfg.comfort, latency: (Core.LATENCY[cfg.net] || Core.LATENCY.normal).value, lostReturn: cfg.lostReturn }), view: null, ctl: { out: null, paintAt: 0 }, dets: [], subject: null, last: null, lastAt: 0, period: 110, busy: false, status: '', fps: 0, frames: [], motion: new Core.MotionDetector(96, 54), error: '', dims: null });
     }
     return slots.get(i);
   }
@@ -70,17 +70,30 @@
     const took = performance.now() - now; s.period = Math.max(100, Math.min(450, took * 2.2)); s.frames.push(now); while (s.frames.length && now - s.frames[0] > 2000) s.frames.shift(); s.fps = s.frames.length / 2;
     if (dets === null) { s.dets = []; s.status = 'Sem sinal de vídeo desta câmera'; return; }
     s.dets = dets; const subject = Core.pickSubject(dets, s.last); if (subject) s.last = { cx: subject.cx, cy: subject.cy }; s.subject = subject;
-    const view = { zoom: c.zoom.value, pan: { ...c.pan }, zoomMin: c.zoom.min, zoomMax: Math.max(c.zoom.max, c.zoom.min + 0.1) };
-    const out = s.tracker.update(subject, view, dt);
-    if (out.pan || out.zoom) {
-      const msg = { type: 'control', slot: s.i }; if (out.pan) { msg.pan = out.pan; c.pan = out.pan; } if (out.zoom) { msg.zoom = out.zoom; c.zoom.value = out.zoom; }
-      try { camSend(msg); } catch { /* sem conexão com o celular */ }
-    }
-    const label = { face: 'o rosto', person: 'a pessoa', motion: 'movimento' }[effectiveTarget(s)];
-    s.status = out.state === 'track' ? 'Seguindo ' + (effectiveTarget(s) === 'motion' ? 'o movimento' : label) + (dets.length > 1 ? ' · ' + dets.length + ' detectados' : '') + ' · ' + s.fps.toFixed(0) + ' quadros/s' + (out.atEdge ? ' · no limite do enquadramento (menos zoom dá mais folga)' : '')
-      : out.state === 'lost' ? 'Alvo perdido: mantendo a posição' : out.state === 'hold' ? 'Pausado: você está operando à mão' : 'Procurando ' + label + '…';
-    if (s.i === camCtl.slot) { if (typeof camCtlPaint === 'function' && (out.pan || out.zoom)) camCtlPaint(); }
+    // A detecção só ALIMENTA o filtro (posição e velocidade do alvo); quem move a câmera é o laço de controle (controlTick), 25 vezes por segundo.
+    s.tracker.observe(subject, performance.now() / 1000, viewOf(c));
+    s.dets = dets;
   }
+  const viewOf = c => ({ zoom: c.zoom.value, pan: { ...c.pan }, zoomMin: c.zoom.min, zoomMax: Math.max(c.zoom.max, c.zoom.min + 0.1) });
+  // Laço de movimento: segue o caminho previsto do alvo com mola amortecida e manda o pan/zoom ao celular (que ainda suaviza entre um comando e outro).
+  function controlTick() {
+    const now = performance.now() / 1000;
+    for (const s of slots.values()) {
+      if (!s.on) continue; const c = caps(s.i);
+      if (!camCtl.enabled || !c) continue;
+      if (camCtl.glide && camCtl.slot === s.i) { s.tracker.holdOff(1.5); continue; }
+      const out = s.tracker.tick(viewOf(c), now);
+      if (out.pan || out.zoom) {
+        const msg = { type: 'control', slot: s.i, ease: out.ease }; if (out.pan) { msg.pan = out.pan; c.pan = out.pan; } if (out.zoom) { msg.zoom = out.zoom; c.zoom.value = out.zoom; }
+        try { camSend(msg); } catch { /* sem conexão com o celular */ }
+        if (s.i === camCtl.slot && typeof camCtlPaint === 'function' && now - s.ctl.paintAt > 0.25) { s.ctl.paintAt = now; camCtlPaint(); }
+      }
+      const label = { face: 'o rosto', person: 'a pessoa', motion: 'o movimento' }[effectiveTarget(s)];
+      s.status = out.state === 'track' ? 'Seguindo ' + label + (s.dets.length > 1 ? ' · ' + s.dets.length + ' detectados' : '') + ' · análise ' + s.fps.toFixed(0) + '/s' + (out.atEdge ? ' · no limite do enquadramento (menos zoom dá mais folga)' : '')
+        : out.state === 'lost' ? 'Alvo perdido: mantendo a posição' : out.state === 'hold' ? 'Pausado: você está operando à mão' : 'Procurando ' + label + '…';
+    }
+  }
+  setInterval(controlTick, 40);
   let turn = 0;
   setInterval(() => {
     const on = [...slots.values()].filter(s => s.on && !s.busy); if (!on.length) { paint(); return; }
@@ -93,12 +106,17 @@
     '<div class="trk-top"><button type="button" id="trkPower" class="trk-power" aria-pressed="false">⌖ Tracking DESLIGADO</button><span class="trk-status" id="trkStatus" role="status"></span></div>' +
     '<div class="trk-opts"><label>Seguir<select id="trkTarget" aria-label="O que seguir"><option value="face">Rosto</option><option value="person">Pessoa (corpo)</option><option value="motion">Movimento</option></select></label>' +
     '<label>Enquadramento<select id="trkFrame" aria-label="Enquadramento do tracking"></select></label>' +
-    '<label>Velocidade<select id="trkSpeed" aria-label="Velocidade do tracking"><option value="suave">Suave</option><option value="normal">Normal</option><option value="rapido">Rápida</option></select></label>' +
+    '<label>Movimento<select id="trkSpeed" aria-label="Estilo do movimento do tracking"></select></label>' +
+    '<label>Zona de conforto<select id="trkComfort" aria-label="Zona de conforto: dentro dela a câmera não se mexe"></select></label>' +
+    '<label>Rede da câmera<select id="trkNet" aria-label="Rede entre a câmera e a mesa"></select></label>' +
     '<label>Se perder o alvo<select id="trkLost" aria-label="Se perder o alvo"><option value="hold">Manter a posição</option><option value="center">Voltar ao centro</option></select></label>' +
     '<button type="button" id="trkReset" title="Esquece o alvo atual: passa a seguir o maior. Também dá para clicar numa pessoa na imagem do preview.">Escolher outro alvo</button></div>' +
     '<small class="trk-note" id="trkNote"></small>';
   const q = s => host.querySelector(s);
   for (const [id, f] of Object.entries(Core.FRAMES)) q('#trkFrame').add(new Option(f.label, id));
+  for (const [id, v] of Object.entries(Core.SPEEDS)) q('#trkSpeed').add(new Option(v.label, id));
+  for (const [id, v] of Object.entries(Core.COMFORT)) q('#trkComfort').add(new Option(v.label, id));
+  for (const [id, v] of Object.entries(Core.LATENCY)) q('#trkNet').add(new Option(v.label, id));
   const here = () => slotOf(currentSlot());
   function paint() {
     const s = here(), c = caps(s.i), ok = camCtl.enabled && !!c;
@@ -107,7 +125,7 @@
     host.dataset.on = String(s.on);
     const st = !ok ? (camCtl.enabled ? 'Sem celular conectado nesta câmera' : '') : s.on ? s.status : '';
     if (q('#trkStatus').textContent !== st) q('#trkStatus').textContent = st; q('#trkStatus').dataset.s = s.on ? (/Seguindo/.test(st) ? 'track' : /perdido|Procurando|Carregando/.test(st) ? 'search' : 'info') : '';
-    for (const [id, key] of [['#trkTarget', 'target'], ['#trkFrame', 'frame'], ['#trkSpeed', 'speed']]) { const el = q(id); if (document.activeElement !== el && el.value !== s.cfg[key]) el.value = s.cfg[key]; }
+    for (const [id, key] of [['#trkTarget', 'target'], ['#trkFrame', 'frame'], ['#trkSpeed', 'speed'], ['#trkComfort', 'comfort'], ['#trkNet', 'net']]) { const el = q(id); if (document.activeElement !== el && el.value !== s.cfg[key]) el.value = s.cfg[key]; }
     const lost = s.cfg.lostReturn ? 'center' : 'hold'; if (document.activeElement !== q('#trkLost') && q('#trkLost').value !== lost) q('#trkLost').value = lost;
     q('#trkTarget').disabled = !!Core.FRAMES[s.cfg.frame]?.src; // o enquadramento já define o que medir
     const note = !ok ? '' : c.zoom.value < 1.05 && s.cfg.frame === 'seguir' ? 'Sem zoom a imagem não tem folga para andar: ao ligar, o tracking aplica 1,4×.' : 'O reconhecimento roda neste computador. Mexer no zoom, no enquadramento ou na lente à mão pausa o tracking por 4 s.';
@@ -120,8 +138,8 @@
     paint(); return s.on;
   }
   q('#trkPower').onclick = () => set(currentSlot(), !here().on);
-  const cfgChange = (key, value) => { const s = here(); s.cfg[key] = value; if (key === 'frame') { const src = Core.FRAMES[value]?.src; if (src) s.cfg.target = src === 'person' ? 'person' : 'face'; } Object.assign(s.tracker.options, { frame: s.cfg.frame, speed: s.cfg.speed, lostReturn: s.cfg.lostReturn }); s.tracker.reset(); s.last = null; persist(); paint(); };
-  q('#trkTarget').onchange = e => cfgChange('target', e.target.value); q('#trkFrame').onchange = e => cfgChange('frame', e.target.value); q('#trkSpeed').onchange = e => cfgChange('speed', e.target.value);
+  const cfgChange = (key, value) => { const s = here(); s.cfg[key] = value; if (key === 'frame') { const src = Core.FRAMES[value]?.src; if (src) s.cfg.target = src === 'person' ? 'person' : 'face'; } Object.assign(s.tracker.options, { frame: s.cfg.frame, speed: s.cfg.speed, comfort: s.cfg.comfort, latency: (Core.LATENCY[s.cfg.net] || Core.LATENCY.normal).value, lostReturn: s.cfg.lostReturn }); s.tracker.reset(); s.last = null; persist(); paint(); };
+  q('#trkTarget').onchange = e => cfgChange('target', e.target.value); q('#trkFrame').onchange = e => cfgChange('frame', e.target.value); q('#trkSpeed').onchange = e => cfgChange('speed', e.target.value); q('#trkComfort').onchange = e => cfgChange('comfort', e.target.value); q('#trkNet').onchange = e => cfgChange('net', e.target.value);
   q('#trkLost').onchange = e => cfgChange('lostReturn', e.target.value === 'center');
   q('#trkReset').onclick = () => { const s = here(); s.last = null; s.tracker.reset(); s.motion.reset(); };
   // Mexer à mão (pan, zoom, lente, exposição, posições salvas) pausa o seguimento desta câmera por 4 s.
@@ -134,6 +152,8 @@
     ctx.save(); ctx.lineWidth = Math.max(1.5, 2 * dpr); ctx.font = '700 ' + Math.round(11 * dpr) + 'px system-ui, sans-serif';
     const aim = Core.AIM[s.subject?.kind || (effectiveTarget(s) === 'motion' ? 'motion' : effectiveTarget(s) === 'person' ? 'person' : 'face')];
     ctx.strokeStyle = 'rgba(0,163,255,.9)'; ctx.beginPath(); const ax = dx + dw * aim.x, ay = dy + dh * aim.y, r = 9 * dpr; ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r, ay); ctx.moveTo(ax, ay - r); ctx.lineTo(ax, ay + r); ctx.stroke();
+    // zona de conforto: enquanto o alvo está aqui dentro a câmera não se mexe
+    { const z = Core.COMFORT[s.cfg.comfort] || Core.COMFORT.media; ctx.save(); ctx.strokeStyle = 'rgba(0,163,255,.45)'; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.lineWidth = Math.max(1, dpr); ctx.strokeRect(dx + dw * (aim.x - z.out), dy + dh * (aim.y - z.out * 0.8), dw * 2 * z.out, dh * 2 * z.out * 0.8); ctx.restore(); }
     for (const d of s.dets) {
       const mine = d === s.subject, w = d.w * dw, h = d.h * dh, x = dx + d.cx * dw - w / 2, y = dy + d.cy * dh - h / 2;
       ctx.strokeStyle = mine ? '#ff3b6b' : 'rgba(255,255,255,.55)'; ctx.setLineDash(mine ? [] : [6 * dpr, 4 * dpr]); ctx.strokeRect(x, y, w, h);

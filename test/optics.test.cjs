@@ -30,7 +30,7 @@ test('camera controls: parameter bar over the image, slider zoom with programmed
   assert.match(optics, /zoomLive = slider\(r, st\.zoom/, 'zoom is a sliding bar');
   assert.doesNotMatch(optics, /saved\.points|zoomTo|SPEEDS|Gravar ponto|zoom-point/, 'programmed zoom movement removed (0.19): only the bar and the pinch');
   assert.match(optics, /function remote\(m\)/, 'the desk can operate zoom, lens and framing');
-  assert.match(optics, /p\.pan\.x \* room/, 'framing moves the crop inside the room left by the zoom');
+  assert.match(optics, /sm\.pan\.x \* room/, 'framing moves the crop inside the room left by the zoom (smoothed pan)'); assert.match(optics, /ease > 0/, 'the remote can ask for a smoothed framing');
   assert.match(optics, /nativeStabKey/, 'uses the device stabilization when the browser exposes it');
   assert.match(optics, /function makeStabilizer\(\)/, 'own stabilization otherwise');
   assert.match(cam, /send\(\{ type: 'presence', state: 'background' \}\)/); assert.match(cam, /async function resumeCamera\(\)/);
