@@ -89,9 +89,9 @@ test('a mesa carrega o tracking depois do controle de câmera, com o reconhecime
   assert.match(server, /'\/tracking-core\.js':'tracking-core\.js'/); assert.match(server, /'\/tracking\.js':'tracking\.js'/); assert.match(server, /vendor\/mediapipe/);
   for (const f of ['vision_bundle.mjs', 'wasm/vision_wasm_internal.js', 'wasm/vision_wasm_internal.wasm', 'models/blaze_face_short_range.tflite', 'models/efficientdet_lite0.tflite', 'LICENSE-mediapipe.txt']) assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', 'vendor', 'mediapipe', f)), f);
   assert.match(camctl, /id="camCtlTrackHost"/); assert.match(camctl, /andromedaTracking\?\.draw/); assert.match(commands, /id: 'tracking'/);
-  const { createBridge } = require('../server.cjs'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-trk-')), port = 31900 + Math.floor(Math.random() * 90);
+  const { createBridge } = require('../server.cjs'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-trk-')), port = await new Promise(r => { const n = require('node:net').createServer(); n.listen(0, '127.0.0.1', () => { const x = n.address().port; n.close(() => r(x)); }); });
   const bridge = createBridge({ dataDir: dir, port, camPort: null, lanPort: 0, relayBrokers: ['ws://127.0.0.1:1'] }); await new Promise(r => bridge.server.listen(port, '127.0.0.1', r));
   try {
-    for (const [url, type] of [['/tracking.js', /javascript/], ['/tracking-core.js', /javascript/], ['/vendor/mediapipe/vision_bundle.mjs', /javascript/], ['/vendor/mediapipe/wasm/vision_wasm_internal.wasm', /wasm/], ['/vendor/mediapipe/models/blaze_face_short_range.tflite', /octet-stream/]]) { const r = await fetch('http://localhost:' + port + url); assert.equal(r.status, 200, url); assert.match(r.headers.get('content-type'), type, url); await r.arrayBuffer(); }
+    for (const [url, type] of [['/tracking.js', /javascript/], ['/tracking-core.js', /javascript/], ['/vendor/mediapipe/vision_bundle.mjs', /javascript/], ['/vendor/mediapipe/wasm/vision_wasm_internal.wasm', /wasm/], ['/vendor/mediapipe/models/blaze_face_short_range.tflite', /octet-stream/]]) { const r = await fetch('http://127.0.0.1:' + port + url); assert.equal(r.status, 200, url); assert.match(r.headers.get('content-type'), type, url); await r.arrayBuffer(); }
   } finally { bridge.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

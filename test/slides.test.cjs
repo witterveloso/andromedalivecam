@@ -2,14 +2,18 @@
 // Slides: arquivos servidos, conversor (PowerPoint/LibreOffice → PDF) protegido por token e ligações da mesa.
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { createBridge } = require('../server.cjs'), { findLibreOffice } = require('../slides-convert.cjs');
+
+// Porta livre de verdade (pedida ao sistema) e o endereço 127.0.0.1: sem colisão de porta nem demora do "localhost" (IPv6) em máquinas de CI.
+const freePort = () => new Promise((resolve, reject) => { const s = require('node:net').createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); }); });
+async function fetchSession(base) { let last; for (let i = 0; i < 8; i++) { try { return await (await fetch(base + '/api/session')).json(); } catch (e) { last = e; await new Promise(r => setTimeout(r, 150)); } } throw last; }
 const pub = path.join(__dirname, '..', 'public'), read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
 async function withBridge(env, fn) {
   const saved = {}; for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-slides-test-')), port = 31200 + Math.floor(Math.random() * 400);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-slides-test-')), port = await freePort();
   const bridge = createBridge({ dataDir: dir, port, camPort: null, lanPort: 0, relayBrokers: ['ws://127.0.0.1:1'] });
   await new Promise(resolve => bridge.server.listen(port, '127.0.0.1', resolve));
-  try { await fn('http://localhost:' + port, await (await fetch('http://localhost:' + port + '/api/session')).json()); }
+  try { await fn('http://127.0.0.1:' + port, await fetchSession('http://127.0.0.1:' + port)); }
   finally { bridge.shutdown(); for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
