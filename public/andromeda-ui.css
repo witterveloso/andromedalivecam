@@ -1285,3 +1285,57 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .slides-panel.dropping { outline: 2px dashed var(--d-accent); outline-offset: -6px; }
 .cmd-btn[data-cmd="slides"] .cmd-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { .sl-stage { grid-template-columns: 1fr 1fr; } .sl-controls { grid-column: 1 / -1; } }
+
+/* ---------- TRILHA · música de fundo (0.23) ---------- */
+.trilha-panel { display: grid; gap: 10px; padding: 12px; min-width: 0; }
+.tr-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.tr-now { display: grid; gap: 2px; min-width: 0; }
+.tr-now strong { overflow: hidden; color: var(--d-text); font: 700 15px var(--d-display); text-overflow: ellipsis; white-space: nowrap; }
+.tr-state { color: var(--d-faint); font: 700 10.5px var(--d-display); letter-spacing: .14em; }
+.trilha-panel[data-state="on"] .tr-state, .trilha-panel[data-state="in"] .tr-state { color: var(--d-pgm-text); }
+.trilha-panel[data-state="out"] .tr-state { color: var(--d-amber); }
+.tr-clock { flex: none; padding: 4px 12px; border: 1px solid var(--d-line-2); border-radius: var(--d-r-sm); background: var(--d-inset); color: var(--d-text); font: 700 22px var(--d-mono); font-variant-numeric: tabular-nums; }
+.trilha-panel[data-state="on"] .tr-clock, .trilha-panel[data-state="in"] .tr-clock { border-color: var(--d-pgm); }
+.tr-bar { height: 5px; border-radius: 3px; background: var(--d-line); overflow: hidden; }
+.tr-bar i { display: block; height: 100%; width: 0; background: var(--d-accent); }
+.trilha-panel[data-state="on"] .tr-bar i, .trilha-panel[data-state="in"] .tr-bar i { background: var(--d-pgm); }
+.tr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tr-toggle { min-height: 44px; padding: 0 20px; background: var(--d-pvw); border-color: #5fe39c; color: #031a0d; font: 800 13px var(--d-display); letter-spacing: .05em; }
+.tr-toggle[data-on="true"] { background: var(--d-pgm); border-color: #ff5c7c; color: #fff; }
+.tr-toggle:disabled { background: var(--d-raise); border-color: var(--d-line-2); color: var(--d-faint); }
+.tr-small { min-height: 44px; min-width: 44px; padding: 0 10px; font-size: 16px; }
+.tr-vol { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--d-muted); font-size: 12px; }
+.tr-vol input { width: 120px; }
+.tr-vol output { min-width: 38px; color: var(--d-text); font: 600 12px var(--d-mono); }
+.tr-vol meter { width: 90px; height: 6px; }
+.tr-list { display: grid; gap: 4px; max-height: 190px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.tr-item { display: grid; grid-template-columns: minmax(0, 1fr) 30px 30px 30px; gap: 4px; }
+.tr-item button { min-height: 32px; padding: 0 6px; }
+.tr-pick { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; text-align: left; }
+.tr-pick b { color: var(--d-faint); font: 700 12px var(--d-mono); text-align: center; }
+.tr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-tag { color: var(--d-faint); font: 700 10px var(--d-display); letter-spacing: .12em; }
+.tr-pick time { color: var(--d-muted); font: 600 12px var(--d-mono); }
+.tr-item[data-state="cue"] .tr-pick { border-color: var(--d-pvw); }
+.tr-item[data-state="cue"] .tr-tag { color: var(--d-pvw-text); }
+.tr-item[data-state="air"] .tr-pick { border-color: var(--d-pgm); background: rgba(255, 0, 51, .14); }
+.tr-item[data-state="air"] .tr-tag { color: var(--d-pgm-text); }
+.tr-item[data-state="error"] .tr-tag { color: var(--d-amber); }
+.tr-empty { padding: 14px; border: 1px dashed var(--d-line-2); border-radius: var(--d-r-sm); color: var(--d-faint); text-align: center; }
+.tr-msg { margin: 0; color: var(--d-amber); font-size: 12px; }
+.tr-msg:empty { display: none; }
+.tr-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tr-addfile { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border: 1px dashed var(--d-accent); border-radius: var(--d-r-sm); color: var(--d-accent); font-weight: 700; cursor: pointer; }
+.tr-addfile input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.tr-addfile:focus-within { outline: 2px solid var(--d-accent); outline-offset: 2px; }
+.tr-link, .tr-dev { display: inline-flex; gap: 6px; }
+.tr-link input { width: 230px; min-height: 34px; }
+.tr-dev select { max-width: 200px; min-height: 34px; }
+.tr-link button, .tr-dev button { min-height: 34px; padding: 0 12px; }
+.tr-options { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 14px; }
+.tr-options label { display: grid; gap: 4px; color: var(--d-muted); font-size: 12px; }
+.tr-options input[type="number"] { width: 80px; min-height: 32px; }
+.tr-options .tr-resume { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.tr-note { margin: 0; color: var(--d-faint); font-size: 11.5px; line-height: 1.5; }
+.trilha-panel.dropping { outline: 2px dashed var(--d-accent); outline-offset: -6px; }
+.cmd-btn[data-cmd="trilha"] .cmd-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

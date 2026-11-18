@@ -123,6 +123,8 @@
       const logo = button('Logotipo', 'layer' + (s.fx.logoReady ? '' : ' empty'), () => s.fx.logoReady ? cmd('logo') : notice('Nenhum logotipo carregado na mesa.'), s.fx.logo);
       layers.append(logo, button('PiP', 'layer', () => cmd('pip'), s.fx.pip), button('Retirar todas', 'layer clear', () => cmd('clear')));
     }
+    const tl = s.trilha, trow = $('#trilhaRow'); trow.hidden = !tl?.total;
+    if (tl?.total) { $('#trToggle').textContent = tl.on ? '■ Desligar trilha' : tl.out ? '▶ Voltar com a trilha' : '▶ Ligar trilha'; $('#trToggle').dataset.on = String(!!tl.on); $('#trName').textContent = tl.name || ''; }
     const sl = s.slides, row = $('#slidesRow'); row.hidden = !sl?.loaded;
     if (sl?.loaded) { $('#slCount').textContent = (sl.index + 1) + ' / ' + sl.total; $('#slCount').title = sl.name; row.dataset.air = String(!!sl.air); $('#slPrev').disabled = sl.index <= 0; $('#slNext').disabled = sl.index >= sl.total - 1; }
   }
@@ -169,6 +171,7 @@
   for (const t of ['pointerdown', 'focus']) $('#mVol').addEventListener(t, () => dragging.add($('#mVol'))); for (const t of ['pointerup', 'blur', 'change']) $('#mVol').addEventListener(t, () => dragging.delete($('#mVol')));
   $('#mFade').onclick = () => cmd('fade');
   $('#mFadeTime').onchange = () => cmd('fadetime', { value: Number($('#mFadeTime').value) });
+  $('#trToggle').onclick = () => cmd('trilha'); $('#trNext').onclick = () => cmd('trilhanext');
   $('#slPrev').onclick = () => cmd('slideprev'); $('#slNext').onclick = () => cmd('slidenext'); $('#slPrv').onclick = () => cmd('slides');
   $('#cut').onclick = () => cmd('cut');
   $('#auto').onclick = () => cmd('auto');

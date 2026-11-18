@@ -116,3 +116,6 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); ou
 .slide-btn:disabled { opacity: .45; }
 .slide-count { min-width: 74px; text-align: center; font: 700 20px ui-monospace, Menlo, Consolas, monospace; }
 .slides-row[data-air="true"] .slide-count { color: #ff6b88; }
+
+.trilha-btn[data-on="true"] { background: #b3123a; border-color: #ff6b88; color: #fff; }
+.trilha-name { flex: 1 1 140px; min-width: 0; overflow: hidden; color: #a9b0d2; text-overflow: ellipsis; white-space: nowrap; }
