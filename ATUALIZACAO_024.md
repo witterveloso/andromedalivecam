@@ -1,5 +1,10 @@
 # Andrômeda Live 0.24 — TRACKING: a câmera segue a pessoa
 
+## 0.24.2
+- **Instalador pronto para ser assinado (some o aviso "O Windows protegeu o computador").** O aviso do SmartScreen só desaparece quando o instalador é **assinado por um certificado de assinatura de código** e ganha reputação com o uso; isso depende de uma credencial que só o dono do produto pode contratar (identidade e pagamento). A partir desta versão o CI **assina o instalador, o desinstalador e o programa** assim que as credenciais forem cadastradas no GitHub (Azure Artifact Signing ou certificado), **confere se a assinatura ficou válida** e **não publica** se ficou inválida. O passo a passo está em [ASSINATURA.md](ASSINATURA.md). Sem credenciais nada muda: o instalador sai como antes.
+- **`SHA256SUMS.txt` em cada versão** para conferir se o arquivo baixado é o original (`certutil -hashfile <arquivo> SHA256`).
+- **Enquanto não há certificado:** no aviso, clique em **Mais informações** e depois em **Executar assim mesmo**.
+
 ## 0.24.1
 - **Áudio master com visual novo.** O painel foi reorganizado: o **estado do áudio** (sinal, silêncio, pico) virou um indicador com LED no topo, com o atalho **⇄ Remoto** para a mesa de áudio em outro aparelho; **ÁUDIO HABILITADO** e **FONES** ficam lado a lado, com o texto inteiro; os medidores **L e R** são barras horizontais em **LED** (verde, amarelo e vermelho) com a leitura em dBFS e o aviso PEAK ao lado e a escala embaixo; o **volume** tem leitura grande em dB e barra de largura total; o **FADE OUT** é um botão grande, com o tempo ao lado. Tudo cabe no tamanho padrão do painel, sem rolagem, inclusive em janelas pequenas, e segue o estilo de botões escolhido (Vidro, Neon, Console…).
 
