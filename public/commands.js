@@ -261,7 +261,7 @@
   const master = make('section', 'master-panel'); master.setAttribute('aria-label', 'Áudio master');
   const SPK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   const PHONES = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 14v-2a7.5 7.5 0 0 1 15 0v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3.5" y="13.5" width="4.5" height="6.5" rx="1.6" fill="currentColor"/><rect x="16" y="13.5" width="4.5" height="6.5" rx="1.6" fill="currentColor"/></svg>';
-  master.innerHTML = '<div class="master-top"><span class="master-label">MASTER</span><span id="masterAudioState" class="master-state">—</span></div>' +
+  master.innerHTML = '<div class="master-top"><span class="master-label">SAÍDA PROGRAM</span><span id="masterAudioState" class="master-state">—</span></div>' +
     '<div class="master-switches">' +
     '<button type="button" id="masterAudioOn" class="master-switch" aria-pressed="false"><i class="ms-led"></i>' + SPK + '<span><b>HABILITAR ÁUDIO</b><small>medidores e saída de som</small></span></button>' +
     '<button type="button" id="masterPhones" class="master-switch" aria-pressed="false"><i class="ms-led"></i>' + PHONES + '<span><b>FONES</b><small>desligados</small></span></button></div>' +
@@ -280,6 +280,7 @@
   audioOn.onclick = async () => { try { await audioMixer.enable(); $('#pgmAudioEnable')?.click(); log('Áudio da mesa habilitado'); } catch (e) { log('Áudio indisponível: ' + e.message); } paintSwitches(); };
   phones.onclick = async () => { const b = $('#pgmListen'); if (b) await b.onclick?.(); paintSwitches(); };
   function paintSwitches() {
+    master.dataset.level = $('.pgm-audio-monitor')?.dataset.level || 'off'; // cor do indicador de estado (sinal, silêncio, pico)
     const running = audioMixer.context?.state === 'running', listening = running && !!$('#listenMixer')?.checked;
     audioOn.setAttribute('aria-pressed', String(running)); audioOn.querySelector('b').textContent = running ? 'ÁUDIO HABILITADO' : 'HABILITAR ÁUDIO';
     audioOn.querySelector('small').textContent = running ? 'medidores e saída ativos' : 'medidores e saída de som';
@@ -320,8 +321,8 @@
   $('#masterFade').onclick = runFade; paintFade();
 
   // Atalho: mesa de áudio em outro aparelho (link + QR). Cada aparelho novo é aprovado aqui na mesa.
-  const remoteAudio = make('button', 'master-remote', 'Mesa de áudio em outro aparelho'); remoteAudio.type = 'button';
-  master.querySelector('.master-links').append(remoteAudio);
+  const remoteAudio = make('button', 'master-remote', 'Remoto'); remoteAudio.type = 'button'; remoteAudio.title = 'Mesa de áudio em outro aparelho: gera o link (e o QR) para operar o áudio de um celular ou computador. Cada aparelho novo é aprovado aqui na mesa.'; remoteAudio.setAttribute('aria-label', 'Mesa de áudio em outro aparelho');
+  master.querySelector('.master-top').append(remoteAudio);
   remoteAudio.onclick = () => {
     const url = window.andromedaRemote?.mixerLink?.() || '';
     if (!url) { openPop(remoteAudio, 'Mesa de áudio remota', note('Disponível no programa Andrômeda Live instalado, com internet: ele gera o link e conecta o aparelho.')); return; }

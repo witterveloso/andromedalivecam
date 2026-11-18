@@ -1,5 +1,8 @@
 # Andrômeda Live 0.24 — TRACKING: a câmera segue a pessoa
 
+## 0.24.1
+- **Áudio master com visual novo.** O painel foi reorganizado: o **estado do áudio** (sinal, silêncio, pico) virou um indicador com LED no topo, com o atalho **⇄ Remoto** para a mesa de áudio em outro aparelho; **ÁUDIO HABILITADO** e **FONES** ficam lado a lado, com o texto inteiro; os medidores **L e R** são barras horizontais em **LED** (verde, amarelo e vermelho) com a leitura em dBFS e o aviso PEAK ao lado e a escala embaixo; o **volume** tem leitura grande em dB e barra de largura total; o **FADE OUT** é um botão grande, com o tempo ao lado. Tudo cabe no tamanho padrão do painel, sem rolagem, inclusive em janelas pequenas, e segue o estilo de botões escolhido (Vidro, Neon, Console…).
+
 ## 0.24.0
 - **Tracking no Controle de câmera.** Na coluna do preview, ao lado da imagem, o botão **⌖ Tracking** liga o seguimento automático da câmera escolhida: a mesa vê a imagem do celular, acha o alvo e manda ao celular o **pan e o zoom** que o mantêm no quadro, como um operador de câmera. Nasce **desligado** em cada câmera e só liga com o Controle de câmera ativo e o celular conectado.
 - **O que seguir:** **Rosto**, **Pessoa (corpo)** ou **Movimento** (o que se mexe na imagem). O reconhecimento roda **neste computador**, dentro do programa (MediaPipe, sem internet e sem enviar imagem a ninguém).
