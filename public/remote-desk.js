@@ -58,6 +58,7 @@
       live: g.live(), pgmName: busRow(1)[state.pgm]?.textContent.trim() || '', prvName: row[state.prv]?.textContent.trim() || '',
       sources: list, types: [...document.querySelectorAll('.ttype')].map(t => t.textContent.trim()),
       audio: audioState(),
+      trilha: window.andromedaTrilha ? (({ on, out, name, total }) => ({ on, out, name: String(name).slice(0, 80), total }))(window.andromedaTrilha.info()) : null,
       slides: window.andromedaSlides ? (({ loaded, name, index, total, air, prv }) => ({ loaded, name: String(name).slice(0, 80), index, total, air, prv }))(window.andromedaSlides.info()) : null,
       fx: fxLive ? { layers: fxLive.layers.map(l => ({ name: l.name, on: !!l.on, ready: gcReady(l) })), logo: !!fxLive.logo.on, logoReady: !!g.fx()?.logo, pip: !!fxLive.pip.on } : null,
     };
@@ -95,6 +96,8 @@
       case 'pip': done = click(document.querySelector('#fxPip')); what = 'Janela'; break;
       case 'clear': done = click(document.querySelector('#fxClear')); what = 'Retirar camadas'; break;
       // Slides: o celular vira o "passador" da apresentação aberta na mesa (também funciona com os slides no PREVIEW).
+      case 'trilha': { const T = window.andromedaTrilha; if (!T) return false; if (!T.info().total && !T.info().on) { refusal = 'A playlist da trilha está vazia. Adicione músicas na mesa (painel Trilha).'; return false; } done = !!T.toggle(); what = T.info().on || T.info().state === 'in' ? 'Trilha: ligada' : 'Trilha: desligada'; break; }
+      case 'trilhanext': { const T = window.andromedaTrilha; if (!T?.info().total) return false; done = !!T.next(); what = 'Trilha: próxima faixa'; break; }
       case 'slides': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.toPreview(); what = 'Slides → PREVIEW'; break; }
       case 'slidenext': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.next(); what = 'Próximo slide'; break; }
       case 'slideprev': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.prev(); what = 'Slide anterior'; break; }

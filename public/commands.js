@@ -76,6 +76,9 @@
     { id: 'slides', name: () => 'SLIDES', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index + 1) + ' / ' + s.total + ' · ' + s.name : 'abra uma apresentação'; }, run: () => R.slides.toPreview(), on: () => state.pgm === SLIDES_SOURCE, prv: () => state.prv === SLIDES_SOURCE, settings: () => openSlides() },
     { id: 'slideprev', name: () => 'SLIDE ANTERIOR', icon: () => 'prev', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index > 0 ? 'volta ao ' + s.index : 'primeiro slide') : 'sem slides'; }, run: () => R.slides.prev(), on: () => false, prv: () => false, settings: () => openSlides() },
     { id: 'slidenext', name: () => 'PRÓXIMO SLIDE', icon: () => 'next', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index < s.total - 1 ? 'vai ao ' + (s.index + 2) : 'último slide') : 'sem slides'; }, run: () => R.slides.next(), on: () => false, prv: () => false, settings: () => openSlides() },
+    // TRILHA: música de fundo direto no AR (sem PREVIEW), com fade in ao ligar e fade out ao desligar.
+    { id: 'trilha', name: () => 'TRILHA', icon: () => 'note', sub: () => { const t = R.trilha.info(); return t.state === 'out' ? 'saindo do AR…' : t.state === 'in' ? 'entrando…' : t.on ? '♪ ' + (t.name || 'no ar') : t.total ? t.name : 'playlist vazia'; }, run: () => R.trilha.toggle(), on: () => R.trilha.info().on, prv: () => R.trilha.info().out, settings: () => R.trilha.openPanel() },
+    { id: 'trilhanext', name: () => 'PRÓXIMA FAIXA', icon: () => 'next', sub: () => { const t = R.trilha.info(); return t.total > 1 ? 'troca suave' : 'sem outra faixa'; }, run: () => R.trilha.next(), on: () => false, prv: () => false, settings: () => R.trilha.openPanel() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
@@ -94,7 +97,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['slides', 'mosaic'], ['slideprev', 'slides'], ['slidenext', 'slideprev']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['slides', 'mosaic'], ['slideprev', 'slides'], ['slidenext', 'slideprev'], ['trilha', 'slidenext'], ['trilhanext', 'trilha']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -388,6 +391,8 @@
     { id: 'slideprev', label: 'SLIDES · slide anterior', key: 'PageUp', run: () => R.slides.prev(), slide: true },
     { id: 'slidefirst', label: 'SLIDES · primeiro slide', key: '', run: () => R.slides.first(), slide: true },
     { id: 'slidelast', label: 'SLIDES · último slide', key: '', run: () => R.slides.last(), slide: true },
+    { id: 'trilha', label: 'TRILHA (liga com fade in / desliga com fade out)', key: 'T', run: () => R.trilha.toggle() },
+    { id: 'trilhanext', label: 'TRILHA · próxima faixa', key: 'N', run: () => R.trilha.next() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
   ];
   const KEYS_KEY = 'andromeda.shortcuts.v1';
