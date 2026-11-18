@@ -1130,3 +1130,17 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .master-links button { min-height: 28px; padding: 3px 10px; font-size: 11px; }
 /* Janela muito estreita: o selo PEAK sai (a borda vermelha da barra já avisa o clip) e a altura do master volta a caber. */
 @container (max-width: 270px) { .master-meters .vu-clip { display: none; } .master-meters .pgm-audio-channels > div > b { font-size: 11px; } }
+
+/* ---------- Áudio de cada câmera: três botões fixos (OFF branco · AR vermelho · ON verde) no lugar do menu ---------- */
+.mv-cell select.cell-audio { display: none !important; }
+.cell-mode { position: absolute; left: 6px; bottom: 6px; z-index: 4; display: inline-flex; gap: 3px; max-width: calc(100% - 52px); }
+.mv-cell.no-signal .cell-mode { display: none; }
+@container (max-width: 130px) { .cell-mode { display: none; } }
+.cell-mode-btn { min-width: 34px; min-height: 24px; padding: 0 7px; border-radius: 6px; border: 1.5px solid; font: 800 10px var(--d-display); letter-spacing: .06em; line-height: 1; cursor: pointer; background: rgba(0, 0, 0, .62); transition: background .12s, box-shadow .12s, color .12s; }
+.cell-mode-btn[data-mode="off"] { color: #f2f4ff; border-color: rgba(242, 244, 255, .8); }
+.cell-mode-btn[data-mode="afv"] { color: #ff5c7c; border-color: #ff0033; }
+.cell-mode-btn[data-mode="on"] { color: #43d36b; border-color: #22c36a; }
+.cell-mode-btn[data-mode="off"][aria-checked="true"] { background: #f2f4ff; color: #0b0f2a; box-shadow: 0 0 10px rgba(242, 244, 255, .45); }
+.cell-mode-btn[data-mode="afv"][aria-checked="true"] { background: #ff0033; color: #fff; box-shadow: 0 0 12px rgba(255, 0, 51, .6); }
+.cell-mode-btn[data-mode="on"][aria-checked="true"] { background: #22c36a; color: #04130a; box-shadow: 0 0 12px rgba(34, 195, 106, .55); }
+.cell-mode-btn:not([aria-checked="true"]):hover { background: rgba(255, 255, 255, .14); }

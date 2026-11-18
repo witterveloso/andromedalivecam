@@ -380,6 +380,23 @@
     if (!hasSignal(i)) { log(sources[i] + ' sem sinal: ficou só no PREVIEW (não foi ao ar)'); return false; }
     cut(); log(sources[i] + ' direto no AR'); return true;
   }
+  // Modo de áudio de cada câmera: três botões fixos no lugar do menu. OFF (branco) sem áudio · AR (vermelho) áudio só enquanto
+  // a câmera está no AR (AFV) · ON (verde) áudio contínuo. Os botões comandam o menu original (que fica escondido).
+  { const MODES = [['off', 'OFF', 'Sem áudio'], ['afv', 'AR', 'Áudio só enquanto a câmera está no AR (acompanha o vídeo)'], ['on', 'ON', 'Áudio contínuo, mesmo fora do AR']];
+    const groups = [];
+    $$('.mv-cell').forEach((cell, i) => {
+      const sel = cell.querySelector('select.cell-audio'); if (!sel) return;
+      const group = make('div', 'cell-mode'); group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Áudio de ' + (sources[i] || 'CAM ' + (i + 1)));
+      for (const [value, label, tip] of MODES) {
+        const btn = make('button', 'cell-mode-btn', label); btn.type = 'button'; btn.dataset.mode = value; btn.setAttribute('role', 'radio'); btn.title = tip;
+        for (const type of ['pointerdown', 'keydown', 'dblclick']) btn.addEventListener(type, e => e.stopPropagation());
+        btn.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); sel.value = value; sel.dispatchEvent(new Event('change')); paintModes(); });
+        group.append(btn);
+      }
+      sel.after(group); groups.push([group, sel]);
+    });
+    function paintModes() { for (const [group, sel] of groups) for (const btn of group.children) { const on = btn.dataset.mode === sel.value; if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on)); } }
+    paintModes(); setInterval(paintModes, 150); }
   // O número de atalho aparece em cada câmera do multiview; clicar nele faz o mesmo que a tecla: a câmera corta direto para o AR.
   // O resto do quadro continua como antes (um clique escolhe o PREVIEW, duplo clique abre as fontes).
   { const chips = [];

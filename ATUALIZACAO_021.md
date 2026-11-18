@@ -18,6 +18,7 @@
   - **✓ Concluir** (ou Esc) termina e os botões voltam a funcionar. A ordem fica salva.
   - O *Personalizar* continua funcionando do mesmo jeito.
 - **Número de atalho clicável em cada câmera.** Cada câmera do multiview mostra o seu número (1 a 9 e 0) no canto. **Clicar no número leva a câmera direto para o AR**, igual à tecla. Câmera sem sinal fica só no PREVIEW; clicar no resto do quadro continua escolhendo o PREVIEW (duplo clique abre as fontes). Se o operador trocar a tecla em *Personalizar → Atalhos*, o número mostrado acompanha.
+- **Áudio de cada câmera em três botões fixos.** O menu de opções de cada câmera (OFF · sem áudio / AFV / ON · contínuo) deu lugar a **três botões sempre à vista**, cada um de uma cor: **OFF** (branco: sem áudio), **AR** (vermelho: o áudio só entra enquanto a câmera está no AR, o antigo AFV) e **ON** (verde: áudio contínuo). O botão da escolha atual fica aceso e o mixer acompanha. Clicar neles não muda o PREVIEW nem o AR.
 - **Vinheta com ou sem áudio.** No ajuste da vinheta (duplo clique em VINHETA) há **Áudio da vinheta: Com áudio / Sem áudio (só a imagem)**. Sem áudio, o vídeo toca normalmente e o som dela não entra no programa. Vale na hora, mesmo com a vinheta no ar, o botão mostra **SEM ÁUDIO** e a escolha fica salva.
 - **VU do áudio master com metade do tamanho e mais juntos.** As barras L e R encolheram para a metade e ficam lado a lado, no meio do painel (antes ficavam bem separadas, uma em cada metade).
 
