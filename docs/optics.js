@@ -189,6 +189,9 @@
     const u = { z: gl.getUniformLocation(program, 'z'), o: gl.getUniformLocation(program, 'o'), g: gl.getUniformLocation(program, 'g'), e: gl.getUniformLocation(program, 'e') };
     const stabilizer = makeStabilizer();
     let p = params(), stopped = false, frames = 0, shake = 0;
+    // Suavização do enquadramento (pan e zoom digitais): quem controla à distância (tracking) manda o tempo em ms e a imagem anda até lá
+    // a cada quadro, sem degraus entre um comando e outro. Sem tempo (ease 0) o enquadramento obedece na hora, como o dedo na tela.
+    const sm = { pan: { x: p.pan.x, y: p.pan.y }, zoom: p.zoom, at: 0 };
     const draw = () => {
       if (stopped) return;
       if (video.readyState >= 2 && video.videoWidth) {
@@ -201,8 +204,11 @@
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
         // Linhas da imagem descem; com a textura invertida, o deslocamento vertical troca de sinal.
-        const room = Math.max(0, .5 - .5 / Math.max(1, p.zoom * s.scale));
-        gl.uniform1f(u.z, p.zoom * s.scale); gl.uniform2f(u.o, s.ox + p.pan.x * room, -s.oy - p.pan.y * room); gl.uniform3fv(u.g, p.gain); gl.uniform1f(u.e, p.expo);
+        const nowMs = performance.now(), k = ease > 0 && sm.at ? 1 - Math.exp(-Math.min(100, nowMs - sm.at) / ease) : 1; sm.at = nowMs;
+        sm.pan.x += (p.pan.x - sm.pan.x) * k; sm.pan.y += (p.pan.y - sm.pan.y) * k; sm.zoom += (p.zoom - sm.zoom) * k;
+        if (Math.abs(p.pan.x - sm.pan.x) < 1e-4 && Math.abs(p.pan.y - sm.pan.y) < 1e-4 && Math.abs(p.zoom - sm.zoom) < 1e-4) { sm.pan.x = p.pan.x; sm.pan.y = p.pan.y; sm.zoom = p.zoom; }
+        const room = Math.max(0, .5 - .5 / Math.max(1, sm.zoom * s.scale));
+        gl.uniform1f(u.z, sm.zoom * s.scale); gl.uniform2f(u.o, s.ox + sm.pan.x * room, -s.oy - sm.pan.y * room); gl.uniform3fv(u.g, p.gain); gl.uniform1f(u.e, p.expo);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); frames++;
       }
       schedule();
@@ -401,8 +407,10 @@
   const evRange = () => range(caps.exposureCompensation) ? { min: caps.exposureCompensation.min, max: caps.exposureCompensation.max, step: caps.exposureCompensation.step || 0.1 } : EV;
   const kelvinRange = () => native().wb ? { min: caps.colorTemperature.min, max: caps.colorTemperature.max, step: caps.colorTemperature.step || 50 } : KELVIN;
   // Comandos da mesa: zoom, lente, enquadramento, exposição e balanço de branco.
+  let ease = 0; // ms
   function remote(m) {
     if (!raw) return;
+    ease = Number.isFinite(m.ease) ? clamp(m.ease, 0, 400) : 0;
     if (typeof m.lens === 'string') { const select = $('#lens'); if (select && [...select.options].some(o => o.value === m.lens) && select.value !== m.lens) { select.value = m.lens; select.onchange?.(); say('A mesa trocou a lente.', 'info'); } }
     if (Number.isFinite(m.zoom)) setZoom(m.zoom);
     if (m.center) setPan(0, 0);

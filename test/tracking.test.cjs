@@ -1,71 +1,91 @@
 'use strict';
-// Tracking: o núcleo mantém o alvo no quadro, num celular simulado com a mesma geometria do app da câmera (zoom + pan digitais).
+// Tracking: o núcleo mantém o alvo no quadro com movimento suave, num celular simulado (zoom e pan digitais, atraso de rede, ruído,
+// suavização do celular) com a mesma geometria do app da câmera.
 const test = require('node:test'), assert = require('node:assert/strict');
-const { Tracker, MotionDetector, pickSubject, travel, FRAMES } = require('../public/tracking-core.js');
+const { Tracker, Kalman1D, MotionDetector, pickSubject, spring, travel, room, FRAMES, SPEEDS, COMFORT } = require('../public/tracking-core.js');
+const { simulate, metrics } = require('./helpers/tracking-sim.cjs');
 
-// Mundo: o alvo anda em coordenadas do quadro inteiro (0–1). A janela do celular mostra 1/zoom do quadro, deslocada pelo pan.
-function world({ zoom = 2, pan = { x: 0, y: 0 }, zoomMin = 1, zoomMax = 4 } = {}) {
-  const w = { zoom, pan: { ...pan }, zoomMin, zoomMax, subject: { x: 0.5, y: 0.5, h: 0.2 } };
-  w.view = () => { // onde o alvo aparece na imagem recortada (0–1) e quão alto
-    const room = 0.5 - 0.5 / w.zoom, cx = 0.5 + w.pan.x * room, cy = 0.5 + w.pan.y * room, size = 1 / w.zoom;
-    return { cx: (w.subject.x - (cx - size / 2)) / size, cy: (w.subject.y - (cy - size / 2)) / size, h: w.subject.h / size };
-  };
-  w.apply = c => { if (c.pan) w.pan = { ...c.pan }; if (c.zoom) w.zoom = c.zoom; };
-  return w;
-}
-const det = (v, kind = 'face') => ({ cx: v.cx, cy: v.cy, w: v.h * 0.8, h: v.h, kind });
-const inView = v => v.cx > 0 && v.cx < 1 && v.cy > 0 && v.cy < 1;
+const walk = t => ({ x: 0.5 + 0.2 * Math.sin(t * 0.45) + 0.03 * Math.sin(t * 1.7), y: 0.45 + 0.03 * Math.sin(t * 0.6), h: 0.07 });
+const NETS = { lan: { dCmd: 0.03, dVid: 0.08, tDet: 0.04, latency: 0.25 }, normal: { dCmd: 0.08, dVid: 0.14, tDet: 0.05, latency: 0.4 }, lenta: { dCmd: 0.2, dVid: 0.3, tDet: 0.06, latency: 0.7 } };
+const driverOf = tracker => ({ onDetection(det, t, view) { tracker.observe(det, t, view); }, onTick(view, t) { return tracker.tick(view, t); } });
+// Controlador "ingênuo" (o que o tracking fazia antes): um passo proporcional a cada detecção, aplicado na hora.
+function naive() { let pending = null; return { onDetection(det, t, view) { if (!det) return; const k = travel(view.zoom) || 1, nx = Math.max(-1, Math.min(1, view.pan.x + 0.55 * (det.cx - 0.5) / k)), ny = Math.max(-1, Math.min(1, view.pan.y + 0.55 * (det.cy - 0.42) / k)); pending = { pan: { x: nx, y: ny } }; }, onTick() { const o = pending; pending = null; return o; } }; }
 
-test('a geometria do pan: sem zoom não há folga, com zoom 3× uma unidade de pan move um quadro inteiro', () => {
-  assert.equal(travel(1), 0); assert.equal(travel(3), 1); assert.equal(travel(2), 0.5);
-  const w = world({ zoom: 3 }); w.subject = { x: 0.5 + (0.5 - 0.5 / 3), y: 0.5, h: 0.1 }; // alvo na borda direita do quadro inteiro
-  assert.ok(w.view().cx > 0.99, 'sem pan o alvo está na borda'); w.pan.x = 1; assert.ok(Math.abs(w.view().cx - 0.5) < 1e-9, 'pan +1 centraliza');
+test('a geometria do recorte: sem zoom não há folga, com zoom 3× uma unidade de pan move um quadro inteiro', () => {
+  assert.equal(travel(1), 0); assert.equal(travel(3), 1); assert.equal(travel(2), 0.5); assert.equal(room(1), 0); assert.ok(Math.abs(room(2) - 0.25) < 1e-12);
 });
 
-test('segue uma pessoa que anda de um lado ao outro e a mantém dentro do quadro', () => {
-  const w = world({ zoom: 2.5 }), t = new Tracker({ speed: 'normal' });
-  let worst = 0, steps = 0;
-  for (let i = 0; i < 600; i++) { // 60 s a 10 quadros por segundo
-    w.subject.x = 0.5 + 0.28 * Math.sin(i / 10 * 0.35); w.subject.y = 0.5 + 0.06 * Math.sin(i / 10 * 0.5);
-    const v = w.view(), out = t.update(det(v), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 4 }, 0.1); w.apply(out); steps++;
-    if (i > 30) worst = Math.max(worst, Math.abs(w.view().cx - 0.5), Math.abs(w.view().cy - 0.42));
-    assert.ok(inView(w.view()) || i < 5, 'o alvo não saiu do quadro (passo ' + i + ')');
-  }
-  assert.ok(worst < 0.3, 'erro máximo ' + worst.toFixed(2));
+test('filtro de Kalman: acha a velocidade do alvo e tira o ruído da medida', () => {
+  const k = new Kalman1D(0.2); let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5; let errRaw = 0, errKal = 0, vSum = 0, n = 0;
+  k.init(0.2, 0, 1e-4); for (let i = 1; i <= 200; i++) { const t = i * 0.125, truth = 0.2 + 0.1 * t, z = truth + rnd() * 0.03; k.predict(t); k.update(z, 0.0003); if (i > 40) { errRaw += Math.abs(z - truth); errKal += Math.abs(k.x - truth); vSum += k.v; n++; } }
+  const vMean = vSum / n; assert.ok(Math.abs(vMean - 0.1) < 0.02, 'velocidade estimada (média) ' + vMean.toFixed(3)); assert.ok(errKal / n < errRaw / n * 0.7, 'erro filtrado ' + (errKal / n).toFixed(4) + ' < medida ' + (errRaw / n).toFixed(4));
+  assert.ok(Math.abs(k.at(25.6) - (0.2 + 0.1 * 25.6)) < 0.05, 'projeta o caminho adiante');
 });
 
-test('sem zoom o modo "só seguir" aplica um zoom mínimo para ter folga; com zoom já alto não mexe no zoom', () => {
-  const t = new Tracker({ frame: 'seguir' }), w = world({ zoom: 1 }); w.subject = { x: 0.55, y: 0.5, h: 0.2 };
-  let out; for (let i = 0; i < 30; i++) { out = t.update(det(w.view()), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 4 }, 0.1); w.apply(out); }
-  assert.ok(w.zoom >= 1.39, 'zoom mínimo para seguir: ' + w.zoom);
-  const t2 = new Tracker({ frame: 'seguir' }), w2 = world({ zoom: 2 }); for (let i = 0; i < 50; i++) { w2.subject.x = 0.5 + 0.1 * Math.sin(i / 8); w2.apply(t2.update(det(w2.view()), { zoom: w2.zoom, pan: w2.pan, zoomMin: 1, zoomMax: 4 }, 0.1)); }
-  assert.equal(w2.zoom, 2, 'zoom intacto');
+test('a mola: parte e para sem passar do ponto, respeitando o limite de velocidade e de aceleração', () => {
+  const s = { x: 0, v: 0 }; let maxV = 0, maxA = 0, prev = 0, over = 0;
+  for (let i = 0; i < 400; i++) { spring(s, 0.4, 0.025, 2.6, 0.4, 1.1); maxV = Math.max(maxV, Math.abs(s.v)); maxA = Math.max(maxA, Math.abs(s.v - prev) / 0.025); prev = s.v; over = Math.max(over, s.x - 0.4); }
+  assert.ok(Math.abs(s.x - 0.4) < 1e-3 && Math.abs(s.v) < 1e-3, 'chegou e parou'); assert.ok(maxV <= 0.4 + 1e-9, 'velocidade ' + maxV); assert.ok(maxA <= 1.1 + 0.05, 'aceleração ' + maxA); assert.ok(over < 0.01, 'não passou do ponto: ' + over);
 });
 
-test('enquadramento: o zoom vai até o rosto ficar no tamanho do busto (devagar, sem oscilar) e respeita os limites do celular', () => {
-  for (const [frame, face] of [['busto', 0.07], ['rosto', 0.07], ['meio', 0.07]]) {
-    const w = world({ zoom: 1.5, zoomMax: 6 }); w.subject = { x: 0.5, y: 0.45, h: face }; const t = new Tracker({ frame }); const trail = [];
-    for (let i = 0; i < 600; i++) { w.apply(t.update(det(w.view()), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 6 }, 0.1)); trail.push(w.zoom); }
-    assert.ok(Math.abs(w.view().h - FRAMES[frame].h) < FRAMES[frame].h * 0.18, frame + ': altura final ' + w.view().h.toFixed(3) + ' alvo ' + FRAMES[frame].h);
-    const tail = trail.slice(-100), swing = Math.max(...tail) - Math.min(...tail); assert.ok(swing < 0.05, frame + ': zoom estável no fim (' + swing.toFixed(3) + ')');
-    for (const z of trail) assert.ok(z >= 1 && z <= 6);
-  }
-  const w = world({ zoom: 1.2, zoomMax: 2 }); w.subject.h = 0.04; const t = new Tracker({ frame: 'rosto' }); for (let i = 0; i < 400; i++) w.apply(t.update(det(w.view()), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 2 }, 0.1)); assert.ok(w.zoom <= 2 + 1e-9, 'não passa do zoom máximo do aparelho');
+for (const [net, cfg] of Object.entries(NETS)) test('segue quem anda de um lado ao outro (' + net + '): alvo sempre no quadro, movimento de câmera sem solavancos', () => {
+  const t = new Tracker({ speed: 'normal', latency: cfg.latency });
+  const m = metrics(simulate({ subject: walk, seconds: 40, ...cfg, driver: driverOf(t) }, { skip: 4 }).trace);
+  const base = metrics(simulate({ subject: walk, seconds: 40, ...cfg, driver: naive() }).trace);
+  assert.equal(m.outFrames, 0, 'o alvo nunca saiu do quadro'); assert.ok(m.meanX < 0.11, 'erro médio ' + m.meanX.toFixed(3)); assert.ok(m.worstX < 0.3, 'pior erro ' + m.worstX.toFixed(2));
+  assert.ok(m.maxA < 8, 'aceleração máxima da janela ' + m.maxA.toFixed(1)); assert.ok(m.rmsJerk < 250, 'solavanco (jerk) ' + m.rmsJerk.toFixed(0)); assert.ok(m.stallRatio < 0.05, 'sem trancos');
+  assert.ok(m.rmsJerk * 8 < base.rmsJerk, 'muito mais suave que o passo por detecção: ' + m.rmsJerk.toFixed(0) + ' vs ' + base.rmsJerk.toFixed(0)); assert.ok(m.maxA * 8 < base.maxA);
 });
 
-test('perdeu a pessoa: segura a posição, depois procura; opcionalmente volta ao centro; ruído não faz a câmera tremer', () => {
-  const w = world({ zoom: 2.5, pan: { x: 0.6, y: 0.2 } }), t = new Tracker({ lostHold: 1, lostReturn: true }), v0 = { zoom: 2.5, zoomMin: 1, zoomMax: 4 };
-  let out = t.update(null, { ...v0, pan: w.pan }, 0.1); assert.equal(out.pan, undefined, 'não mexe no primeiro instante'); for (let i = 0; i < 5; i++) out = t.update(null, { ...v0, pan: w.pan }, 0.1); assert.equal(out.state, 'lost'); assert.equal(out.pan, undefined, 'segura enquanto espera');
-  for (let i = 0; i < 80; i++) { out = t.update(null, { ...v0, pan: w.pan }, 0.1); w.apply(out); } assert.equal(out.state, 'search'); assert.ok(Math.abs(w.pan.x) < 0.1 && Math.abs(w.pan.y) < 0.1, 'voltou ao centro: ' + JSON.stringify(w.pan));
-  const still = world({ zoom: 2.5 }), t2 = new Tracker(); let moves = 0, seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
-  for (let i = 0; i < 300; i++) { const v = still.view(); v.cx += rnd() * 0.03; v.cy += rnd() * 0.03; const o = t2.update(det(v), { zoom: still.zoom, pan: still.pan, zoomMin: 1, zoomMax: 4 }, 0.1); if (o.pan) moves++; still.apply(o); }
-  assert.ok(moves < 60, 'zona morta: poucos comandos com o alvo parado (' + moves + ')');
+test('estilos de movimento: o suave acelera menos que o normal e o rápido responde mais depressa', () => {
+  const run = speed => { const t = new Tracker({ speed, latency: 0.4 }); return metrics(simulate({ subject: walk, seconds: 40, ...NETS.normal, driver: driverOf(t) }).trace, { skip: 4 }); };
+  const a = run('suave'), b = run('normal'), c = run('rapido');
+  assert.ok(a.maxA < b.maxA && b.maxA < c.maxA, 'aceleração ' + [a, b, c].map(x => x.maxA.toFixed(2)).join(' < ')); assert.ok(c.meanX <= b.meanX + 0.01 && b.meanX <= a.meanX + 0.01, 'erro médio ' + [a, b, c].map(x => x.meanX.toFixed(3)).join(', '));
+  for (const x of [a, b, c]) assert.equal(x.outFrames, 0);
 });
 
-test('ao operar à mão a câmera para de seguir por um tempo (holdOff) e depois volta', () => {
-  const t = new Tracker(), w = world({ zoom: 2.5 }); w.subject.x = 0.7; t.holdOff(2);
-  let out = t.update(det(w.view()), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 4 }, 0.5); assert.equal(out.state, 'hold'); assert.equal(out.pan, undefined);
-  for (let i = 0; i < 4; i++) out = t.update(det(w.view()), { zoom: w.zoom, pan: w.pan, zoomMin: 1, zoomMax: 4 }, 0.5); assert.equal(out.state, 'track'); assert.ok(out.pan, 'voltou a seguir');
+test('zona de conforto: com o alvo parado (só ruído) a câmera fica quieta e quase não manda comandos', () => {
+  const t = new Tracker({ speed: 'normal', latency: 0.4 }); const subj = () => ({ x: 0.52, y: 0.45, h: 0.07 });
+  const r = simulate({ subject: subj, seconds: 40, ...NETS.normal, noise: 0.012, zoom0: 2, driver: driverOf(t) });
+  const late = r.sent.filter(c => c.t > 15).length; assert.ok(late <= 3, 'comandos depois de assentar: ' + late);
+  const m = metrics(r.trace, { skip: 15 }); assert.ok(m.maxV < 0.01, 'janela parada: ' + m.maxV.toFixed(4));
+});
+
+test('alvo que anda, para e anda de novo: parte suave, para sem passar do ponto e não oscila', () => {
+  const t = new Tracker({ speed: 'normal', latency: 0.4 }); const subj = tt => ({ x: tt < 8 ? 0.42 : tt < 20 ? 0.6 : 0.46, y: 0.45, h: 0.07 });
+  const r = simulate({ subject: subj, seconds: 32, ...NETS.normal, driver: driverOf(t) }); const m = metrics(r.trace, { skip: 3 });
+  assert.ok(m.maxA < 8 && m.maxV < 0.5, 'movimento ' + m.maxA.toFixed(2) + ' / ' + m.maxV.toFixed(2)); assert.equal(m.outFrames, 0);
+  const seg = r.trace.filter(p => p.t > 14 && p.t < 20); const final = seg[seg.length - 1].cx; let reversals = 0, dir = 0; for (let i = 1; i < seg.length; i++) { const d = Math.sign(Math.round((seg[i].cx - seg[i - 1].cx) * 2000)); if (d && dir && d !== dir) reversals++; if (d) dir = d; }
+  assert.ok(reversals <= 2, 'sem oscilar ao parar (inversões: ' + reversals + ')'); assert.ok(Math.abs(seg[seg.length - 1].vx - 0.5) < 0.15, 'alvo no centro');
+});
+
+test('enquadramento: o zoom vai até o rosto ficar do tamanho do busto, devagar, sem oscilar e sem puxar a imagem para o lado', () => {
+  const t = new Tracker({ frame: 'busto', speed: 'normal', latency: 0.4 }); const subj = () => ({ x: 0.5, y: 0.45, h: 0.07 });
+  const r = simulate({ subject: subj, seconds: 40, ...NETS.normal, zoom0: 1.4, zoomMax: 6, driver: driverOf(t) }); const tr = r.trace;
+  const end = tr.slice(-60); assert.ok(Math.abs(end[end.length - 1].h - FRAMES.busto.h) < FRAMES.busto.h * 0.18, 'altura final ' + end[end.length - 1].h.toFixed(3));
+  const swing = Math.max(...end.map(p => p.z)) - Math.min(...end.map(p => p.z)); assert.ok(swing < 0.06, 'zoom estável no fim (' + swing.toFixed(3) + ')');
+  let worst = 0; for (const p of tr.filter(q => q.t > 3)) worst = Math.max(worst, Math.abs(p.vx - 0.5)); assert.ok(worst < 0.12, 'o zoom não desloca o alvo (' + worst.toFixed(3) + ')');
+  for (const p of tr) assert.ok(p.z >= 1 - 1e-9 && p.z <= 6 + 1e-9, 'limites do aparelho');
+});
+
+test('perdeu o alvo: segura a posição (sem sair andando), depois procura; opcionalmente volta ao centro', () => {
+  const mk = lostReturn => { const t = new Tracker({ speed: 'normal', latency: 0.4, lostHold: 1.5, lostReturn }); let hidden = false; const subj = () => ({ x: 0.66, y: 0.45, h: 0.07 });
+    const d = driverOf(t), r = simulate({ subject: subj, seconds: 24, ...NETS.normal, zoom0: 2.4, driver: { onDetection(det, tt, v) { d.onDetection(tt > 8 ? null : det, tt, v); }, onTick: d.onTick } }); return r; };
+  const hold = mk(false), ret = mk(true), at = (r, tt) => r.trace.find(p => p.t >= tt);
+  assert.ok(Math.abs(at(hold, 12).cx - at(hold, 23).cx) < 0.01, 'sem alvo a janela fica onde está'); const c1 = at(ret, 23); assert.ok(Math.abs(c1.cx - 0.5) < 0.05 && Math.abs(c1.cy - 0.5) < 0.05, 'voltou ao centro: ' + c1.cx.toFixed(2));
+  assert.ok(hold.sent.filter(c => c.t > 14).length === 0, 'não manda comandos sem alvo');
+});
+
+test('ao operar à mão a câmera para de seguir por um tempo (holdOff) e depois volta, a partir de onde o operador deixou', () => {
+  const t = new Tracker({ latency: 0.3 }), view = { zoom: 2.5, pan: { x: 0, y: 0 }, zoomMin: 1, zoomMax: 5 }; t.tick(view, 0); t.holdOff(2);
+  let out = t.tick(view, 0.5); assert.equal(out.state, 'hold'); assert.equal(out.pan, undefined); assert.equal(out.zoom, undefined);
+  const moved = { ...view, pan: { x: 0.7, y: -0.2 } }; for (let i = 1; i <= 60; i++) out = t.tick(moved, 0.5 + i * 0.04);
+  assert.notEqual(out.state, 'hold'); assert.ok(!out.pan || Math.abs(out.pan.x - 0.7) < 0.05, 'retoma de onde o operador deixou, sem pulo (' + JSON.stringify(out.pan) + ')');
+});
+
+test('o atraso informado importa: com ele certo o erro é menor que ignorando o atraso da rede', () => {
+  const run = latency => { const t = new Tracker({ speed: 'rapido', latency }); return metrics(simulate({ subject: walk, seconds: 40, ...NETS.lenta, driver: driverOf(t) }).trace, { skip: 4 }).meanX; };
+  const good = run(NETS.lenta.latency), none = run(0.02); assert.ok(good <= none + 0.005, 'erro com atraso certo ' + good.toFixed(3) + ' vs sem atraso ' + none.toFixed(3));
 });
 
 test('vários alvos: continua no mesmo (o mais perto do último) e, sem referência, escolhe o maior', () => {
@@ -80,6 +100,11 @@ test('movimento: acha o centro de quem mexe e ignora ruído', () => {
   assert.ok(r && r.kind === 'motion', 'achou movimento'); assert.ok(r.cx > 0.2 && r.cx < 0.6, 'cx ' + r.cx.toFixed(2)); assert.ok(r.cy > 0.15 && r.cy < 0.6, 'cy ' + r.cy.toFixed(2));
   const quiet = new MotionDetector(W, H); quiet.update(new Uint8Array(W * H).fill(80)); let seed = 3; const noisy = () => { const g = new Uint8Array(W * H); for (let i = 0; i < g.length; i++) { seed = (seed * 16807) % 2147483647; g[i] = 80 + (seed % 5); } return g; };
   for (let i = 0; i < 20; i++) assert.equal(quiet.update(noisy()), null, 'ruído do sensor não é movimento');
+});
+
+test('as opções de movimento, zona de conforto e rede existem e fazem sentido', () => {
+  assert.deepEqual(Object.keys(SPEEDS), ['suave', 'normal', 'rapido']); assert.ok(SPEEDS.suave.amax < SPEEDS.normal.amax && SPEEDS.normal.amax < SPEEDS.rapido.amax); assert.ok(SPEEDS.suave.ease > SPEEDS.rapido.ease, 'o celular suaviza mais no estilo suave');
+  assert.ok(COMFORT.pequena.out < COMFORT.media.out && COMFORT.media.out < COMFORT.grande.out); for (const z of Object.values(COMFORT)) assert.ok(z.inn < z.out, 'histerese');
 });
 
 test('a mesa carrega o tracking depois do controle de câmera, com o reconhecimento embutido (offline) e servido com o tipo certo', async () => {
