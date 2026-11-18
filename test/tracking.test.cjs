@@ -2,7 +2,7 @@
 // Tracking: o núcleo mantém o alvo no quadro com movimento suave, num celular simulado (zoom e pan digitais, atraso de rede, ruído,
 // suavização do celular) com a mesma geometria do app da câmera.
 const test = require('node:test'), assert = require('node:assert/strict');
-const { Tracker, Kalman1D, MotionDetector, pickSubject, spring, travel, room, FRAMES, SPEEDS, COMFORT } = require('../public/tracking-core.js');
+const { Tracker, Kalman1D, MotionDetector, pickSubject, spring, travel, room, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, SPEEDS, COMFORT, LATENCY } = require('../public/tracking-core.js');
 const { simulate, metrics } = require('./helpers/tracking-sim.cjs');
 
 const walk = t => ({ x: 0.5 + 0.2 * Math.sin(t * 0.45) + 0.03 * Math.sin(t * 1.7), y: 0.45 + 0.03 * Math.sin(t * 0.6), h: 0.07 });
@@ -105,6 +105,35 @@ test('movimento: acha o centro de quem mexe e ignora ruído', () => {
 test('as opções de movimento, zona de conforto e rede existem e fazem sentido', () => {
   assert.deepEqual(Object.keys(SPEEDS), ['suave', 'normal', 'rapido']); assert.ok(SPEEDS.suave.amax < SPEEDS.normal.amax && SPEEDS.normal.amax < SPEEDS.rapido.amax); assert.ok(SPEEDS.suave.ease > SPEEDS.rapido.ease, 'o celular suaviza mais no estilo suave');
   assert.ok(COMFORT.pequena.out < COMFORT.media.out && COMFORT.media.out < COMFORT.grande.out); for (const z of Object.values(COMFORT)) assert.ok(z.inn < z.out, 'histerese');
+});
+
+test('atraso medido: soma ida e volta, suavização, captura, buffer, decodificação e análise, dentro de limites', () => {
+  assert.ok(Math.abs(estimateLatency({ rtt: 0.16, jitterBuffer: 0, decode: 0, detect: 0.05, ease: 0.1 }) - 0.37) < 1e-9);
+  assert.ok(estimateLatency({ rtt: 0.4, jitterBuffer: 0.1, decode: 0.02, detect: 0.08, ease: 0.1 }) > estimateLatency({ rtt: 0.05, jitterBuffer: 0.03, decode: 0.01, detect: 0.05, ease: 0.1 }));
+  assert.equal(estimateLatency({ rtt: 0, jitterBuffer: 0, decode: 0, detect: 0, ease: 0, capture: 0 }), 0.12, 'mínimo'); assert.equal(estimateLatency({ rtt: 9 }), 1.5, 'máximo'); assert.ok(estimateLatency({ rtt: NaN, jitterBuffer: undefined }) > 0.12, 'números ruins viram padrão');
+  assert.ok(LATENCY.auto && LATENCY.auto.value > 0, 'opção automático');
+});
+
+test('com o atraso calculado dos números da conexão o tracking fica tão bom quanto com o atraso certo da rede', () => {
+  const net = NETS.normal, est = estimateLatency({ rtt: (net.dCmd + 0.08) * 1, jitterBuffer: 0, decode: 0, detect: net.tDet, ease: 0.1 });
+  const run = latency => { const t = new Tracker({ speed: 'normal', latency }); return metrics(simulate({ subject: walk, seconds: 40, ...net, easeMs: 100, driver: driverOf(t) }).trace, { skip: 4 }); };
+  const auto = run(est), hand = run(net.latency), wrong = run(0.05);
+  assert.ok(auto.meanX <= hand.meanX + 0.01, 'medido ' + auto.meanX.toFixed(3) + ' vs escolhido ' + hand.meanX.toFixed(3)); assert.ok(auto.meanX <= wrong.meanX + 0.005); assert.equal(auto.outFrames, 0);
+});
+
+test('áreas de pausa: ficam paradas na cena (coordenadas do quadro inteiro), mesmo com a câmera andando ou mudando o zoom', () => {
+  const win1 = { cx: 0.5, cy: 0.5, z: 2 }, win2 = { cx: 0.62, cy: 0.5, z: 3 };
+  const a = viewToWorld(win1, 0.1, 0.4), b = viewToWorld(win1, 0.3, 0.7), area = [{ x0: a.x, y0: a.y, x1: b.x, y1: b.y }];
+  for (const w of [win1, win2]) { const v = worldToView(w, 0.45, 0.55), back = viewToWorld(w, v.x, v.y); assert.ok(Math.abs(back.x - 0.45) < 1e-9 && Math.abs(back.y - 0.55) < 1e-9, 'ida e volta'); }
+  assert.ok(inAreas(area, 0.3, 0.5) && !inAreas(area, 0.7, 0.5), 'dentro e fora'); assert.ok(!inAreas([], 0.3, 0.5) && !inAreas(null, 0.3, 0.5));
+  const v = worldToView(win2, 0.3, 0.5); assert.ok(inAreas(area, viewToWorld(win2, v.x, v.y).x, viewToWorld(win2, v.x, v.y).y), 'o mesmo ponto da cena continua dentro da área com outra janela');
+});
+
+test('movimento com área ignorada: o que mexe dentro da máscara não conta, o resto sim', () => {
+  const W = 96, H = 54, mask = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < 40; x++) mask[y * W + x] = 1; // metade esquerda ignorada
+  const frame = (bx, by) => { const g = new Uint8Array(W * H).fill(60); for (let y = by; y < by + 14; y++) for (let x = bx; x < bx + 10; x++) g[y * W + x] = 200; return g; };
+  const left = new MotionDetector(W, H); left.update(frame(5, 10), mask); let r = null; for (let i = 0; i < 6; i++) r = left.update(frame(5 + i * 4, 10 + (i % 2)), mask); assert.equal(r, null, 'quem mexe só na área ignorada não é detectado');
+  const right = new MotionDetector(W, H); right.update(frame(55, 10), mask); for (let i = 0; i < 6; i++) r = right.update(frame(55 + i * 4, 10 + (i % 2)), mask); assert.ok(r && r.cx > 0.6, 'fora da área é detectado');
 });
 
 test('a mesa carrega o tracking depois do controle de câmera, com o reconhecimento embutido (offline) e servido com o tipo certo', async () => {

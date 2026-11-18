@@ -19,8 +19,8 @@
   const slots = new Map();
   function slotOf(i) {
     if (!slots.has(i)) {
-      const cfg = { target: 'face', frame: 'seguir', speed: 'normal', comfort: 'media', net: 'normal', lostReturn: false, ...(saved[i] || {}) };
-      slots.set(i, { i, cfg, on: false, tracker: new Core.Tracker({ frame: cfg.frame, speed: cfg.speed, comfort: cfg.comfort, latency: (Core.LATENCY[cfg.net] || Core.LATENCY.normal).value, lostReturn: cfg.lostReturn }), view: null, ctl: { out: null, paintAt: 0 }, dets: [], subject: null, last: null, lastAt: 0, period: 110, busy: false, status: '', fps: 0, frames: [], motion: new Core.MotionDetector(96, 54), error: '', dims: null });
+      const cfg = { target: 'face', frame: 'seguir', speed: 'normal', comfort: 'media', net: 'auto', areas: [], lostReturn: false, ...(saved[i] || {}) };
+      slots.set(i, { i, cfg, on: false, tracker: new Core.Tracker({ frame: cfg.frame, speed: cfg.speed, comfort: cfg.comfort, latency: (Core.LATENCY[cfg.net] || Core.LATENCY.normal).value, lostReturn: cfg.lostReturn }), view: null, ctl: { out: null, paintAt: 0 }, took: 60, latency: null, meas: null, measAt: 0, prevStats: null, dets: [], subject: null, last: null, lastAt: 0, period: 110, busy: false, status: '', fps: 0, frames: [], motion: new Core.MotionDetector(96, 54), error: '', dims: null });
     }
     return slots.get(i);
   }
@@ -48,13 +48,42 @@
     if (kind === 'motion') {
       grabCtx.drawImage(el, 0, 0, 96, 54); const px = grabCtx.getImageData(0, 0, 96, 54).data, gray = new Uint8Array(96 * 54);
       for (let i = 0; i < gray.length; i++) gray[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
-      const d = s.motion.update(gray); return d ? [d] : [];
+      const d = s.motion.update(gray, areaMask(s)); return d ? [d] : [];
     }
     const det = await detector(kind), stamp = Math.max(performance.now(), lastStamp + 1); lastStamp = stamp;
     // Fontes que não são <video> (imagem de entrada Blackmagic, por exemplo) passam por uma tela intermediária.
     let src = el; if (!(el instanceof HTMLVideoElement)) { feed.width = Math.min(960, W); feed.height = Math.round(feed.width * H / W); feedCtx.drawImage(el, 0, 0, feed.width, feed.height); src = feed; }
     if (kind === 'face') return det.detectForVideo(src, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height / 2) / H, w: b.width / W, h: b.height / H, kind: 'face', score: d.categories?.[0]?.score || 0 }; });
     return det.detectForVideo(src, stamp).detections.map(d => { const b = d.boundingBox; return { cx: (b.originX + b.width / 2) / W, cy: (b.originY + b.height * (s.cfg.frame === 'corpo' ? 0.5 : 0.4)) / H, w: b.width / W, h: b.height / H, kind: 'person', score: d.categories?.[0]?.score || 0 }; });
+  }
+
+  /* ---------- áreas de pausa: o que acontece nelas é ignorado (TV, espelho, quadro, gente ao fundo) ---------- */
+  // As áreas ficam no quadro inteiro do sensor: continuam no mesmo lugar da cena mesmo quando a câmera anda ou muda o zoom.
+  const windowOf = s => { const w = s.tracker.window(); if (w) return w; const c = caps(s.i); if (!c) return null; const r = Core.room(c.zoom.value); return { cx: 0.5 + c.pan.x * r, cy: 0.5 + c.pan.y * r, z: c.zoom.value }; };
+  function isIgnored(s, d) {
+    if (!s.cfg.areas?.length) return false;
+    const w = s.tracker.worldOf(d, performance.now() / 1000) || (windowOf(s) && Core.viewToWorld(windowOf(s), d.cx, d.cy)); return !!w && Core.inAreas(s.cfg.areas, w.x, w.y);
+  }
+  function areaMask(s) {
+    const win = windowOf(s); if (!s.cfg.areas?.length || !win) return null; const mask = new Uint8Array(96 * 54);
+    for (const a of s.cfg.areas) { const p = Core.worldToView(win, Math.min(a.x0, a.x1), Math.min(a.y0, a.y1)), q = Core.worldToView(win, Math.max(a.x0, a.x1), Math.max(a.y0, a.y1));
+      for (let y = Math.max(0, Math.floor(p.y * 54)); y < Math.min(54, Math.ceil(q.y * 54)); y++) for (let x = Math.max(0, Math.floor(p.x * 96)); x < Math.min(96, Math.ceil(q.x * 96)); x++) mask[y * 96 + x] = 1; }
+    return mask;
+  }
+  /* ---------- atraso da rede, medido: o próprio WebRTC informa o tempo de ida e volta, o buffer e a decodificação ---------- */
+  async function measure(s, now) {
+    if (s.cfg.net !== 'auto' || now - s.measAt < 2000) return; s.measAt = now;
+    const pc = typeof camDesk !== 'undefined' ? camDesk.peers?.get(s.i + ':media')?.pc : null; if (!pc?.getStats) { s.meas = null; return; }
+    let rtt = null, cur = null; const stats = await pc.getStats();
+    stats.forEach(r => {
+      if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected) && Number.isFinite(r.currentRoundTripTime)) rtt = r.currentRoundTripTime;
+      if (r.type === 'inbound-rtp' && (r.kind === 'video' || r.mediaType === 'video')) cur = { jb: r.jitterBufferDelay, n: r.jitterBufferEmittedCount, dec: r.totalDecodeTime, fr: r.framesDecoded };
+    });
+    const prev = s.prevStats; let jb = s.meas?.jb ?? null, dec = s.meas?.dec ?? null;
+    if (cur && prev && cur.n > prev.n) jb = (cur.jb - prev.jb) / (cur.n - prev.n); if (cur && prev && cur.fr > prev.fr) dec = (cur.dec - prev.dec) / (cur.fr - prev.fr); if (cur) s.prevStats = cur;
+    s.meas = { rtt: rtt ?? s.meas?.rtt ?? null, jb, dec };
+    const est = Core.estimateLatency({ rtt: s.meas.rtt ?? 0.12, jitterBuffer: jb ?? 0.05, decode: dec ?? 0.01, detect: s.took / 1000, ease: (Core.SPEEDS[s.cfg.speed]?.ease ?? 100) / 1000 });
+    s.latency = s.latency ? s.latency * 0.6 + est * 0.4 : est; s.tracker.options.latency = s.latency;
   }
 
   /* ---------- um passo do seguimento ---------- */
@@ -69,6 +98,8 @@
     try { s.status = s.status || 'Carregando o reconhecimento…'; dets = await detect(s); s.error = ''; } catch (e) { s.error = 'Não foi possível iniciar o reconhecimento: ' + (e?.message || e); s.status = s.error; s.on = false; paint(); log('Tracking: ' + s.error); return; }
     const took = performance.now() - now; s.period = Math.max(100, Math.min(450, took * 2.2)); s.frames.push(now); while (s.frames.length && now - s.frames[0] > 2000) s.frames.shift(); s.fps = s.frames.length / 2;
     if (dets === null) { s.dets = []; s.status = 'Sem sinal de vídeo desta câmera'; return; }
+    s.took = s.took * 0.7 + took * 0.3; measure(s, now).catch(() => {});
+    dets = dets.filter(d => !isIgnored(s, d));
     s.dets = dets; const subject = Core.pickSubject(dets, s.last); if (subject) s.last = { cx: subject.cx, cy: subject.cy }; s.subject = subject;
     // A detecção só ALIMENTA o filtro (posição e velocidade do alvo); quem move a câmera é o laço de controle (controlTick), 25 vezes por segundo.
     s.tracker.observe(subject, performance.now() / 1000, viewOf(c));
@@ -89,7 +120,7 @@
         if (s.i === camCtl.slot && typeof camCtlPaint === 'function' && now - s.ctl.paintAt > 0.25) { s.ctl.paintAt = now; camCtlPaint(); }
       }
       const label = { face: 'o rosto', person: 'a pessoa', motion: 'o movimento' }[effectiveTarget(s)];
-      s.status = out.state === 'track' ? 'Seguindo ' + label + (s.dets.length > 1 ? ' · ' + s.dets.length + ' detectados' : '') + ' · análise ' + s.fps.toFixed(0) + '/s' + (out.atEdge ? ' · no limite do enquadramento (menos zoom dá mais folga)' : '')
+      s.status = out.state === 'track' ? 'Seguindo ' + label + (s.dets.length > 1 ? ' · ' + s.dets.length + ' detectados' : '') + ' · análise ' + s.fps.toFixed(0) + '/s' + (s.cfg.net === 'auto' && s.latency ? ' · atraso ' + s.latency.toFixed(2).replace('.', ',') + ' s' : '') + (out.atEdge ? ' · no limite do enquadramento (menos zoom dá mais folga)' : '')
         : out.state === 'lost' ? 'Alvo perdido: mantendo a posição' : out.state === 'hold' ? 'Pausado: você está operando à mão' : 'Procurando ' + label + '…';
     }
   }
@@ -110,6 +141,7 @@
     '<label>Zona de conforto<select id="trkComfort" aria-label="Zona de conforto: dentro dela a câmera não se mexe"></select></label>' +
     '<label>Rede da câmera<select id="trkNet" aria-label="Rede entre a câmera e a mesa"></select></label>' +
     '<label>Se perder o alvo<select id="trkLost" aria-label="Se perder o alvo"><option value="hold">Manter a posição</option><option value="center">Voltar ao centro</option></select></label>' +
+    '<button type="button" id="trkArea" aria-pressed="false" title="Desenhe na imagem do preview um retângulo onde o tracking deve ignorar tudo (TV, espelho, quadro, gente ao fundo). A área fica parada na cena, mesmo com a câmera andando.">Ignorar área…</button><button type="button" id="trkAreaUndo">Desfazer área</button><button type="button" id="trkAreaClear">Limpar áreas</button><span class="trk-areas" id="trkAreaCount"></span>' +
     '<button type="button" id="trkReset" title="Esquece o alvo atual: passa a seguir o maior. Também dá para clicar numa pessoa na imagem do preview.">Escolher outro alvo</button></div>' +
     '<small class="trk-note" id="trkNote"></small>';
   const q = s => host.querySelector(s);
@@ -128,27 +160,38 @@
     for (const [id, key] of [['#trkTarget', 'target'], ['#trkFrame', 'frame'], ['#trkSpeed', 'speed'], ['#trkComfort', 'comfort'], ['#trkNet', 'net']]) { const el = q(id); if (document.activeElement !== el && el.value !== s.cfg[key]) el.value = s.cfg[key]; }
     const lost = s.cfg.lostReturn ? 'center' : 'hold'; if (document.activeElement !== q('#trkLost') && q('#trkLost').value !== lost) q('#trkLost').value = lost;
     q('#trkTarget').disabled = !!Core.FRAMES[s.cfg.frame]?.src; // o enquadramento já define o que medir
+    { const n = s.cfg.areas.length, txt = n ? n + (n === 1 ? ' área ignorada' : ' áreas ignoradas') : ''; if (q('#trkAreaCount').textContent !== txt) q('#trkAreaCount').textContent = txt; q('#trkAreaUndo').disabled = q('#trkAreaClear').disabled = !n; q('#trkArea').setAttribute('aria-pressed', String(drawMode)); q('#trkArea').textContent = drawMode ? 'Desenhe na imagem… (Esc cancela)' : 'Ignorar área…'; q('#trkArea').disabled = !ok; }
     const note = !ok ? '' : c.zoom.value < 1.05 && s.cfg.frame === 'seguir' ? 'Sem zoom a imagem não tem folga para andar: ao ligar, o tracking aplica 1,4×.' : 'O reconhecimento roda neste computador. Mexer no zoom, no enquadramento ou na lente à mão pausa o tracking por 4 s.';
     if (q('#trkNote').textContent !== note) q('#trkNote').textContent = note;
   }
   function set(i, on) {
     const s = slotOf(i);
-    if (on) { if (!camCtl.enabled || !caps(i)) { paint(); return false; } s.tracker.reset(); s.last = null; s.dets = []; s.subject = null; s.lastAt = 0; s.status = 'Carregando o reconhecimento…'; s.motion.reset(); s.on = true; log('Tracking ligado na ' + (sources[i] || 'CAM ' + (i + 1)) + '.'); audit('info', 'tracking-ligado', sources[i] || 'CAM ' + (i + 1)); }
+    if (on) { if (!camCtl.enabled || !caps(i)) { log('Tracking: ' + (!camCtl.enabled ? 'ative o Controle de câmera' : 'conecte o celular desta câmera') + ' para ligar o tracking.'); try { openWorkspace('operation'); const pn = document.querySelector('[data-tool=camctl]'); pn?.scrollIntoView({ block: 'center', behavior: 'smooth' }); pn?.classList.add('flash'); setTimeout(() => pn?.classList.remove('flash'), 1600); } catch { /* painel ainda não montado */ } paint(); return false; } s.tracker.reset(); s.last = null; s.dets = []; s.subject = null; s.lastAt = 0; s.status = 'Carregando o reconhecimento…'; s.motion.reset(); s.on = true; log('Tracking ligado na ' + (sources[i] || 'CAM ' + (i + 1)) + '.'); audit('info', 'tracking-ligado', sources[i] || 'CAM ' + (i + 1)); }
     else if (s.on) { s.on = false; s.status = ''; log('Tracking desligado na ' + (sources[i] || 'CAM ' + (i + 1)) + '.'); audit('info', 'tracking-desligado', sources[i] || 'CAM ' + (i + 1)); }
     paint(); return s.on;
   }
   q('#trkPower').onclick = () => set(currentSlot(), !here().on);
-  const cfgChange = (key, value) => { const s = here(); s.cfg[key] = value; if (key === 'frame') { const src = Core.FRAMES[value]?.src; if (src) s.cfg.target = src === 'person' ? 'person' : 'face'; } Object.assign(s.tracker.options, { frame: s.cfg.frame, speed: s.cfg.speed, comfort: s.cfg.comfort, latency: (Core.LATENCY[s.cfg.net] || Core.LATENCY.normal).value, lostReturn: s.cfg.lostReturn }); s.tracker.reset(); s.last = null; persist(); paint(); };
-  q('#trkTarget').onchange = e => cfgChange('target', e.target.value); q('#trkFrame').onchange = e => cfgChange('frame', e.target.value); q('#trkSpeed').onchange = e => cfgChange('speed', e.target.value); q('#trkComfort').onchange = e => cfgChange('comfort', e.target.value); q('#trkNet').onchange = e => cfgChange('net', e.target.value);
+  const cfgChange = (key, value) => { const s = here(); s.cfg[key] = value; if (key === 'frame') { const src = Core.FRAMES[value]?.src; if (src) s.cfg.target = src === 'person' ? 'person' : 'face'; } Object.assign(s.tracker.options, { frame: s.cfg.frame, speed: s.cfg.speed, comfort: s.cfg.comfort, latency: s.cfg.net === 'auto' && s.latency ? s.latency : (Core.LATENCY[s.cfg.net] || Core.LATENCY.normal).value, lostReturn: s.cfg.lostReturn }); s.tracker.reset(); s.last = null; persist(); paint(); };
+  q('#trkTarget').onchange = e => cfgChange('target', e.target.value); q('#trkFrame').onchange = e => cfgChange('frame', e.target.value); q('#trkSpeed').onchange = e => cfgChange('speed', e.target.value); q('#trkComfort').onchange = e => cfgChange('comfort', e.target.value); q('#trkNet').onchange = e => { const s = here(); s.latency = null; s.prevStats = null; cfgChange('net', e.target.value); };
   q('#trkLost').onchange = e => cfgChange('lostReturn', e.target.value === 'center');
   q('#trkReset').onclick = () => { const s = here(); s.last = null; s.tracker.reset(); s.motion.reset(); };
   // Mexer à mão (pan, zoom, lente, exposição, posições salvas) pausa o seguimento desta câmera por 4 s.
   for (const type of ['pointerdown', 'input', 'keydown']) panel.addEventListener(type, e => { if (host.contains(e.target) || !e.target.closest?.('.camctl-controls')) return; for (const s of slots.values()) if (s.on && s.i === currentSlot()) s.tracker.holdOff(4); }, true);
 
   /* ---------- sobre o preview: caixas, alvo e clique para escolher quem seguir ---------- */
-  let pvBox = null;
+  let pvBox = null, drawMode = false, drag = null;
+  function drawAreas(ctx, s, dx, dy, dw, dh, dpr) {
+    const win = windowOf(s); if (!win && !drag) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(dx, dy, dw, dh); ctx.clip(); ctx.font = '700 ' + Math.round(10 * dpr) + 'px system-ui, sans-serif'; ctx.lineWidth = Math.max(1.5, 1.5 * dpr);
+    for (const a of s.cfg.areas) {
+      const p = Core.worldToView(win, Math.min(a.x0, a.x1), Math.min(a.y0, a.y1)), q = Core.worldToView(win, Math.max(a.x0, a.x1), Math.max(a.y0, a.y1)), x = dx + dw * p.x, y = dy + dh * p.y, w = dw * (q.x - p.x), h = dh * (q.y - p.y);
+      ctx.fillStyle = 'rgba(255,59,107,.18)'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = 'rgba(255,59,107,.85)'; ctx.setLineDash([5 * dpr, 4 * dpr]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]); ctx.fillStyle = '#ff6b88'; ctx.fillText('IGNORAR', x + 4 * dpr, y + 12 * dpr);
+    }
+    if (drag) { ctx.strokeStyle = '#7fd0ff'; ctx.setLineDash([4 * dpr, 3 * dpr]); ctx.strokeRect(dx + dw * Math.min(drag.x0, drag.x1), dy + dh * Math.min(drag.y0, drag.y1), dw * Math.abs(drag.x1 - drag.x0), dh * Math.abs(drag.y1 - drag.y0)); }
+    ctx.restore();
+  }
   function draw(ctx, dx, dy, dw, dh, dpr = 1) {
-    const s = slots.get(currentSlot()); pvBox = { dx, dy, dw, dh, dpr }; if (!s?.on) return;
+    const s = slotOf(currentSlot()); pvBox = { dx, dy, dw, dh, dpr }; drawAreas(ctx, s, dx, dy, dw, dh, dpr); if (!s.on) return;
     ctx.save(); ctx.lineWidth = Math.max(1.5, 2 * dpr); ctx.font = '700 ' + Math.round(11 * dpr) + 'px system-ui, sans-serif';
     const aim = Core.AIM[s.subject?.kind || (effectiveTarget(s) === 'motion' ? 'motion' : effectiveTarget(s) === 'person' ? 'person' : 'face')];
     ctx.strokeStyle = 'rgba(0,163,255,.9)'; ctx.beginPath(); const ax = dx + dw * aim.x, ay = dy + dh * aim.y, r = 9 * dpr; ctx.moveTo(ax - r, ay); ctx.lineTo(ax + r, ay); ctx.moveTo(ax, ay - r); ctx.lineTo(ax, ay + r); ctx.stroke();
@@ -161,11 +204,24 @@
     }
     ctx.restore();
   }
-  document.querySelector('#camCtlPreview')?.addEventListener('click', e => {
+  const pv = document.querySelector('#camCtlPreview');
+  const viewPoint = e => { if (!pvBox) return null; const r = pv.getBoundingClientRect(), k = pv.width / r.width; return { x: Math.min(1, Math.max(0, ((e.clientX - r.left) * k - pvBox.dx) / pvBox.dw)), y: Math.min(1, Math.max(0, ((e.clientY - r.top) * k - pvBox.dy) / pvBox.dh)) }; };
+  pv?.addEventListener('pointerdown', e => { if (!drawMode) return; const p = viewPoint(e); if (!p) return; e.preventDefault(); pv.setPointerCapture?.(e.pointerId); drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; });
+  pv?.addEventListener('pointermove', e => { if (!drag) return; const p = viewPoint(e); if (p) { drag.x1 = p.x; drag.y1 = p.y; } });
+  const endDrag = () => { if (!drag) return; const d = drag; drag = null; const s = here(), win = windowOf(s); drawMode = false; pv.classList.remove('trk-drawing');
+    if (win && Math.abs(d.x1 - d.x0) > 0.03 && Math.abs(d.y1 - d.y0) > 0.03 && s.cfg.areas.length < 6) { const a = Core.viewToWorld(win, Math.min(d.x0, d.x1), Math.min(d.y0, d.y1)), b = Core.viewToWorld(win, Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)); s.cfg.areas.push({ x0: a.x, y0: a.y, x1: b.x, y1: b.y }); persist(); log('Tracking: área ignorada adicionada (' + s.cfg.areas.length + ').'); }
+    paint(); };
+  pv?.addEventListener('pointerup', endDrag); pv?.addEventListener('pointercancel', () => { drag = null; });
+  q('#trkArea').onclick = () => { drawMode = !drawMode; drag = null; pv?.classList.toggle('trk-drawing', drawMode); paint(); };
+  q('#trkAreaUndo').onclick = () => { const s = here(); s.cfg.areas.pop(); persist(); paint(); };
+  q('#trkAreaClear').onclick = () => { const s = here(); s.cfg.areas.length = 0; persist(); paint(); };
+  addEventListener('keydown', e => { if (e.key === 'Escape' && drawMode) { drawMode = false; drag = null; pv?.classList.remove('trk-drawing'); paint(); e.stopImmediatePropagation(); } }, true);
+  pv?.addEventListener('click', e => {
+    if (drawMode) return;
     const s = slots.get(currentSlot()); if (!s?.on || !pvBox || !s.dets.length) return; const r = e.currentTarget.getBoundingClientRect(), k = e.currentTarget.width / r.width;
     const nx = ((e.clientX - r.left) * k - pvBox.dx) / pvBox.dw, ny = ((e.clientY - r.top) * k - pvBox.dy) / pvBox.dh; s.last = { cx: nx, cy: ny };
   });
 
-  const api = { set, config: i => ({ ...slotOf(i).cfg }), info: i => { const s = slotOf(i ?? currentSlot()); return { on: s.on, status: s.status, subject: s.subject, dets: s.dets, fps: s.fps, state: s.tracker.state }; }, toggle: () => set(currentSlot(), !here().on), draw, paint, setConfig: cfgChange };
+  const api = { addArea: (i, a) => { const s = slotOf(i); s.cfg.areas.push(a); persist(); paint(); }, areas: i => slotOf(i ?? currentSlot()).cfg.areas, clearAreas: i => { slotOf(i ?? currentSlot()).cfg.areas.length = 0; persist(); paint(); }, set, config: i => ({ ...slotOf(i).cfg }), info: i => { const s = slotOf(i ?? currentSlot()); return { on: s.on, status: s.status, subject: s.subject, dets: s.dets, fps: s.fps, state: s.tracker.state, latency: s.latency, measured: s.meas, areas: s.cfg.areas.length }; }, toggle: () => set(currentSlot(), !here().on), draw, paint, setConfig: cfgChange };
   window.andromedaTracking = api; paint();
 })();
