@@ -108,3 +108,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--blue); ou
 .mode[aria-pressed="true"][data-mode="off"] { background: #2b3475; }
 .strip-fader { width: 100%; min-height: 36px; }
 .mixer-note { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* Slides: passar a apresentação pelo celular */
+.slides-row .bus { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.slide-btn { min-height: 52px; padding: 0 18px; font-weight: 800; }
+.slide-btn.next { flex: 1 1 140px; background: #0a84d6; border-color: #4fb6ff; color: #fff; }
+.slide-btn:disabled { opacity: .45; }
+.slide-count { min-width: 74px; text-align: center; font: 700 20px ui-monospace, Menlo, Consolas, monospace; }
+.slides-row[data-air="true"] .slide-count { color: #ff6b88; }

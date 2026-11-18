@@ -123,6 +123,8 @@
       const logo = button('Logotipo', 'layer' + (s.fx.logoReady ? '' : ' empty'), () => s.fx.logoReady ? cmd('logo') : notice('Nenhum logotipo carregado na mesa.'), s.fx.logo);
       layers.append(logo, button('PiP', 'layer', () => cmd('pip'), s.fx.pip), button('Retirar todas', 'layer clear', () => cmd('clear')));
     }
+    const sl = s.slides, row = $('#slidesRow'); row.hidden = !sl?.loaded;
+    if (sl?.loaded) { $('#slCount').textContent = (sl.index + 1) + ' / ' + sl.total; $('#slCount').title = sl.name; row.dataset.air = String(!!sl.air); $('#slPrev').disabled = sl.index <= 0; $('#slNext').disabled = sl.index >= sl.total - 1; }
   }
   /* ---------- mesa de áudio ---------- */
   const MODES = [['off', 'OFF'], ['afv', 'AFV'], ['on', 'ON']];
@@ -167,6 +169,7 @@
   for (const t of ['pointerdown', 'focus']) $('#mVol').addEventListener(t, () => dragging.add($('#mVol'))); for (const t of ['pointerup', 'blur', 'change']) $('#mVol').addEventListener(t, () => dragging.delete($('#mVol')));
   $('#mFade').onclick = () => cmd('fade');
   $('#mFadeTime').onchange = () => cmd('fadetime', { value: Number($('#mFadeTime').value) });
+  $('#slPrev').onclick = () => cmd('slideprev'); $('#slNext').onclick = () => cmd('slidenext'); $('#slPrv').onclick = () => cmd('slides');
   $('#cut').onclick = () => cmd('cut');
   $('#auto').onclick = () => cmd('auto');
   // Teclado no computador: Espaço = CUT, Enter = AUTO, 1–9 = Preview.
@@ -174,6 +177,8 @@
     if (kind !== 'control' || ui.screens.hidden || e.target.closest?.('input,textarea,select,summary')) return;
     if (e.key === ' ') { e.preventDefault(); cmd('cut'); }
     else if (e.key === 'Enter' && e.target === document.body) { e.preventDefault(); cmd('auto'); }
+    else if ((e.key === 'PageDown' || e.key === 'ArrowRight') && last?.slides?.loaded) { e.preventDefault(); cmd('slidenext'); }
+    else if ((e.key === 'PageUp' || e.key === 'ArrowLeft') && last?.slides?.loaded) { e.preventDefault(); cmd('slideprev'); }
     else if (/^[1-9]$/.test(e.key) && last) { const src = last.sources.find(x => x.i === Number(e.key) - 1); if (src) cmd('prv', { i: src.i }); }
   });
   $('#sound').onclick = () => { const on = ui.pgm.muted; ui.pgm.muted = !on; ui.pgm.play().catch(() => {}); $('#sound').setAttribute('aria-pressed', String(on)); $('#sound').textContent = on ? 'Som ligado' : 'Ativar som'; };

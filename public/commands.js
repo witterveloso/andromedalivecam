@@ -12,17 +12,17 @@
  */
 (() => {
   const R = window.andromedaRundown; if (!R) return;
-  const { VT_SOURCE, VINHETA_SOURCE, BARS_SOURCE, countdown, vtPlayer, vinhetaPlayer, black, bars } = R;
+  const { VT_SOURCE, VINHETA_SOURCE, BARS_SOURCE, SLIDES_SOURCE, countdown, vtPlayer, vinhetaPlayer, black, bars } = R;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const store = { get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sem armazenamento */ } } };
 
   /* ---------- VT e vinheta como fontes (12 e 13) ---------- */
-  sources[VT_SOURCE] = sources[VT_SOURCE] || 'VT'; sources[VINHETA_SOURCE] = sources[VINHETA_SOURCE] || 'VINHETA'; sources[BARS_SOURCE] = 'BARRAS';
+  sources[VT_SOURCE] = sources[VT_SOURCE] || 'VT'; sources[VINHETA_SOURCE] = sources[VINHETA_SOURCE] || 'VINHETA'; sources[BARS_SOURCE] = 'BARRAS'; sources[SLIDES_SOURCE] = 'SLIDES';
   const baseSource = source;
-  source = function (ctx, i, t, clean = false) { if (i === VT_SOURCE || i === VINHETA_SOURCE) { R.drawPlayer(ctx, ctx.canvas.width, ctx.canvas.height, i, clean); return; } if (i === BARS_SOURCE) { R.drawBars(ctx, ctx.canvas.width, ctx.canvas.height); return; } baseSource(ctx, i, t, clean); };
+  source = function (ctx, i, t, clean = false) { if (i === VT_SOURCE || i === VINHETA_SOURCE) { R.drawPlayer(ctx, ctx.canvas.width, ctx.canvas.height, i, clean); return; } if (i === BARS_SOURCE) { R.drawBars(ctx, ctx.canvas.width, ctx.canvas.height); return; } if (i === SLIDES_SOURCE) { R.drawSlides(ctx, ctx.canvas.width, ctx.canvas.height, clean); return; } baseSource(ctx, i, t, clean); };
   const baseSelect = select;
   select = function (bus, i) {
-    if (i !== VT_SOURCE && i !== VINHETA_SOURCE && i !== BARS_SOURCE) { baseSelect(bus, i); return; }
+    if (i !== VT_SOURCE && i !== VINHETA_SOURCE && i !== BARS_SOURCE && i !== SLIDES_SOURCE) { baseSelect(bus, i); return; }
     if (state.busy || state.progress > 0) return;
     state[bus] = i; sync(); log(sources[i] + ' no ' + (bus === 'prv' ? 'PREVIEW' : 'AR'));
   };
@@ -72,6 +72,10 @@
     { id: 'vtstop', name: () => 'PARAR VT', icon: () => 'stop', sub: () => state.pgm === VT_SOURCE ? 'tira do ar' : 'sem VT no ar', run: () => R.vtStop(), on: () => false, prv: () => false, settings: () => openVT() },
     // MOSAICO: as câmeras marcadas com o M (no multiview) numa grade só; entra pelo PREVIEW como as demais fontes.
     { id: 'mosaic', name: () => 'MOSAICO', sub: () => { const n = (window.andromedaStage?.members || []).length; return n ? n + (n === 1 ? ' câmera' : ' câmeras') : 'marque com M'; }, run: () => select('prv', 11), on: () => state.pgm === 11, prv: () => state.prv === 11, settings: () => openMosaic() },
+    // SLIDES: a apresentação aberta no painel Slides. O comando leva ao PREVIEW; PRÓXIMO e ANTERIOR passam os slides (no PREVIEW ou no AR).
+    { id: 'slides', name: () => 'SLIDES', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index + 1) + ' / ' + s.total + ' · ' + s.name : 'abra uma apresentação'; }, run: () => R.slides.toPreview(), on: () => state.pgm === SLIDES_SOURCE, prv: () => state.prv === SLIDES_SOURCE, settings: () => openSlides() },
+    { id: 'slideprev', name: () => 'SLIDE ANTERIOR', icon: () => 'prev', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index > 0 ? 'volta ao ' + s.index : 'primeiro slide') : 'sem slides'; }, run: () => R.slides.prev(), on: () => false, prv: () => false, settings: () => openSlides() },
+    { id: 'slidenext', name: () => 'PRÓXIMO SLIDE', icon: () => 'next', sub: () => { const s = R.slides.info(); return s.loaded ? (s.index < s.total - 1 ? 'vai ao ' + (s.index + 2) : 'último slide') : 'sem slides'; }, run: () => R.slides.next(), on: () => false, prv: () => false, settings: () => openSlides() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
@@ -84,12 +88,13 @@
   }
   // Duplo clique no MOSAICO: leva às câmeras do multiview, onde cada uma tem o botão M para entrar ou sair do mosaico.
   function openMosaic() { openWorkspace('operation'); const panel = $('[data-tool=cameras]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
+  function openSlides() { openWorkspace('operation'); const panel = $('[data-tool=slides]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   function openIntercom() { openWorkspace('operation'); const panel = $('[data-tool=intercom]'); panel?.scrollIntoView({ block: 'center', behavior: 'smooth' }); panel?.classList.add('flash'); setTimeout(() => panel?.classList.remove('flash'), 1600); }
   const LAYOUT_KEY = 'andromeda.commands.v1';
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['slides', 'mosaic'], ['slideprev', 'slides'], ['slidenext', 'slideprev']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -377,6 +382,12 @@
     { id: 'vtpause', label: 'VT PAUSAR / CONTINUAR', key: 'Shift+F7', run: () => R.vtPause() },
     { id: 'vtstop', label: 'VT PARAR (tira do ar)', key: 'Shift+F8', run: () => R.vtStop() },
     { id: 'vinheta', label: 'VINHETA no PREVIEW', key: 'F10', run: () => R.vinhetaToPreview() },
+    // SLIDES: PageDown/PageUp são as teclas que os controles de apresentação (clickers) e canetas enviam.
+    { id: 'slides', label: 'SLIDES no PREVIEW', key: 'F12', run: () => R.slides.toPreview() },
+    { id: 'slidenext', label: 'SLIDES · próximo slide', key: 'PageDown', run: () => R.slides.next(), slide: true },
+    { id: 'slideprev', label: 'SLIDES · slide anterior', key: 'PageUp', run: () => R.slides.prev(), slide: true },
+    { id: 'slidefirst', label: 'SLIDES · primeiro slide', key: '', run: () => R.slides.first(), slide: true },
+    { id: 'slidelast', label: 'SLIDES · último slide', key: '', run: () => R.slides.last(), slide: true },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
   ];
   const KEYS_KEY = 'andromeda.shortcuts.v1';
@@ -434,7 +445,7 @@
     const base = e.code === 'Space' ? 'Space' : e.key === 'Enter' ? 'Enter' : /^F\d{1,2}$/.test(e.key) ? e.key : e.key.length === 1 ? e.key.toUpperCase() : e.key;
     return [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && base.length > 1 && 'Shift', base].filter(Boolean).join('+');
   };
-  const prettyKey = k => k.replace('Space', 'Espaço').replace('Enter', 'Enter').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→').replace('Shift+', '⇧');
+  const prettyKey = k => k.replace('Space', 'Espaço').replace('Enter', 'Enter').replace('ArrowUp', '↑').replace('ArrowDown', '↓').replace('ArrowLeft', '←').replace('ArrowRight', '→').replace('PageDown', 'PgDn').replace('PageUp', 'PgUp').replace('Shift+', '⇧');
   chipPainter?.();
   const LEGACY = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', 'M', 'Space', 'Enter']);
   const typing = t => t.isContentEditable || !!t.closest?.('input,select,textarea');
@@ -458,6 +469,7 @@
     const onButton = !isF && e.target.closest?.('button,[role="button"]') && !e.target.closest('.mv-cell,.src-btn,.cmd-btn');
     if (onButton && (combo === 'Space' || combo === 'Enter')) return; // Espaço/Enter acionam o botão em foco
     const action = ACTIONS.find(a => keymap[a.id] && keymap[a.id] === combo);
+    if (action?.slide && e.target.closest?.('[role="slider"],[role="listbox"]')) return; // a alavanca de transição e a linha do tempo do VT usam PageUp/PageDown
     if (action) { if (isF && document.querySelector('dialog[open]')) { e.stopImmediatePropagation(); return; } e.preventDefault(); e.stopImmediatePropagation(); action.run(); paint(); return; }
     // F11 sem função na mesa continua alternando a tela cheia (da janela onde a tecla foi apertada).
     if (e.key === 'F11' && combo === 'F11') { e.stopImmediatePropagation(); toggleFullscreen(e.andromedaSource?.document || e.target.ownerDocument || document); return; }
@@ -532,6 +544,10 @@
   // A faixa é desenhada por um só lugar: o relógio das faixas (stage.js) pergunta aqui antes de escrever,
   // senão as duas pinturas brigavam e a faixa piscava "Aguardando fonte · SEM SINAL" com VT/vinheta.
   function playerInfo(bus, strip) {
+    if (state[bus] === SLIDES_SOURCE) {
+      const s = R.slides.info(), span = strip.querySelector('span'), b = strip.querySelector('b'), text = s.loaded ? 'SLIDES · ' + s.name + ' · ' + (s.index + 1) + '/' + s.total : 'SLIDES · nenhuma apresentação', badge = !s.loaded ? 'SEM SLIDES' : bus === 'pgm' ? 'NO AR' : 'PRONTO';
+      if (span.textContent !== text) span.textContent = text; if (b.textContent !== badge) b.textContent = badge; strip.dataset.ok = String(s.loaded); return true;
+    }
     const p = state[bus] === VT_SOURCE ? vtPlayer : state[bus] === VINHETA_SOURCE ? vinhetaPlayer : null;
     if (!p) return false;
     const ok = !!p.item && !p.item.error, text = p.label + ' · ' + (p.item ? p.item.name + (p.item.duration ? ' · ' + R.formatClock(Math.round(p.item.duration)) : '') : 'nenhum vídeo'),
