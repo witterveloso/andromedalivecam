@@ -2,8 +2,9 @@
 // Tracking: o núcleo mantém o alvo no quadro com movimento suave, num celular simulado (zoom e pan digitais, atraso de rede, ruído,
 // suavização do celular) com a mesma geometria do app da câmera.
 const test = require('node:test'), assert = require('node:assert/strict');
-const { Tracker, Kalman1D, MotionDetector, pickSubject, spring, travel, room, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, SPEEDS, COMFORT, LATENCY } = require('../public/tracking-core.js');
+const { springFF, Tracker, Kalman1D, MotionDetector, pickSubject, spring, travel, room, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, SPEEDS, COMFORT, LATENCY } = require('../public/tracking-core.js');
 const { simulate, metrics } = require('./helpers/tracking-sim.cjs');
+const fs = require('node:fs'), path = require('node:path'), readFile = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
 
 const walk = t => ({ x: 0.5 + 0.2 * Math.sin(t * 0.45) + 0.03 * Math.sin(t * 1.7), y: 0.45 + 0.03 * Math.sin(t * 0.6), h: 0.07 });
 const NETS = { lan: { dCmd: 0.03, dVid: 0.08, tDet: 0.04, latency: 0.25 }, normal: { dCmd: 0.08, dVid: 0.14, tDet: 0.05, latency: 0.4 }, lenta: { dCmd: 0.2, dVid: 0.3, tDet: 0.06, latency: 0.7 } };
@@ -33,8 +34,8 @@ for (const [net, cfg] of Object.entries(NETS)) test('segue quem anda de um lado 
   const m = metrics(simulate({ subject: walk, seconds: 40, ...cfg, driver: driverOf(t) }, { skip: 4 }).trace);
   const base = metrics(simulate({ subject: walk, seconds: 40, ...cfg, driver: naive() }).trace);
   assert.equal(m.outFrames, 0, 'o alvo nunca saiu do quadro'); assert.ok(m.meanX < 0.11, 'erro médio ' + m.meanX.toFixed(3)); assert.ok(m.worstX < 0.3, 'pior erro ' + m.worstX.toFixed(2));
-  assert.ok(m.maxA < 8, 'aceleração máxima da janela ' + m.maxA.toFixed(1)); assert.ok(m.rmsJerk < 250, 'solavanco (jerk) ' + m.rmsJerk.toFixed(0)); assert.ok(m.stallRatio < 0.05, 'sem trancos');
-  assert.ok(m.rmsJerk * 8 < base.rmsJerk, 'muito mais suave que o passo por detecção: ' + m.rmsJerk.toFixed(0) + ' vs ' + base.rmsJerk.toFixed(0)); assert.ok(m.maxA * 8 < base.maxA);
+  assert.ok(m.maxA < 3, 'aceleração máxima da janela ' + m.maxA.toFixed(1)); assert.ok(m.rmsJerk < 40, 'solavanco (jerk) ' + m.rmsJerk.toFixed(0)); assert.ok(m.stallRatio < 0.05, 'sem trancos');
+  assert.ok(m.rmsJerk * 3 < base.rmsJerk, 'muito mais suave que o passo por detecção: ' + m.rmsJerk.toFixed(0) + ' vs ' + base.rmsJerk.toFixed(0)); assert.ok(m.maxA * 2 < base.maxA);
 });
 
 test('estilos de movimento: o suave acelera menos que o normal e o rápido responde mais depressa', () => {
@@ -137,7 +138,7 @@ test('movimento com área ignorada: o que mexe dentro da máscara não conta, o 
 });
 
 test('a mesa carrega o tracking depois do controle de câmera, com o reconhecimento embutido (offline) e servido com o tipo certo', async () => {
-  const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const os = require('node:os'), read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
   const html = read('public/index.html'), server = read('server.cjs'), commands = read('public/commands.js'), camctl = read('public/camctl.js');
   assert.ok(html.indexOf('/camctl.js') < html.indexOf('/tracking-core.js') && html.indexOf('/tracking-core.js') < html.indexOf('/tracking.js'));
   assert.match(server, /'\/tracking-core\.js':'tracking-core\.js'/); assert.match(server, /'\/tracking\.js':'tracking\.js'/); assert.match(server, /vendor\/mediapipe/);
@@ -148,4 +149,26 @@ test('a mesa carrega o tracking depois do controle de câmera, com o reconhecime
   try {
     for (const [url, type] of [['/tracking.js', /javascript/], ['/tracking-core.js', /javascript/], ['/vendor/mediapipe/vision_bundle.mjs', /javascript/], ['/vendor/mediapipe/wasm/vision_wasm_internal.wasm', /wasm/], ['/vendor/mediapipe/models/blaze_face_short_range.tflite', /octet-stream/]]) { const r = await fetch('http://127.0.0.1:' + port + url); assert.equal(r.status, 200, url); assert.match(r.headers.get('content-type'), type, url); await r.arrayBuffer(); }
   } finally { bridge.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('mola com antecipação: segue um alvo em movimento sem atraso de regime e sem solavanco (aceleração limitada e suavizada)', () => {
+  const s = { x: 0, v: 0, a: 0 }; let maxA = 0, prevV = 0, maxJ = 0, prevA = 0, lagEnd = 0; const dt = 0.04;
+  for (let i = 0; i < 400; i++) { const t = i * dt, target = 0.1 * t, vT = 0.1; springFF(s, target, vT, dt, 2.6, 0.4, 1.1, 0.09); const a = (s.v - prevV) / dt; maxA = Math.max(maxA, Math.abs(a)); maxJ = Math.max(maxJ, Math.abs(a - prevA) / dt); prevV = s.v; prevA = a; lagEnd = target - s.x; }
+  assert.ok(Math.abs(lagEnd) < 0.01, 'sem atraso de regime com a antecipação: ' + lagEnd.toFixed(4)); assert.ok(maxA <= 1.1 + 0.05, 'aceleração ' + maxA.toFixed(2)); assert.ok(maxJ < 40, 'solavanco ' + maxJ.toFixed(1));
+});
+
+test('o tracking também informa a velocidade (pv) para o celular continuar o movimento entre dois comandos, com limite', () => {
+  const t = new Tracker({ speed: 'normal', latency: 0.3 }), view = { zoom: 2, pan: { x: 0, y: 0 }, zoomMin: 1, zoomMax: 5 }; let pv = null;
+  for (let i = 0; i < 200; i++) { const now = i * 0.04; if (i % 2 === 0) t.observe({ cx: 0.5 + 0.0015 * i, cy: 0.5, h: 0.2, w: 0.1, kind: 'face' }, now, view); const o = t.tick(view, now); if (o?.pv) pv = o.pv; if (o?.pan) view.pan = { ...o.pan }; }
+  assert.ok(pv && Number.isFinite(pv.x) && Number.isFinite(pv.y), 'comando traz a velocidade'); assert.ok(Math.abs(pv.x) <= 4 && Math.abs(pv.y) <= 4, 'dentro do limite');
+});
+
+test('a detecção roda em um Worker (fora da tela principal), com volta ao modo antigo se ele falhar, e o serviço o entrega', async () => {
+  const js = readFile('public/tracking.js'), worker = readFile('public/tracking-worker.js'), server = readFile('server.cjs');
+  assert.match(js, /new Worker\('\/tracking-worker\.js'\)/); assert.match(js, /workerBroken/); assert.match(js, /s\.engine = 'main'/); assert.match(worker, /importScripts\('\/vendor\/mediapipe\/vision_bundle\.js'\)/); assert.match(server, /'\/tracking-worker\.js':'tracking-worker\.js'/);
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'public', 'vendor', 'mediapipe', 'vision_bundle.js')));
+  const os = require('node:os'), { createBridge } = require('../server.cjs'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-trkw-')), port = await new Promise(r => { const n = require('node:net').createServer(); n.listen(0, '127.0.0.1', () => { const x = n.address().port; n.close(() => r(x)); }); });
+  const bridge = createBridge({ dataDir: dir, port, camPort: null, lanPort: 0, relayBrokers: ['ws://127.0.0.1:1'] }); await new Promise(r => bridge.server.listen(port, '127.0.0.1', r));
+  try { for (const url of ['/tracking-worker.js', '/vendor/mediapipe/vision_bundle.js']) { const r = await fetch('http://127.0.0.1:' + port + url); assert.equal(r.status, 200, url); assert.match(r.headers.get('content-type'), /javascript/, url); await r.arrayBuffer(); } }
+  finally { bridge.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

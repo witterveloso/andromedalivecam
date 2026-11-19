@@ -34,7 +34,7 @@ async function startYoutube(){
   const ac=await window.audioMixer.enable();liveTx.audioContext=ac;if(epoch!==liveTx.epoch)return;
   const destination=window.audioMixer.destination;
   if($('#txAudio').value==='mic'){const mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});if(epoch!==liveTx.epoch){mic.getTracks().forEach(t=>t.stop());return}liveTx.micStream=mic;const gain=ac.createGain(),analyser=ac.createAnalyser();analyser.fftSize=256;liveTx.micNode=ac.createMediaStreamSource(mic);liveTx.micNode.connect(gain).connect(analyser).connect(window.audioMixer.master);liveTx.gain=gain;liveTx.analyser=analyser;setGain();mic.getAudioTracks()[0].onended=()=>{if(busyTx())finishTransport('Microfone desconectado. O envio foi interrompido.')}}
-  const [width,height]=yt.resolution==='1080p'?[1920,1080]:[1280,720];for(const canvas of [$('#monProgram canvas'),overlay,programOutput]){canvas.width=width;canvas.height=height}
+  const [width,height]=yt.resolution==='1080p'?[1920,1080]:[1280,720];for(const canvas of [hdBase,overlay,programOutput]){canvas.width=width;canvas.height=height}hdOn=true
   routeProgramOutput();const video=programOutput.captureStream(30);liveTx.videoStream=video;const stream=new MediaStream([...video.getVideoTracks(),...destination.stream.getAudioTracks()]);
   const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:Number(yt.bitrate)*1000000,audioBitsPerSecond:128000});liveTx.recorder=recorder;
   const socket=new WebSocket('ws://'+location.host+'/publish','andromeda.'+session.token);liveTx.socket=socket;liveTx.pending=0;liveTx.phase='connecting';sync();txStatus('Conectando o codificador ao YouTube…');

@@ -38,6 +38,23 @@
       : v.m.ObjectDetector.createFromOptions(v.fileset, { baseOptions: { modelAssetPath: '/vendor/mediapipe/models/efficientdet_lite0.tflite', delegate: 'CPU' }, runningMode: 'VIDEO', scoreThreshold: 0.4, maxResults: 6, categoryAllowlist: ['person'] });
     return detectors[kind];
   }
+  // Reconhecimento em Worker: o quadro vai reduzido (ImageBitmap, sem cópia) e as caixas voltam prontas. Se o Worker não subir ou travar, volta ao caminho antigo (tela principal).
+  let worker = null, workerBroken = false, wid = 0; const wpending = new Map();
+  function startWorker() {
+    if (worker || workerBroken || typeof Worker !== 'function' || typeof createImageBitmap !== 'function') return worker;
+    try {
+      worker = new Worker('/tracking-worker.js');
+      worker.onmessage = e => { const m = e.data, p = wpending.get(m.id); if (m.type === 'error' && !p) { workerBroken = true; return; } if (!p) return; wpending.delete(m.id); clearTimeout(p.timer); if (m.type === 'result') p.resolve(m); else p.reject(new Error(m.message)); };
+      worker.onerror = () => { workerBroken = true; for (const [, p] of wpending) { clearTimeout(p.timer); p.reject(new Error('worker')); } wpending.clear(); };
+    } catch { workerBroken = true; worker = null; }
+    return worker;
+  }
+  async function detectInWorker(s, el, kind, W, H) {
+    const w = startWorker(); if (!w) throw new Error('sem worker');
+    const rw = Math.min(kind === 'face' ? 384 : 448, W), bitmap = await createImageBitmap(el, { resizeWidth: rw, resizeHeight: Math.max(2, Math.round(rw * H / W)), resizeQuality: 'low' });
+    const id = ++wid, res = await new Promise((resolve, reject) => { const timer = setTimeout(() => { wpending.delete(id); workerBroken = true; reject(new Error('o reconhecimento em segundo plano não respondeu')); }, kind === 'face' ? 15000 : 25000); wpending.set(id, { resolve, reject, timer }); w.postMessage({ type: 'detect', id, kind, bitmap, personY: s.cfg.frame === 'corpo' ? 0.5 : 0.4 }, [bitmap]); });
+    s.engine = 'worker'; s.workerMs = res.took; return res.dets;
+  }
   const grabCanvas = document.createElement('canvas'); grabCanvas.width = 96; grabCanvas.height = 54; const grabCtx = grabCanvas.getContext('2d', { willReadFrequently: true });
   const feed = document.createElement('canvas'), feedCtx = feed.getContext('2d');
   let lastStamp = 0;
@@ -50,6 +67,8 @@
       for (let i = 0; i < gray.length; i++) gray[i] = (px[i * 4] * 77 + px[i * 4 + 1] * 150 + px[i * 4 + 2] * 29) >> 8;
       const d = s.motion.update(gray, areaMask(s)); return d ? [d] : [];
     }
+    if (!workerBroken) { try { return await detectInWorker(s, el, kind, W, H); } catch { workerBroken = true; } }
+    s.engine = 'main';
     const det = await detector(kind), stamp = Math.max(performance.now(), lastStamp + 1); lastStamp = stamp;
     // Fontes que não são <video> (imagem de entrada Blackmagic, por exemplo) passam por uma tela intermediária.
     let src = el; if (!(el instanceof HTMLVideoElement)) { feed.width = Math.min(960, W); feed.height = Math.round(feed.width * H / W); feedCtx.drawImage(el, 0, 0, feed.width, feed.height); src = feed; }
@@ -96,7 +115,7 @@
     const dt = Math.min(0.5, s.lastAt ? (now - s.lastAt) / 1000 : 0.1); s.lastAt = now;
     let dets;
     try { s.status = s.status || 'Carregando o reconhecimento…'; dets = await detect(s); s.error = ''; } catch (e) { s.error = 'Não foi possível iniciar o reconhecimento: ' + (e?.message || e); s.status = s.error; s.on = false; paint(); log('Tracking: ' + s.error); return; }
-    const took = performance.now() - now; s.period = Math.max(100, Math.min(450, took * 2.2)); s.frames.push(now); while (s.frames.length && now - s.frames[0] > 2000) s.frames.shift(); s.fps = s.frames.length / 2;
+    const took = performance.now() - now; s.period = s.engine === 'worker' ? Math.max(effectiveTarget(s) === 'person' ? 90 : 45, Math.min(450, took * 1.15)) : Math.max(100, Math.min(450, took * 2.2)); s.frames.push(now); while (s.frames.length && now - s.frames[0] > 2000) s.frames.shift(); s.fps = s.frames.length / 2;
     if (dets === null) { s.dets = []; s.status = 'Sem sinal de vídeo desta câmera'; return; }
     s.took = s.took * 0.7 + took * 0.3; measure(s, now).catch(() => {});
     dets = dets.filter(d => !isIgnored(s, d));
@@ -115,7 +134,7 @@
       if (camCtl.glide && camCtl.slot === s.i) { s.tracker.holdOff(1.5); continue; }
       const out = s.tracker.tick(viewOf(c), now);
       if (out.pan || out.zoom) {
-        const msg = { type: 'control', slot: s.i, ease: out.ease }; if (out.pan) { msg.pan = out.pan; c.pan = out.pan; } if (out.zoom) { msg.zoom = out.zoom; c.zoom.value = out.zoom; }
+        const msg = { type: 'control', slot: s.i, ease: out.ease }; if (out.pan) { msg.pan = out.pan; if (out.pv) msg.pv = out.pv; c.pan = out.pan; } if (out.zoom) { msg.zoom = out.zoom; c.zoom.value = out.zoom; }
         try { camSend(msg); } catch { /* sem conexão com o celular */ }
         if (s.i === camCtl.slot && typeof camCtlPaint === 'function' && now - s.ctl.paintAt > 0.25) { s.ctl.paintAt = now; camCtlPaint(); }
       }
@@ -222,6 +241,6 @@
     const nx = ((e.clientX - r.left) * k - pvBox.dx) / pvBox.dw, ny = ((e.clientY - r.top) * k - pvBox.dy) / pvBox.dh; s.last = { cx: nx, cy: ny };
   });
 
-  const api = { addArea: (i, a) => { const s = slotOf(i); s.cfg.areas.push(a); persist(); paint(); }, areas: i => slotOf(i ?? currentSlot()).cfg.areas, clearAreas: i => { slotOf(i ?? currentSlot()).cfg.areas.length = 0; persist(); paint(); }, set, config: i => ({ ...slotOf(i).cfg }), info: i => { const s = slotOf(i ?? currentSlot()); return { on: s.on, status: s.status, subject: s.subject, dets: s.dets, fps: s.fps, state: s.tracker.state, latency: s.latency, measured: s.meas, areas: s.cfg.areas.length }; }, toggle: () => set(currentSlot(), !here().on), draw, paint, setConfig: cfgChange };
+  const api = { addArea: (i, a) => { const s = slotOf(i); s.cfg.areas.push(a); persist(); paint(); }, areas: i => slotOf(i ?? currentSlot()).cfg.areas, clearAreas: i => { slotOf(i ?? currentSlot()).cfg.areas.length = 0; persist(); paint(); }, set, config: i => ({ ...slotOf(i).cfg }), info: i => { const s = slotOf(i ?? currentSlot()); return { on: s.on, status: s.status, subject: s.subject, dets: s.dets, fps: s.fps, state: s.tracker.state, latency: s.latency, measured: s.meas, areas: s.cfg.areas.length, engine: s.engine || null, workerMs: s.workerMs || null }; }, toggle: () => set(currentSlot(), !here().on), draw, paint, setConfig: cfgChange };
   window.andromedaTracking = api; paint();
 })();

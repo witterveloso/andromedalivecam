@@ -499,10 +499,11 @@ function drawBars(ctx, W, H) {
 
 /* ---------- desenho no PROGRAM (e na prévia dos efeitos) ---------- */
 const rundownBaseDrawFx = drawFx;
+let cdLeft = 0;
 drawFx = function (ctx, canvas, settings, logo, t) {
   const program = canvas === programOutput, draft = canvas.id === 'fxDraftCanvas';
   rundownBaseDrawFx(ctx, canvas, settings, logo, t);
-  if (program && countdown.on) drawCountdown(ctx, canvas.width, canvas.height, remaining());
+  if (program) { if (countdown.on) cdLeft = remaining(); window.andromedaFade.apply(ctx, 'countdown', countdown.on, c => drawCountdown(c, canvas.width, canvas.height, cdLeft)); } // entra e sai com fade de 2 s
   else if (draft && (countdown.on || (inspecting === 'countdown' && $('#fxInspect')?.checked))) drawCountdown(ctx, canvas.width, canvas.height, remaining(), true);
   if (!program) return;
   if (bars.on) drawBars(ctx, canvas.width, canvas.height);

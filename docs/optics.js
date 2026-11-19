@@ -204,8 +204,14 @@
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
         // Linhas da imagem descem; com a textura invertida, o deslocamento vertical troca de sinal.
-        const nowMs = performance.now(), k = ease > 0 && sm.at ? 1 - Math.exp(-Math.min(100, nowMs - sm.at) / ease) : 1; sm.at = nowMs;
-        sm.pan.x += (p.pan.x - sm.pan.x) * k; sm.pan.y += (p.pan.y - sm.pan.y) * k; sm.zoom += (p.zoom - sm.zoom) * k;
+        const nowMs = performance.now(), dtS = sm.at ? Math.min(0.1, (nowMs - sm.at) / 1000) : 0, k = ease > 0 && sm.at ? 1 - Math.exp(-Math.min(100, nowMs - sm.at) / ease) : 1; sm.at = nowMs;
+        if (drive && ease > 0 && nowMs - drive.at < 400) {
+          // A mesa manda a posição E a velocidade do movimento: a imagem anda com essa velocidade a cada quadro (sem esperar o próximo comando)
+          // e só corrige a diferença. Assim o movimento é contínuo a 30/60 quadros por segundo, sem degraus e sem o atraso de uma suavização simples.
+          const age = (nowMs - drive.at) / 1000, tx = clamp(p.pan.x + drive.pv.x * age, -1, 1), ty = clamp(p.pan.y + drive.pv.y * age, -1, 1), px = sm.pan.x + drive.pv.x * dtS, py = sm.pan.y + drive.pv.y * dtS;
+          sm.pan.x = clamp(px + (tx - px) * k, -1, 1); sm.pan.y = clamp(py + (ty - py) * k, -1, 1);
+        } else { sm.pan.x += (p.pan.x - sm.pan.x) * k; sm.pan.y += (p.pan.y - sm.pan.y) * k; }
+        sm.zoom += (p.zoom - sm.zoom) * k;
         if (Math.abs(p.pan.x - sm.pan.x) < 1e-4 && Math.abs(p.pan.y - sm.pan.y) < 1e-4 && Math.abs(p.zoom - sm.zoom) < 1e-4) { sm.pan.x = p.pan.x; sm.pan.y = p.pan.y; sm.zoom = p.zoom; }
         const room = Math.max(0, .5 - .5 / Math.max(1, sm.zoom * s.scale));
         gl.uniform1f(u.z, sm.zoom * s.scale); gl.uniform2f(u.o, s.ox + sm.pan.x * room, -s.oy - sm.pan.y * room); gl.uniform3fv(u.g, p.gain); gl.uniform1f(u.e, p.expo);
@@ -407,10 +413,11 @@
   const evRange = () => range(caps.exposureCompensation) ? { min: caps.exposureCompensation.min, max: caps.exposureCompensation.max, step: caps.exposureCompensation.step || 0.1 } : EV;
   const kelvinRange = () => native().wb ? { min: caps.colorTemperature.min, max: caps.colorTemperature.max, step: caps.colorTemperature.step || 50 } : KELVIN;
   // Comandos da mesa: zoom, lente, enquadramento, exposição e balanço de branco.
-  let ease = 0; // ms
+  let ease = 0, drive = null; // ms; velocidade pedida pela mesa (pan por segundo)
   function remote(m) {
     if (!raw) return;
     ease = Number.isFinite(m.ease) ? clamp(m.ease, 0, 400) : 0;
+    drive = m.pv && Number.isFinite(m.pv.x) && Number.isFinite(m.pv.y) ? { pv: { x: clamp(m.pv.x, -4, 4), y: clamp(m.pv.y, -4, 4) }, at: performance.now() } : null;
     if (typeof m.lens === 'string') { const select = $('#lens'); if (select && [...select.options].some(o => o.value === m.lens) && select.value !== m.lens) { select.value = m.lens; select.onchange?.(); say('A mesa trocou a lente.', 'info'); } }
     if (Number.isFinite(m.zoom)) setZoom(m.zoom);
     if (m.center) setPan(0, 0);

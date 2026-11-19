@@ -3,19 +3,23 @@
 // atraso para o comando chegar, atraso para a imagem voltar, tempo de análise, ruído da detecção e a suavização do celular (ease).
 const room = z => 0.5 - 0.5 / Math.max(1, z);
 
-function simulate({ driver, subject, seconds = 30, zoom0 = 2, pan0 = { x: 0, y: 0 }, zoomMin = 1, zoomMax = 5, dCmd = 0.08, dVid = 0.12, tDet = 0.05, detHz = 8, noise = 0.008, miss = 0, tickHz = 25, easeMs = null, seed = 7, step = 0.005 }) {
+function simulate({ driver, subject, seconds = 30, zoom0 = 2, pan0 = { x: 0, y: 0 }, zoomMin = 1, zoomMax = 5, dCmd = 0.08, dVid = 0.12, tDet = 0.05, detHz = 8, noise = 0.008, miss = 0, tickHz = 25, easeMs = null, seed = 7, step = 0.005, phoneDrive = true }) {
   let rs = seed; const rnd = () => (rs = (rs * 16807) % 2147483647) / 2147483647 - 0.5;
-  const ph = { pan: { ...pan0 }, zoom: zoom0 }, target = { pan: { ...pan0 }, zoom: zoom0 }; let easeTau = 0;
+  const ph = { pan: { ...pan0 }, zoom: zoom0 }, target = { pan: { ...pan0 }, zoom: zoom0, pv: null, at: 0 }; let easeTau = 0;
   const cmdQ = [], frames = [], dets = [], trace = [], sent = [];
   let nextDet = 0, nextTick = 0, nextFrame = 0, lastFrame = null, cmdCount = 0;
   const windowState = () => { const r = room(ph.zoom); return { cx: 0.5 + ph.pan.x * r, cy: 0.5 + ph.pan.y * r, z: ph.zoom }; };
   const view = () => ({ zoom: ph.zoom, pan: { ...ph.pan }, zoomMin, zoomMax });
   for (let t = 0; t <= seconds; t += step) {
     // 1) comandos que chegam ao celular
-    while (cmdQ.length && cmdQ[0].t <= t) { const c = cmdQ.shift().c; if (c.pan) target.pan = { ...c.pan }; if (Number.isFinite(c.zoom)) target.zoom = c.zoom; if (c.ease !== undefined && easeMs !== false) easeTau = (easeMs ?? c.ease) / 1000; }
+    while (cmdQ.length && cmdQ[0].t <= t) { const c = cmdQ.shift().c; if (c.pan) { target.pan = { ...c.pan }; target.pv = c.pv && phoneDrive ? { ...c.pv } : null; target.at = t; } if (Number.isFinite(c.zoom)) target.zoom = c.zoom; if (c.ease !== undefined && easeMs !== false) easeTau = (easeMs ?? c.ease) / 1000; }
     // 2) o celular anda até o alvo do comando (suavização)
     const a = easeTau > 0 ? 1 - Math.exp(-step / easeTau) : 1;
-    ph.pan.x += (target.pan.x - ph.pan.x) * a; ph.pan.y += (target.pan.y - ph.pan.y) * a; ph.zoom += (target.zoom - ph.zoom) * a;
+    if (target.pv) { // o celular anda com a velocidade pedida e corrige o resto (dead reckoning): sem o atraso de uma suavização simples
+      const age = Math.min(0.4, t - target.at), tx = target.pan.x + target.pv.x * age, ty = target.pan.y + target.pv.y * age, preX = ph.pan.x + target.pv.x * step, preY = ph.pan.y + target.pv.y * step;
+      ph.pan.x = preX + (tx - preX) * a; ph.pan.y = preY + (ty - preY) * a;
+    } else { ph.pan.x += (target.pan.x - ph.pan.x) * a; ph.pan.y += (target.pan.y - ph.pan.y) * a; }
+    ph.zoom += (target.zoom - ph.zoom) * a;
     // 3) quadro de vídeo (30 por segundo) e detecção sobre o quadro mais recente que já chegou
     if (t >= nextFrame) { nextFrame += 1 / 30; const w = windowState(), s = subject(t); frames.push({ cap: t, arrive: t + dVid, view: { cx: (s.x - (w.cx - 0.5 / w.z)) * w.z, cy: (s.y - (w.cy - 0.5 / w.z)) * w.z, h: s.h * w.z } }); }
     if (t >= nextDet) {
