@@ -169,6 +169,18 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     send({ type: 'engine', engine: 'webm', message }); send({ type: 'notice', message });
   }
 
+  function resyncAll(reason) {
+    if (!broadcast || stopping) return;
+    audit.warn('transmissao', 'resincronizacao', 'Codificador reiniciado a pedido da mesa: ' + reason, { motivo: reason });
+    for (const r of [...runners.values()]) {
+      if (r.failed || r.closed) continue;
+      r.dying = true; try { r.child.stdin.end(); } catch { /* já fechado */ }
+      r.killTimer = setTimeout(() => r.child?.kill('SIGKILL'), 3500); r.killTimer.unref?.();
+      relaunch(r);
+    }
+    send({ type: 'notice', message: 'Resolução reduzida: ' + reason + '. A transmissão volta em instantes.' });
+  }
+
   // Erro de escrita no pipe, fechamento do processo e entrada interrompida chegam em ordem imprevisível: o primeiro decide.
   function died(r, message) {
     if (r.dying) return; r.dying = true;
@@ -249,6 +261,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     }
     let msg; try { msg = JSON.parse(data.toString()); } catch { fail('Comando inválido.'); return; }
     if (msg.type === 'stop') { stop(); return; }
+    // O navegador baixou a resolução (regulador de carga): o codificador de cada formato reinicia, abrindo outro FFmpeg e uma gravação nova (_p2…).
+    if (msg.type === 'resync' && everStarted) { resyncAll(String(msg.reason || 'mudança de resolução').slice(0, 160)); return; }
     if (msg.type === 'engine' && everStarted) { useStandardEngine(String(msg.reason || 'falha no navegador').slice(0, 160)); return; }
     if (msg.type !== 'start') { fail('Comando não suportado.'); return; }
     if (everStarted) { fail('Abra uma nova sessão para iniciar outra transmissão.'); return; }

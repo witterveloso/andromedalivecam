@@ -38,9 +38,9 @@
   // Estilos de movimento. omega: rapidez da mola (rad/s, ~ 4/omega s para assentar) · vmax: velocidade máxima da janela (quadros inteiros/s)
   // amax: aceleração máxima · zoom*: o mesmo para o zoom (em ln) · lead: quanto da antecipação usar · ease: suavização no celular (ms).
   const SPEEDS = {
-    suave: { omega: 1.5, vmax: 0.2, amax: 0.45, zOmega: 0.8, zVmax: 0.22, lead: 0.7, ease: 140, label: 'Suave (cinema)' },
-    normal: { omega: 2.6, vmax: 0.4, amax: 1.1, zOmega: 1.2, zVmax: 0.4, lead: 1, ease: 100, label: 'Normal' },
-    rapido: { omega: 4.6, vmax: 0.8, amax: 2.8, zOmega: 2, zVmax: 0.7, lead: 1.1, ease: 70, label: 'Rápida (esporte)' },
+    suave: { omega: 1.5, vmax: 0.2, amax: 0.45, zOmega: 0.8, zVmax: 0.22, lead: 0.7, ease: 90, jerk: 0.14, label: 'Suave (cinema)' },
+    normal: { omega: 2.6, vmax: 0.4, amax: 1.1, zOmega: 1.2, zVmax: 0.4, lead: 1, ease: 60, jerk: 0.09, label: 'Normal' },
+    rapido: { omega: 4.6, vmax: 0.8, amax: 2.8, zOmega: 2, zVmax: 0.7, lead: 1.1, ease: 40, jerk: 0.055, label: 'Rápida (esporte)' },
   };
   // Zona de conforto (em larguras da imagem): fora de "out" a câmera passa a andar; dentro de "in" ela para.
   const COMFORT = { pequena: { out: 0.06, inn: 0.02, label: 'Pequena' }, media: { out: 0.12, inn: 0.04, label: 'Média' }, grande: { out: 0.2, inn: 0.07, label: 'Grande' } };
@@ -76,7 +76,7 @@
       this.P = [[p00, p01], [p10, p11]]; this.t = t;
     }
     update(z, r) {
-      const [[p00, p01], [p10, p11]] = this.P, s = p00 + r, k0 = p00 / s, k1 = p10 / s, y = z - this.x;
+      const [[p00, p01], [p10, p11]] = this.P, s = p00 + r, k0 = p00 / s, k1 = p10 / s, y = z - this.x; this.nis = y * y / s; // quão surpreendente foi a medida
       this.x += k0 * y; this.v += k1 * y;
       this.P = [[(1 - k0) * p00, (1 - k0) * p01], [p10 - k1 * p00, p11 - k1 * p01]];
     }
@@ -94,6 +94,21 @@
   }
 
   /**
+   * Mola PD com ANTECIPAÇÃO da velocidade do alvo e aceleração filtrada (jerk limitado).
+   * Seguir um alvo que anda a velocidade constante com a mola simples deixa um atraso fixo (a câmera "arrasta" atrás da pessoa);
+   * somando a velocidade do alvo ao termo de amortecimento a câmera anda JUNTO com ele, sem atraso e sem trancos. A aceleração passa
+   * por um filtro de 1ª ordem (constante `tauJ`): o começo e o fim do movimento viram curvas suaves (sem "tranco" no arranque).
+   */
+  function springFF(s, target, vTarget, dt, omega, vmax, amax, tauJ) {
+    const n = Math.max(1, Math.ceil(dt / 0.01)), h = dt / n, kj = 1 - Math.exp(-h / Math.max(1e-3, tauJ));
+    s.a = s.a || 0;
+    for (let i = 0; i < n; i++) {
+      let a = omega * omega * (target - s.x) + 2 * omega * (vTarget - s.v);
+      a = clamp(a, -amax, amax); s.a += (a - s.a) * kj; s.v = clamp(s.v + s.a * h, -vmax, vmax); s.x += s.v * h;
+    }
+  }
+
+  /**
    * Seguidor de um alvo. Duas entradas:
    *   observe(det, t, view)  quando chega uma detecção (ou null) do quadro que foi capturado há `latency` segundos;
    *   tick(view, t)          a cada ciclo de controle (~25 por segundo): devolve {pan?, zoom?, state, atEdge, ease}.
@@ -101,10 +116,10 @@
    * a seguir depois de o operador mexer à mão).
    */
   class Tracker {
-    constructor(options = {}) { this.options = { frame: 'seguir', speed: 'normal', comfort: 'media', latency: 0.35, lostHold: 2.5, lostReturn: false, followZoom: 1.4, ...options }; this.reset(); }
+    constructor(options = {}) { this.options = { frame: 'seguir', speed: 'normal', comfort: 'media', latency: 0.35, lostHold: 2.5, lostReturn: false, followZoom: 1.4, ffGain: 0.25, vTau: 0.4, adaptiveQ: false, qBoost: 1.2, ...options }; this.reset(); }
     reset() {
       this.st = null; this.kx = new Kalman1D(0.25); this.ky = new Kalman1D(0.25); this.hw = null; this.kind = null; this.lastSeen = -Infinity; this.lastT = null;
-      this.hist = []; this.hold = 0; this.mv = { x: false, y: false, z: false }; this.state = 'search'; this.sent = null; this.kt = 0;
+      this.vs = { x: 0, y: 0 }; this.hist = []; this.hold = 0; this.mv = { x: false, y: false, z: false }; this.state = 'search'; this.sent = null; this.kt = 0;
     }
     holdOff(seconds) { this.hold = Math.max(this.hold, seconds); }
 
@@ -131,7 +146,10 @@
       const fresh = this.lastSeen === -Infinity || t - this.lastSeen > this.options.lostHold || this.kx.x === null;
       const jump = !fresh && Math.hypot(wx - this.kx.at(tf), wy - this.ky.at(tf)) > 0.3; // outro alvo: recomeça do ponto novo
       if (fresh || jump || det.kind !== this.kind) { this.kx.init(wx, tf, rWorld); this.ky.init(wy, tf, rWorld); this.hw = hw; this.mv = { x: false, y: false, z: this.mv.z }; }
-      else { this.kx.predict(tf); this.ky.predict(tf); this.kx.update(wx, rWorld); this.ky.update(wy, rWorld); this.hw = Math.exp(lerp(Math.log(this.hw), Math.log(hw), 0.35)); }
+      else {
+        this.kx.predict(tf); this.ky.predict(tf); this.kx.update(wx, rWorld); this.ky.update(wy, rWorld);
+        // o alvo mudou de rumo (a medida surpreendeu o filtro): confia mais na medida por um instante; depois volta ao normal
+        const surprise = Math.max(this.kx.nis || 0, this.ky.nis || 0); if (this.options.adaptiveQ) this.kx.q = this.ky.q = surprise > 9 ? this.options.qBoost : Math.max(0.25, (this.kx.q || 0.25) * 0.8); this.hw = Math.exp(lerp(Math.log(this.hw), Math.log(hw), 0.35)); }
       this.kt = tf; this.kind = det.kind; this.lastSeen = t;
     }
 
@@ -145,11 +163,13 @@
       const since = t - this.lastSeen, known = this.kx.x !== null && since < o.lostHold;
       this.state = since < 0.45 ? 'track' : known ? 'lost' : 'search';
       // alvo previsto: a velocidade estimada projeta o caminho; sem ver o alvo ela vai sumindo (para não sair andando sem rumo)
-      let px = null, py = null;
+      let px = null, py = null, fx = 0, fy = 0;
       if (known) {
-        const vk = since < 0.45 ? 1 : Math.exp(-(since - 0.45) / 0.3), ahead = Math.min(0.5, o.latency * sp.lead), fx = this.kx.v * vk, fy = this.ky.v * vk, dtk = t - this.kt;
+        const vk = since < 0.45 ? 1 : Math.exp(-(since - 0.45) / 0.3), ahead = Math.min(0.5, o.latency * sp.lead), dtk = t - this.kt; fx = this.kx.v * vk; fy = this.ky.v * vk;
+        // a velocidade do filtro é ruidosa: passa por um filtro lento antes de virar antecipação (senão a câmera "treme" com cada detecção)
+        const kv = 1 - Math.exp(-dt / Math.max(0.05, o.vTau)); this.vs.x += (fx - this.vs.x) * kv; this.vs.y += (fy - this.vs.y) * kv; fx = this.vs.x; fy = this.vs.y;
         px = this.kx.x + fx * (dtk + ahead); py = this.ky.x + fy * (dtk + ahead);
-      }
+      } else { this.vs.x *= 0.9; this.vs.y *= 0.9; }
       const aim = AIM[this.kind] || AIM.person, r = room(st.z);
       // ---- posição: zona de conforto com histerese; dentro dela a câmera fica quieta ----
       let tx = st.cx, ty = st.cy;
@@ -162,8 +182,9 @@
       } else if (this.state === 'search' && o.lostReturn) { tx = 0.5; ty = 0.5; }
       tx = clamp(tx, 0.5 - r, 0.5 + r); ty = clamp(ty, 0.5 - r, 0.5 + r);
       const lostEase = px === null && o.lostReturn ? 0.4 : 1;
-      const X = { x: st.cx, v: st.vx }, Y = { x: st.cy, v: st.vy };
-      spring(X, tx, dt, sp.omega * lostEase, sp.vmax, sp.amax); spring(Y, ty, dt, sp.omega * lostEase, sp.vmax, sp.amax);
+      const X = { x: st.cx, v: st.vx, a: st.ax || 0 }, Y = { x: st.cy, v: st.vy, a: st.ay || 0 };
+      // com o alvo em movimento a câmera anda junto com ele (antecipação da velocidade); parada, só a mola
+      springFF(X, tx, this.mv.x ? clamp(fx * o.ffGain, -sp.vmax, sp.vmax) : 0, dt, sp.omega * lostEase, sp.vmax, sp.amax, sp.jerk); springFF(Y, ty, this.mv.y ? clamp(fy * o.ffGain, -sp.vmax, sp.vmax) : 0, dt, sp.omega * lostEase, sp.vmax, sp.amax, sp.jerk);
       // ---- zoom: enquadramento escolhido (em ln, devagar, com histerese); o centro da imagem não se mexe com o zoom ----
       let lzT = Math.log(st.z);
       const matches = frame.h > 0 && frame.src === (this.kind === 'person' ? 'person' : 'face') && this.hw > 0.003 && known;
@@ -175,17 +196,18 @@
       const Z = { x: Math.log(st.z), v: st.vz }; spring(Z, lzT, dt, sp.zOmega, sp.zVmax, sp.zVmax * 3);
       const z2 = clamp(Math.exp(Z.x), zmin, zmax), r2 = room(z2);
       st.z = z2; st.vz = Z.x !== Math.log(z2) ? 0 : Z.v;
-      st.cx = clamp(X.x, 0.5 - r2, 0.5 + r2); st.cy = clamp(Y.x, 0.5 - r2, 0.5 + r2); st.vx = st.cx === X.x ? X.v : 0; st.vy = st.cy === Y.x ? Y.v : 0;
-      if (!this.mv.x && Math.abs(st.vx) < 5e-4 && Math.abs(st.cx - tx) < 5e-4) st.vx = 0;
-      if (!this.mv.y && Math.abs(st.vy) < 5e-4 && Math.abs(st.cy - ty) < 5e-4) st.vy = 0;
+      st.cx = clamp(X.x, 0.5 - r2, 0.5 + r2); st.cy = clamp(Y.x, 0.5 - r2, 0.5 + r2); st.vx = st.cx === X.x ? X.v : 0; st.vy = st.cy === Y.x ? Y.v : 0; st.ax = st.cx === X.x ? X.a : 0; st.ay = st.cy === Y.x ? Y.a : 0;
+      if (!this.mv.x && Math.abs(st.vx) < 5e-4 && Math.abs(st.cx - tx) < 5e-4) { st.vx = 0; st.ax = 0; }
+      if (!this.mv.y && Math.abs(st.vy) < 5e-4 && Math.abs(st.cy - ty) < 5e-4) { st.vy = 0; st.ay = 0; }
       if (!this.mv.z && Math.abs(st.vz) < 5e-4) st.vz = 0;
       this.hist.push({ t, cx: st.cx, cy: st.cy, z: st.z }); while (this.hist.length > 2 && t - this.hist[0].t > 3) this.hist.shift();
       // ---- só manda o que mudou (e só quando a mudança vale a pena) ----
       const pan = { x: r2 > 1e-6 ? clamp((st.cx - 0.5) / r2, -1, 1) : 0, y: r2 > 1e-6 ? clamp((st.cy - 0.5) / r2, -1, 1) : 0 }, last = this.sent;
-      if (!last || Math.abs(pan.x - last.pan.x) > 4e-4 || Math.abs(pan.y - last.pan.y) > 4e-4) out.pan = { x: Math.round(pan.x * 10000) / 10000, y: Math.round(pan.y * 10000) / 10000 };
+      const pv = { x: r2 > 1e-6 ? clamp(st.vx / r2, -4, 4) : 0, y: r2 > 1e-6 ? clamp(st.vy / r2, -4, 4) : 0 }, pvChanged = !last || !last.pv || Math.abs(pv.x - last.pv.x) > 0.02 || Math.abs(pv.y - last.pv.y) > 0.02;
+      if (!last || pvChanged || Math.abs(pan.x - last.pan.x) > 4e-4 || Math.abs(pan.y - last.pan.y) > 4e-4) { out.pan = { x: Math.round(pan.x * 10000) / 10000, y: Math.round(pan.y * 10000) / 10000 }; out.pv = { x: Math.round(pv.x * 1000) / 1000, y: Math.round(pv.y * 1000) / 1000 }; }
       if (!last || Math.abs(st.z - last.z) > 1.5e-3) out.zoom = Math.round(st.z * 1000) / 1000;
-      if (out.pan || out.zoom) this.sent = { pan: out.pan || last?.pan || pan, z: out.zoom || last?.z || st.z };
-      if (out.zoom && !out.pan && r2 > 1e-6) out.pan = { x: Math.round(pan.x * 10000) / 10000, y: Math.round(pan.y * 10000) / 10000 }; // o zoom muda a folga: o pan acompanha
+      if (out.zoom && !out.pan && r2 > 1e-6) { out.pan = { x: Math.round(pan.x * 10000) / 10000, y: Math.round(pan.y * 10000) / 10000 }; out.pv = { x: Math.round(pv.x * 1000) / 1000, y: Math.round(pv.y * 1000) / 1000 }; } // o zoom muda a folga: o pan acompanha
+      if (out.pan || out.zoom) this.sent = { pan: out.pan || last?.pan || pan, pv: out.pv || last?.pv || pv, z: out.zoom || last?.z || st.z };
       out.state = this.state; return out;
     }
   }
@@ -220,5 +242,5 @@
     }
   }
 
-  return { Tracker, Kalman1D, MotionDetector, pickSubject, spring, room, travel, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, AIM, SPEEDS, COMFORT, LATENCY, clamp };
+  return { Tracker, Kalman1D, MotionDetector, pickSubject, spring, springFF, room, travel, viewToWorld, worldToView, inAreas, estimateLatency, FRAMES, AIM, SPEEDS, COMFORT, LATENCY, clamp };
 });
