@@ -292,6 +292,8 @@ async function applyMic() {
   if (cam.ac && cam.meter) cam.ac.createMediaStreamSource(new MediaStream([fresh])).connect(cam.meter);
   say('Microfone trocado: ' + (q('#input').selectedOptions[0]?.text || 'padrão') + '.', 'ok');
 }
+// A lista não tem mais 720p: um convite antigo que peça 1280×720 abre em 1080p.
+function setResolution(w, h) { const v = w + 'x' + h, sel = q('#resolution'); sel.value = [...sel.options].some(o => o.value === v) ? v : '1920x1080'; }
 q('#resolution').onchange = q('#fps').onchange = () => { if (cam.running) applyFormat().catch(e => say(e.message, 'warn')); };
 q('#input').onchange = () => { if (cam.running) applyMic().catch(e => say(e.message, 'warn')); };
 
@@ -455,7 +457,7 @@ async function start() {
     if (!localTest && cam.relay) {
       const info = await relaySession();
       q('#cameraName').textContent = info.name;
-      if (info.profile) { q('#resolution').value = info.profile.width + 'x' + info.profile.height; q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
+      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
     } else if (!localTest) {
       const invite = message => Object.assign(Error(message), { name: 'InviteError' });
       const response = await fetch(gateway + '/cam/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: cam.key }) })
@@ -463,7 +465,7 @@ async function start() {
       const info = await response.json().catch(() => ({}));
       if (!response.ok) throw invite(info.error || 'Convite recusado pela mesa.');
       q('#cameraName').textContent = info.name;
-      if (info.profile) { q('#resolution').value = info.profile.width + 'x' + info.profile.height; q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
+      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
     }
     if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(Error('Abra este link no Safari ou Chrome atualizado. O navegador interno do mensageiro pode não permitir a câmera.'), { name: 'InviteError' });
     cam.stream = await navigator.mediaDevices.getUserMedia({

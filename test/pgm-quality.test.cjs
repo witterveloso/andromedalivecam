@@ -55,3 +55,12 @@ test('teste do computador antes de ir ao ar: mede os quadros por segundo no tama
   assert.match(b, /severe >= 3\) downshift\([^)]*\)?, false, 8000|severe >= 3\) downshift\('mais de um terço/, 'reação rápida a descartes fortes'); assert.match(b, /liveTx\.notice = sizeNote/, 'o aviso do tamanho não é apagado ao conectar');
   assert.match(read('public/index.html'), /master:q\('\.audio-master select'\)\?\.selectedIndex\?\?0/, 'salvamento de configurações à prova de painel ausente');
 });
+
+test('sem a opção 720p na transmissão, no convite da câmera e no app da câmera (a segurança automática continua)', () => {
+  const b = read('public/broadcast.js'), d = read('public/cam-desk.js'), page = read('docs/index.html'), cam = read('docs/cam.js');
+  assert.match(b, /for \(const r of \['1080p'\]\) resolution\.add/); assert.match(b, /if \(model\.resolution !== '1080p'\) model\.resolution = '1080p'/);
+  assert.doesNotMatch(d, /<option value="1280x720">/); assert.doesNotMatch(d, /'1280x720':\{/);
+  assert.doesNotMatch(page, /<option value="1280x720">/); assert.match(page, /value="1920x1080"/); assert.match(page, /value="3840x2160"/);
+  assert.match(cam, /function setResolution\(w, h\)/); assert.match(cam, /: '1920x1080'/, 'convite antigo com 720p abre em 1080p');
+  assert.equal(read('public/cam/index.html'), page); assert.equal(read('public/cam/cam.js'), cam);
+});
