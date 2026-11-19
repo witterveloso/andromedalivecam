@@ -1,5 +1,10 @@
 # Andrômeda Live 0.27 — Tracking fluido em tempo real e PGM em alta definição
 
+## 0.27.1 — a transmissão não começa mais num tamanho que o computador não sustenta
+- **Teste do computador antes de ir ao ar.** Ao clicar em Transmitir (motor próprio), a mesa codifica o próprio PGM, com a mesa desenhando junto, por ~2,6 s em cada tamanho, do pedido para baixo (1080p → 720p → 540p), e usa o primeiro que sai a **pelo menos 26 quadros por segundo**. O resultado vale por **7 dias** (a próxima transmissão não repete o teste; escolher a resolução na lista refaz) e fica no Diagnóstico (*Teste do computador: 1080p 14 q/s → 720p 30 q/s · transmitindo em 720p*). Antes, o envio começava em 1080p mesmo num computador que só entregava 5 a 10 quadros por segundo, e a plataforma recebia vídeo faltando.
+- **Reação em segundos, não em minutos.** Se mais de um terço dos quadros for descartado por 3 s seguidos, a resolução é reduzida logo (8 s de aquecimento, antes eram 30 s e 10 s de descartes).
+- **Correção:** o salvamento de configurações procurava um seletor do Áudio Master que a versão 0.24.1 removeu e podia gerar um erro (*Cannot read properties of null (reading 'selectedIndex')*).
+
 ## 0.27.0
 - **Movimento muito mais liso.** O seguimento ganhou **antecipação de velocidade** (a câmera já sai na velocidade de quem anda, em vez de esperar o erro crescer) e **aceleração suavizada** (o "solavanco" é limitado, não só a aceleração). Em simulação com três qualidades de rede (Wi-Fi local, Internet, Internet lenta), o solavanco caiu de **~45–95** (0.25) para **~19–23**, e a aceleração máxima de **~3–6** para **~1,4–1,8**, com o alvo **sempre dentro do quadro** e erro médio menor. Os estilos *Suave*, *Normal* e *Rápido* foram reajustados nessa base.
 - **O celular continua o movimento entre os comandos.** Além da posição, a mesa agora informa a **velocidade** do enquadramento. O app da câmera usa isso para **continuar deslizando** (a até 60 quadros por segundo) entre um comando e o seguinte, e corrige suavemente quando chega o próximo. Sem trancos de 25 em 25 vezes por segundo, e sem perda de resolução: continua sendo o mesmo recorte digital.
