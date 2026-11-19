@@ -126,7 +126,10 @@
   const CAP_KEY = 'andromeda.tx.cap.v1';
   function readCap() { try { const v = JSON.parse(localStorage.getItem(CAP_KEY) || 'null'); return v && Date.now() - v.at < 14 * 864e5 ? v : null; } catch { return null; } }
   function writeCap(res) { try { localStorage.setItem(CAP_KEY, JSON.stringify({ res, at: Date.now() })); } catch { /* sem armazenamento */ } }
-  function clearCap() { try { localStorage.removeItem(CAP_KEY); } catch { /* sem armazenamento */ } }
+  function clearCap() { try { localStorage.removeItem(CAP_KEY); localStorage.removeItem(BENCH_KEY); } catch { /* sem armazenamento */ } }
+  const BENCH_KEY = 'andromeda.tx.bench.v1';
+  function readBench(req) { try { const v = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null'); return v && v.req === req && Date.now() - v.at < 7 * 864e5 ? v : null; } catch { return null; } }
+  function writeBench(req, res, fps) { try { localStorage.setItem(BENCH_KEY, JSON.stringify({ req, res, fps, at: Date.now() })); } catch { /* sem armazenamento */ } }
   const field = (text, control) => { const label = make('label', '', text); label.append(control); return label; };
   const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['720p', '1080p']) resolution.add(new Option(r + ' · 30 fps', r));
   const bitrate = make('input'); bitrate.id = 'txBitrate'; bitrate.type = 'number'; bitrate.min = 3; bitrate.max = 20; bitrate.step = .5;
@@ -284,6 +287,21 @@
         if (!bad) { engine = 'native'; liveTx.hardware = probes.every(p => p.hardware); } else log('Motor Andrômeda indisponível neste computador: ' + bad.reason + ' Usando o codificador padrão.');
       }
       model.engineUsed = engine; liveTx.engine = engine;
+      // Teste do computador (só o motor próprio e só quando ainda não há resultado recente para este tamanho): do tamanho pedido para baixo, o primeiro que
+      // sai a pelo menos 26 quadros por segundo, com a mesa desenhando junto. O resultado vale por 7 dias; escolher a resolução na lista refaz o teste.
+      let sizeNote = '';
+      if (engine === 'native' && !liveTx.calibrating && window.AndromedaEngine?.benchmark && !readBench(outRes)) {
+        const ladder = [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].filter(x => x[0] <= width); let chosen = null; const tried = [];
+        for (const [w, h, label] of ladder) {
+          txStatus('Testando o computador em ' + label + '…'); for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = w; canvas.height = h; } await new Promise(r => setTimeout(r, 500)); if (epoch !== liveTx.epoch) return;
+          const rf0 = typeof rf === 'number' ? rf : 0, t0 = performance.now(), r = await AndromedaEngine.benchmark({ canvas: programOutput, width: w, height: h, bitrate: model.bitrate * 1e6 }); if (epoch !== liveTx.epoch) return;
+          const desk = ((typeof rf === 'number' ? rf : 0) - rf0) / ((performance.now() - t0) / 1000); tried.push(label + ' ' + (r.ok ? r.fps + ' q/s' : 'falhou'));
+          if (r.ok && r.fps >= 26 && desk >= 14) { chosen = [w, h, label, r.fps]; break; } if (!r.ok && r.reason) break;
+        }
+        const pick = chosen || ladder[ladder.length - 1]; [width, height] = [pick[0], pick[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; }
+        writeBench(outRes, pick[2], chosen ? chosen[3] : 0); if (pick[2] !== outRes) writeBench(pick[2], pick[2], chosen ? chosen[3] : 0); log('Teste do computador: ' + tried.join(' → ') + '. Transmitindo em ' + pick[2] + '.'); window.andromedaAudit?.('info', 'teste-do-computador', 'Teste do computador: ' + tried.join(' → ') + ' · transmitindo em ' + pick[2]);
+        if (pick[2] !== outRes) { writeCap(pick[2]); sizeNote = 'Este computador não sustenta ' + outRes + ': transmitindo em ' + pick[2] + '.'; txStatus(sizeNote); }
+      } else if (engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
       let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
       const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6, makeRecorder = (media, bits) => new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: bits, audioBitsPerSecond: 160000 });
@@ -302,7 +320,7 @@
       if (needV) window.andromedaVertical.setLive(true);
       if (engine === 'webm') buildStandard();
       const dual = needV;
-      const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = ''; liveTx.phase = 'connecting';
+      const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = sizeNote; liveTx.phase = 'connecting';
       for (const d of targets) live.states.set(d.id, { state: 'connecting' });
       sync(); txStatus('Conectando o codificador…');
       liveTx.stopTimer = setTimeout(() => { if (epoch === liveTx.epoch && liveTx.phase !== 'sending') finishTransport('O codificador não iniciou o envio. Confira a conexão e tente de novo.'); }, 35000);
@@ -338,9 +356,9 @@
       };
       // Regulador de carga: se o computador não acompanha (quadros descartados ou a mesa a poucos quadros por segundo), baixa a resolução SEM encerrar a transmissão
       // (1080p → 720p → 540p), reiniciando o codificador e avisando o serviço para abrir um FFmpeg novo. A decisão fica lembrada para a próxima transmissão.
-      const STEPS = [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']]; let shiftAt = Date.now(), over = 0, deskSlow = 0, lastRf = typeof rf === 'number' ? rf : 0;
-      const downshift = async (reason, force = false) => {
-        if (engine !== 'native' || epoch !== liveTx.epoch || (!force && Date.now() - shiftAt < 30000)) return false; // 30 s de carência: no começo tudo está aquecendo
+      const STEPS = [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']]; let shiftAt = Date.now(), over = 0, severe = 0, deskSlow = 0, lastRf = typeof rf === 'number' ? rf : 0;
+      const downshift = async (reason, force = false, wait = 30000) => {
+        if (engine !== 'native' || epoch !== liveTx.epoch || (!force && Date.now() - shiftAt < wait)) return false; // carência: no começo tudo está aquecendo
         const i = STEPS.findIndex(x => x[0] === width); if (i < 0 || i >= STEPS.length - 1) return false;
         shiftAt = Date.now(); over = 0; deskSlow = 0; const [w, h, label] = STEPS[i + 1]; width = w; height = h;
         for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = w; canvas.height = h; }
@@ -361,7 +379,8 @@
           onError: e => fallbackToStandard(e.message),
           onStats: s => { liveTx.nativeStats = s; if (s.dropped > 4) nativeDown++; else nativeDown = 0;
             over = (s.dropped > 4 || (s.fps > 0 && s.fps < 22)) ? over + 1 : 0; const nowRf = typeof rf === 'number' ? rf : 0, desk = nowRf - lastRf; lastRf = nowRf; deskSlow = desk < 10 && !document.hidden ? deskSlow + 1 : 0;
-            if (over >= 10) downshift('quadros descartados por 10 s seguidos'); else if (deskSlow >= 8) downshift('a mesa caiu para ' + desk + ' quadros por segundo'); if (nativeDown >= 5 && Date.now() - (liveTx.overloadAt || 0) > 60000) { liveTx.overloadAt = Date.now(); window.andromedaLight = true; const m = 'Atenção: o computador não está acompanhando a codificação (' + s.dropped + ' quadros descartados no último segundo). Mesa em modo leve; feche programas pesados ou use 720p.'; log(m); liveTx.notice = m; window.andromedaAudit?.('warn', 'sobrecarga', m, { motor: 'andromeda', descartados: s.dropped }); } },
+            severe = s.dropped > 10 ? severe + 1 : 0; // sinal forte (mais de 10 de 30 quadros descartados por segundo): reage em 3 s, depois de 8 s de aquecimento
+            if (severe >= 3) downshift('mais de um terço dos quadros descartados por 3 s seguidos', false, 8000); else if (over >= 10) downshift('quadros descartados por 10 s seguidos'); else if (deskSlow >= 8) downshift('a mesa caiu para ' + desk + ' quadros por segundo'); if (nativeDown >= 5 && Date.now() - (liveTx.overloadAt || 0) > 60000) { liveTx.overloadAt = Date.now(); window.andromedaLight = true; const m = 'Atenção: o computador não está acompanhando a codificação (' + s.dropped + ' quadros descartados no último segundo). Mesa em modo leve; feche programas pesados ou use 720p.'; log(m); liveTx.notice = m; window.andromedaAudit?.('warn', 'sobrecarga', m, { motor: 'andromeda', descartados: s.dropped }); } },
         });
         liveTx.native = nativeSession;
         try { await nativeSession.start(); log('Motor Andrômeda ativo: H.264 ' + (liveTx.hardware ? 'pela placa de vídeo' : 'por software') + ', uma só codificação no navegador.'); } catch (e) { fallbackToStandard(e.message); }

@@ -164,5 +164,33 @@
     };
   }
 
-  return { probe, create, supported: hasApi };
+  // Teste do computador ANTES de ir ao ar: codifica o próprio canvas do PGM, no tamanho pedido, durante alguns segundos, com a mesa desenhando ao mesmo tempo,
+  // e mede quantos quadros por segundo saem de verdade. Assim a transmissão nunca começa num tamanho que o computador não sustenta.
+  async function benchmark({ canvas, width, height, bitrate = 4e6, ms = 2600, warmup = 700, now = () => performance.now() } = {}) {
+    if (!hasApi() || !canvas) return { ok: false, reason: 'sem WebCodecs' };
+    const o = { width, height, bitrate }; let config = null, hardware = false;
+    for (const hw of ['prefer-hardware', 'prefer-software']) {
+      for (const codec of profiles(height)) { try { const r = await VideoEncoder.isConfigSupported(videoConfig(o, codec, hw)); if (r.supported) { config = r.config; hardware = hw === 'prefer-hardware'; break; } } catch { /* tenta o próximo */ } }
+      if (config) break;
+    }
+    if (!config) return { ok: false, reason: 'sem codificador H.264' };
+    const frameMs = 1000 / FPS, t0 = now(); let out = 0, outAfter = 0, skipped = 0, sent = 0, failed = false, slot = 0;
+    const enc = new VideoEncoder({ output: () => { out++; if (now() - t0 > warmup) outAfter++; }, error: () => { failed = true; } });
+    try { enc.configure(config); } catch { return { ok: false, reason: 'o codificador recusou a configuração' }; }
+    await new Promise(resolve => {
+      const timer = setInterval(() => {
+        const el = now() - t0; if (el >= ms || failed) { clearInterval(timer); resolve(); return; }
+        const s = Math.round(el / frameMs); if (s <= slot) return; skipped += Math.max(0, s - slot - 1); slot = s;
+        if (enc.encodeQueueSize > 3) { skipped++; return; }
+        let frame; try { frame = new VideoFrame(canvas, { timestamp: Math.round(s * frameMs * 1000) }); } catch { failed = true; return; }
+        try { enc.encode(frame, { keyFrame: sent === 0 || sent % 60 === 0 }); sent++; } catch { failed = true; } finally { frame.close(); }
+      }, Math.round(frameMs / 2));
+    });
+    try { await Promise.race([enc.flush(), new Promise(r => setTimeout(r, 1500))]); } catch { /* descartado */ }
+    try { enc.close(); } catch { /* já fechado */ }
+    const secs = Math.max(0.5, (ms - warmup) / 1000);
+    return { ok: !failed, fps: Math.round(outAfter / secs * 10) / 10, skipped, hardware, width, height };
+  }
+
+  return { probe, create, benchmark, supported: hasApi };
 });

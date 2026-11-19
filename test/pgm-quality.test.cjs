@@ -44,6 +44,14 @@ test('o monitor da tela nunca cresce: só a superfície HD, o overlay e a saída
 test('regulador de carga: reduz a resolução sem encerrar o envio, o serviço reabre o codificador e a decisão fica lembrada', () => {
   const b = read('public/broadcast.js'), pub = read('publish.cjs');
   assert.match(b, /STEPS = \[\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]\]/); assert.match(b, /over >= 10/); assert.match(b, /deskSlow >= 8/); assert.match(b, /type: 'resync'/);
-  assert.match(b, /Date\.now\(\) - shiftAt < 30000/, 'carência e intervalo mínimo'); assert.match(b, /14 \* 864e5/, 'lembra por 14 dias'); assert.match(b, /resolution\.onchange = \(\) => \{ model\.resolution = resolution\.value; clearCap\(\)/);
+  assert.match(b, /Date\.now\(\) - shiftAt < wait\)/, 'carência e intervalo mínimo'); assert.match(b, /wait = 30000/); assert.match(b, /14 \* 864e5/, 'lembra por 14 dias'); assert.match(b, /resolution\.onchange = \(\) => \{ model\.resolution = resolution\.value; clearCap\(\)/);
   assert.match(pub, /msg\.type === 'resync' && everStarted/); assert.match(pub, /function resyncAll\(reason\)/); assert.match(b, /type: 'start', resolution: outRes/);
+});
+
+test('teste do computador antes de ir ao ar: mede os quadros por segundo no tamanho pedido, escolhe o primeiro que sustenta e lembra por 7 dias', () => {
+  const b = read('public/broadcast.js'), e = read('public/engine.js');
+  assert.match(e, /async function benchmark\(/); assert.match(e, /return \{ probe, create, benchmark, supported: hasApi \}/); assert.match(e, /new VideoFrame\(canvas/);
+  assert.match(b, /AndromedaEngine\.benchmark\(\{ canvas: programOutput/); assert.match(b, /r\.fps >= 26 && desk >= 14/); assert.match(b, /7 \* 864e5/); assert.match(b, /\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]/);
+  assert.match(b, /severe >= 3\) downshift\([^)]*\)?, false, 8000|severe >= 3\) downshift\('mais de um terço/, 'reação rápida a descartes fortes'); assert.match(b, /liveTx\.notice = sizeNote/, 'o aviso do tamanho não é apagado ao conectar');
+  assert.match(read('public/index.html'), /master:q\('\.audio-master select'\)\?\.selectedIndex\?\?0/, 'salvamento de configurações à prova de painel ausente');
 });
