@@ -131,11 +131,12 @@
   function readBench(req) { try { const v = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null'); return v && v.req === req && Date.now() - v.at < 7 * 864e5 ? v : null; } catch { return null; } }
   function writeBench(req, res, fps) { try { localStorage.setItem(BENCH_KEY, JSON.stringify({ req, res, fps, at: Date.now() })); } catch { /* sem armazenamento */ } }
   const field = (text, control) => { const label = make('label', '', text); label.append(control); return label; };
-  const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['720p', '1080p']) resolution.add(new Option(r + ' · 30 fps', r));
+  const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['1080p']) resolution.add(new Option(r + ' · 30 fps', r)); // sem a opção 720p
   const bitrate = make('input'); bitrate.id = 'txBitrate'; bitrate.type = 'number'; bitrate.min = 3; bitrate.max = 20; bitrate.step = .5;
   const encoder = make('select'); encoder.id = 'txEncoder'; encoder.add(new Option('Processador (x264)', 'libx264'));
   const upload = make('p', 'quality-note');
   quality.append(field('Resolução', resolution), field('Bitrate de vídeo (Mbps)', bitrate), field('Codificador', encoder), upload);
+  if (model.resolution !== '1080p') model.resolution = '1080p'; // configuração salva antes com 720p
   resolution.value = model.resolution; bitrate.value = model.bitrate;
   resolution.onchange = () => { model.resolution = resolution.value; clearCap(); save(); summary(); };
   bitrate.onchange = () => { model.bitrate = Math.max(3, Math.min(20, Number(bitrate.value) || 6)); bitrate.value = model.bitrate; save(); summary(); };

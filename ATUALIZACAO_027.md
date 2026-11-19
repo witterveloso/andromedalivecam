@@ -1,5 +1,10 @@
 # Andrômeda Live 0.27 — Tracking fluido em tempo real e PGM em alta definição
 
+## 0.27.2 — sem a opção 720p
+- **Transmissão:** a lista *Resolução* agora tem só **1080p**. Uma configuração salva antes com 720p passa a 1080p.
+- **Câmera:** o app da câmera (celular) e o convite gerado na mesa não oferecem mais 720p (ficam 1080p 30 fps, 1080p 60 fps e 4K). Um convite antigo que peça 720p abre em 1080p.
+- **A proteção automática continua:** se o computador não sustentar 1080p, o teste antes da live e o regulador de carga ainda reduzem sozinhos para não enviar vídeo faltando (1080p → 720p → 540p). Isso não é uma opção do operador. A saída vertical 9:16 (720 × 1280, padrão do Instagram) não foi alterada.
+
 ## 0.27.1 — a transmissão não começa mais num tamanho que o computador não sustenta
 - **Teste do computador antes de ir ao ar.** Ao clicar em Transmitir (motor próprio), a mesa codifica o próprio PGM, com a mesa desenhando junto, por ~2,6 s em cada tamanho, do pedido para baixo (1080p → 720p → 540p), e usa o primeiro que sai a **pelo menos 26 quadros por segundo**. O resultado vale por **7 dias** (a próxima transmissão não repete o teste; escolher a resolução na lista refaz) e fica no Diagnóstico (*Teste do computador: 1080p 14 q/s → 720p 30 q/s · transmitindo em 720p*). Antes, o envio começava em 1080p mesmo num computador que só entregava 5 a 10 quadros por segundo, e a plataforma recebia vídeo faltando.
 - **Reação em segundos, não em minutos.** Se mais de um terço dos quadros for descartado por 3 s seguidos, a resolução é reduzida logo (8 s de aquecimento, antes eram 30 s e 10 s de descartes).
