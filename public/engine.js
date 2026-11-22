@@ -91,7 +91,7 @@
             if (!audio.encoder) {
               // Formato real do mixer: 48 kHz estéreo (a mesa abre o mixer assim); outro formato é recusado aqui, e o plano B assume.
               const cfg = { codec: 'opus', sampleRate: data.sampleRate, numberOfChannels: data.numberOfChannels, bitrate: AUDIO_BITRATE, opus: { frameDuration: 20000, application: 'audio', signal: 'music' } };
-              const sup = await AudioEncoder.isConfigSupported(cfg).catch(() => ({ supported: false })); if (!sup.supported) { data.close(); fail('áudio', 'formato ' + data.sampleRate + ' Hz × ' + data.numberOfChannels + ' não suportado pelo Opus'); return; }
+              const sup = await AudioEncoder.isConfigSupported(cfg).catch(() => ({ supported: false })); if (closed || !running) { data.close(); return; } if (!sup.supported) { data.close(); fail('áudio', 'formato ' + data.sampleRate + ' Hz × ' + data.numberOfChannels + ' não suportado pelo Opus'); return; }
               audio.cfg = cfg; audio.anchor = now() - t0 - data.duration / 1000; audio.firstTs = data.timestamp;
               audio.encoder = new AudioEncoder({
                 output: (chunk, meta) => {
@@ -105,7 +105,7 @@
               audio.encoder.configure(cfg);
             }
             if (audio.encoder.encodeQueueSize > 50) { audio.dropped++; data.close(); continue; }
-            audio.encoder.encode(data); data.close();
+            try { audio.encoder.encode(data); } finally { data.close(); }
           }
         } catch (e) { if (running) fail('captura de áudio', e); }
       })();
@@ -138,10 +138,11 @@
 
     return {
       async start() {
-        if (running) return; running = true; failed = false; t0 = now(); last.at = t0;
-        for (const o of outs) { o.config = null; for (const hw of ['prefer-hardware', 'prefer-software']) { for (const codec of profiles(o.height)) { const c = videoConfig(o, codec, hw); try { if ((await VideoEncoder.isConfigSupported(c)).supported) { o.config = c; break; } } catch { /* próximo */ } } if (o.config) break; } if (!o.config) throw Error('H.264 indisponível para ' + o.width + '×' + o.height + '.'); startVideo(o); }
+        if (running || closed) return; running = true; failed = false; t0 = now(); last.at = t0;
+        for (const o of outs) { o.config = null; for (const hw of ['prefer-hardware', 'prefer-software']) { for (const codec of profiles(o.height)) { const c = videoConfig(o, codec, hw); try { if ((await VideoEncoder.isConfigSupported(c)).supported) { o.config = c; break; } } catch { /* próximo */ } } if (o.config) break; } if (closed) return; if (!o.config) throw Error('H.264 indisponível para ' + o.width + '×' + o.height + '.'); startVideo(o); }
         t0 = now(); last.at = t0; // codec probing must not become an initial timestamp gap
         await startAudio();
+        if (closed || !running) return;
         try { worker = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),' + Math.round(frameMs / 2) + ')'], { type: 'text/javascript' }))); worker.onmessage = tick; } catch { timer = setInterval(tick, Math.round(frameMs / 2)); }
         // Vigia: um codificador que deixa de entregar quadros não derruba a live, mas entrega a sessão ao plano B.
         statsTimer = setInterval(() => {
