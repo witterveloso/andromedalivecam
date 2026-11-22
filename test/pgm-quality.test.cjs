@@ -44,7 +44,7 @@ test('o monitor da tela nunca cresce: só a superfície HD, o overlay e a saída
 test('regulador de carga: reduz a resolução sem encerrar o envio, o serviço reabre o codificador e a decisão fica lembrada', () => {
   const b = read('public/broadcast.js'), pub = read('publish.cjs');
   assert.match(b, /STEPS = \[\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]\]/); assert.match(b, /over >= 10/); assert.match(b, /deskSlow >= 8/); assert.match(b, /type: 'resync'/);
-  assert.match(b, /Date\.now\(\) - shiftAt < wait\)/, 'carência e intervalo mínimo'); assert.match(b, /wait = 30000/); assert.match(b, /14 \* 864e5/, 'lembra por 14 dias'); assert.match(b, /resolution\.onchange = \(\) => \{ model\.resolution = resolution\.value; clearCap\(\)/);
+  assert.match(b, /Date\.now\(\) - shiftAt < wait\)/, 'carência e intervalo mínimo'); assert.match(b, /wait = 30000/); assert.match(b, /14 \* 864e5/, 'lembra por 14 dias'); assert.match(b, /resolution\.onchange = \(\) => \{ model\.resolution = resolution\.value;/); assert.match(b, /bitrate\.value=model\.bitrate; clearCap\(\); save\(\); summary\(\)/);
   assert.match(pub, /msg\.type === 'resync' && everStarted/); assert.match(pub, /function resyncAll\(reason\)/); assert.match(b, /type: 'start', resolution: outRes/);
 });
 
@@ -58,7 +58,7 @@ test('teste do computador antes de ir ao ar: mede os quadros por segundo no tama
 
 test('sem a opção 720p na transmissão, no convite da câmera e no app da câmera (a segurança automática continua)', () => {
   const b = read('public/broadcast.js'), d = read('public/cam-desk.js'), page = read('docs/index.html'), cam = read('docs/cam.js');
-  assert.match(b, /for \(const r of \['1080p'\]\) resolution\.add/); assert.match(b, /if \(model\.resolution !== '1080p'\) model\.resolution = '1080p'/);
+  assert.match(b, /for \(const r of \['1080p', '2160p'\]\) resolution\.add/); assert.match(b, /if \(!\['1080p','2160p'\]\.includes\(model\.resolution\)\) model\.resolution = '1080p'/);
   assert.doesNotMatch(d, /<option value="1280x720">/); assert.doesNotMatch(d, /'1280x720':\{/);
   assert.doesNotMatch(page, /<option value="1280x720">/); assert.match(page, /value="1920x1080"/); assert.match(page, /value="3840x2160"/);
   assert.match(cam, /function setResolution\(w, h\)/); assert.match(cam, /: '1920x1080'/, 'convite antigo com 720p abre em 1080p');
