@@ -21,6 +21,17 @@
   }
   function audit(level, code, message, data) { if (queue.length < 200) queue.push({ level, code, message: String(message).slice(0, 500), data }); flush(); }
   window.andromedaAudit = audit;
+  let sampleAt = performance.now(), sampleFrames = window.andromedaProgramFrames || 0, samplePhase = liveTx.phase;
+  setInterval(() => {
+    const now = performance.now(), frames = window.andromedaProgramFrames || 0;
+    if (liveTx.phase === samplePhase && now - sampleAt < 15000) return;
+    if (liveTx.phase === samplePhase) {
+      const pgm = Number(((frames - sampleFrames) * 1000 / (now - sampleAt)).toFixed(1));
+      audit('info', 'cadencia-pgm', 'PGM desenhado a ' + pgm + ' q/s · ' + samplePhase,
+        { fase: samplePhase, fpsPGM: pgm, largura: programOutput.width, altura: programOutput.height });
+    }
+    sampleAt = now; sampleFrames = frames; samplePhase = liveTx.phase;
+  }, 1000);
 
   // Toda ação registrada na mesa (cortes, seleções, conexões) entra na trilha.
   const baseLog = log;
@@ -32,10 +43,11 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && busyTx()) audit('warn', 'aba-oculta', 'A aba da mesa ficou oculta durante o envio: o navegador pode reduzir os quadros'); });
 
   // Quadros por segundo do desenho da mesa: queda sustentada é o primeiro sinal de computador no limite.
-  let frames = 0, slow = 0, lastWarn = 0, fps = 0;
-  const tick = () => { frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+  let previousFrames = window.andromedaProgramFrames || 0, previousAt = performance.now(), slow = 0, lastWarn = 0, fps = 0;
   setInterval(() => {
-    fps = frames; frames = 0;
+    const now = performance.now(), frames = window.andromedaProgramFrames || 0;
+    fps = Math.round((frames-previousFrames)*1000/Math.max(1,now-previousAt));
+    previousFrames=frames; previousAt=now;
     if (document.hidden) { slow = 0; return; }
     slow = fps < 20 ? slow + 1 : 0;
     if (slow >= 5 && Date.now() - lastWarn > 60000) { lastWarn = Date.now(); audit('warn', 'fps-baixo', 'A mesa está desenhando a ' + fps + ' quadros por segundo', { enviando: busyTx() }); }

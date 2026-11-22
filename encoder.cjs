@@ -146,7 +146,7 @@ function argsForGroup(cfg, group) {
     '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', 'aresample=async=1', '-progress', 'pipe:3', '-stats_period', '1', ...outputArgs(group)];
   const size = group.size, kb = Math.round(group.bitrate * 1000);
   return ['-hide_banner', '-loglevel', 'warning', '-nostats', '-nostdin', ...INPUT_FLAGS, '-f', 'webm', '-i', 'pipe:0',
-    '-map', '0:v:0', '-map', '0:a:0', '-vf', videoFilter(size, cfg.avSync), '-r', '30',
+    '-map', '0:v:0', '-map', '0:a:0', '-vf', videoFilter(size, cfg.avSync), '-r', '30', '-fps_mode:v', 'cfr',
     ...ENCODERS[cfg.encoder || 'libx264'](kb, cfg.preset), '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-ac', '2', '-af', audioFilter(cfg.avSync), '-progress', 'pipe:3', '-stats_period', '1',
     ...outputArgs(group)];

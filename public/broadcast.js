@@ -33,13 +33,16 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const gb = bytes => bytes == null ? '—' : bytes >= 1e12 ? (bytes / 1e12).toFixed(2) + ' TB' : bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(bytes / 1e6)) + ' MB';
 
-  const model = { recordFormats: '16:9', formatsVersion: 2, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
+  const model = { recordFormats: '16:9', formatsVersion: 3, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', policy: 'fixed', bitrate: 6, encoder: 'auto', record: false, dir: '', remember: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE));
     if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false, aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' })) });
   } catch { /* primeiro uso */ }
-  // Novas configurações gravam apenas 16:9; preserva a escolha explícita de dois formatos.
-  if (model.formatsVersion !== 2) { if (!['16:9', '9:16', 'both'].includes(model.recordFormats)) model.recordFormats = '16:9'; model.formatsVersion = 2; }
+  // O padrão antigo habilitava duas capturas sem exigir uma escolha explícita.
+  if (model.formatsVersion !== 3) {
+    if (!['16:9', '9:16', 'both'].includes(model.recordFormats)) model.recordFormats = '16:9';
+    model.formatsVersion = 3;
+  }
   // Modo de saída escolhido pelo operador: transmitir e gravar, só transmitir ou só gravar.
   const MODES = { both: 'Transmitir e gravar', stream: 'Só transmitir', record: 'Só gravar' };
   if (!MODES[model.mode]) model.mode = model.record ? 'both' : 'stream';
@@ -123,18 +126,26 @@
 
   /* ---------- qualidade ---------- */
 
-  const CAP_KEY = 'andromeda.tx.cap.v1';
+  const CAP_KEY = 'andromeda.tx.cap.v273';
   function readCap() { try { const v = JSON.parse(localStorage.getItem(CAP_KEY) || 'null'); return v && Date.now() - v.at < 14 * 864e5 ? v : null; } catch { return null; } }
   function writeCap(res) { try { localStorage.setItem(CAP_KEY, JSON.stringify({ res, at: Date.now() })); } catch { /* sem armazenamento */ } }
   function clearCap() { try { localStorage.removeItem(CAP_KEY); localStorage.removeItem(BENCH_KEY); } catch { /* sem armazenamento */ } }
-  const BENCH_KEY = 'andromeda.tx.bench.v1';
+  const BENCH_KEY = 'andromeda.tx.bench.v273';
   function readBench(req) { try { const v = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null'); return v && v.req === req && Date.now() - v.at < 7 * 864e5 ? v : null; } catch { return null; } }
   function writeBench(req, res, fps) { try { localStorage.setItem(BENCH_KEY, JSON.stringify({ req, res, fps, at: Date.now() })); } catch { /* sem armazenamento */ } }
   const field = (text, control) => { const label = make('label', '', text); label.append(control); return label; };
   const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['1080p']) resolution.add(new Option(r + ' · 30 fps', r)); // sem a opção 720p
   const bitrate = make('input'); bitrate.id = 'txBitrate'; bitrate.type = 'number'; bitrate.min = 3; bitrate.max = 20; bitrate.step = .5;
-  const encoder = make('select'); encoder.id = 'txEncoder'; encoder.add(new Option('Processador (x264)', 'libx264'));
+  const encoder = make('select'); encoder.id = 'txEncoder'; encoder.add(new Option('Automático · priorizar GPU', 'auto')); encoder.add(new Option('Processador (x264)', 'libx264'));
   const upload = make('p', 'quality-note');
+  const policy = make('select');
+  policy.add(new Option('Adaptativo', 'adaptive'));
+  policy.add(new Option('1080p fixo · 30 fps CFR', 'fixed'));
+  policy.value = model.policy === 'fixed' ? 'fixed' : 'adaptive';
+  policy.onchange = () => { model.policy = policy.value; clearCap(); save(); };
+  const retest = make('button', '', 'Refazer teste no próximo envio');
+  retest.onclick = () => { clearCap(); txStatus('Teste do motor Andrômeda agendado para o próximo envio adaptativo.'); };
+  quality.append(field('Perfil de saída', policy), retest);
   quality.append(field('Resolução', resolution), field('Bitrate de vídeo (Mbps)', bitrate), field('Codificador', encoder), upload);
   if (model.resolution !== '1080p') model.resolution = '1080p'; // configuração salva antes com 720p
   resolution.value = model.resolution; bitrate.value = model.bitrate;
@@ -157,7 +168,7 @@
   const recEnable = $('#recEnable'), recDir = $('#recDir'), recStatus = $('#recStatus');
   const recFormats = make('select'); recFormats.id = 'recFormats';
   for (const [v, t] of [['both', '16:9 e 9:16 · dois arquivos'], ['16:9', 'Só 16:9 · horizontal'], ['9:16', 'Só 9:16 · vertical']]) recFormats.add(new Option(t, v));
-  recFormats.value = ['16:9', '9:16', 'both'].includes(model.recordFormats) ? model.recordFormats : 'both';
+  recFormats.value = ['16:9', '9:16', 'both'].includes(model.recordFormats) ? model.recordFormats : '16:9';
   const recFormatsLabel = make('label', 'rec-formats', 'Formato da gravação'); recFormatsLabel.append(recFormats);
   rec.querySelector('.rec-body').prepend(recFormatsLabel);
   recFormats.onchange = () => { model.recordFormats = recFormats.value; save(); summary(); };
@@ -231,6 +242,7 @@
     startButton.dataset.live = String(busy);
     armButton.textContent = busy && live.recording ? '● GRAVANDO' : model.record ? '● Gravação armada' : '○ Gravação desligada';
     armButton.setAttribute('aria-pressed', String(model.record)); armButton.disabled = busy; armButton.dataset.live = String(busy && !!live.recording);
+    policy.disabled = resolution.disabled = bitrate.disabled = encoder.disabled = busy; retest.disabled = busy || policy.value === "fixed";
     recEnable.disabled = recDir.disabled = $('#recCheck').disabled = recFormats.disabled = busy;
     $$('.volume').forEach(b => { b.disabled = busy; });
     const stats = $$('.tb-stat');
@@ -249,15 +261,18 @@
     if (streaming() && !targets.length) { openWorkspace('transmission'); txStatus('Informe servidor e chave de pelo menos um destino' + (model.mode === 'both' ? ', ou escolha Só gravar.' : '.')); return; }
     if (missing.length) { openWorkspace('transmission'); txStatus(missing.map(d => d.name).join(', ') + ': falta servidor ou chave. Complete ou desligue o destino.'); return; }
     if (!window.MediaRecorder || !programOutput.captureStream) { txStatus('Use Chrome ou Edge atualizado para transmitir.'); return; }
-    const mime = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus'].find(t => MediaRecorder.isTypeSupported(t));
-    if (!mime) { txStatus('Este navegador não oferece o formato de captura necessário. Use Chrome ou Edge.'); return; }
+    const captureTypes = ['video/x-matroska;codecs=avc1,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus'].filter(t => MediaRecorder.isTypeSupported(t));
+    if (!captureTypes.length) { txStatus('Este navegador não oferece o formato de captura necessário. Use Chrome ou Edge.'); return; }
     const epoch = ++liveTx.epoch; liveTx.phase = 'preparing'; live.states.clear(); live.recording = null; live.recorded = null; sync(); txStatus('Preparando saída PROGRAM…');
     try {
       const session = await checkBridge(); if (epoch !== liveTx.epoch) return;
       if (!session?.ffmpegReady) throw Error('Codificador indisponível. Execute INSTALAR.bat e INICIAR.bat.');
       if (session.busy) throw Error('Outra aba já está transmitindo. Encerre-a antes de continuar.');
       if (session.license && !session.license.valid) throw Error(session.license.message);
-      window.andromedaLight = false;
+      const available = session.encoders || [];
+      const selectedEncoder = model.encoder === 'auto'
+        ? (['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'].find(id => available.includes(id)) || 'libx264')
+        : (available.includes(model.encoder) ? model.encoder : 'libx264');
       { const pf = await window.andromedaPreflight?.(targets); if (epoch !== liveTx.epoch) return; if (pf?.block) throw Error(pf.block); if (pf?.warn) { log('Pré-voo: ' + pf.warn); txStatus('Pré-voo: ' + pf.warn); } }
       if (model.record && !(await checkDir())) throw Error('Pasta de gravação indisponível: ' + (recStatus.textContent || 'confira a unidade.'));
       const ac = await window.audioMixer.enable(); liveTx.audioContext = ac; if (epoch !== liveTx.epoch) return;
@@ -270,7 +285,7 @@
         mic.getAudioTracks()[0].onended = () => { if (busyTx()) finishTransport('Microfone desconectado. O envio foi interrompido.'); };
       }
       // Este computador já mostrou que não sustenta 1080p? Então começa em 720p (a escolha da lista não muda; escolher 1080p de novo limpa o aviso).
-      const cap = readCap(); let outRes = model.resolution; if (cap && outRes === '1080p') { outRes = '720p'; log('Este computador não sustentou 1080p na última transmissão: começando em 720p. Para tentar 1080p de novo, escolha-o em Transmissão → Resolução.'); }
+      const fixed = model.policy === 'fixed' && !liveTx.calibrating; const cap = !fixed && readCap(); let outRes = fixed ? "1080p" : model.resolution; if (cap && outRes === '1080p') { outRes = '720p'; log('Este computador não sustentou 1080p na última transmissão: começando em 720p. Para tentar 1080p de novo, escolha-o em Transmissão → Resolução.'); }
       let [width, height] = outRes === '1080p' ? [1920, 1080] : [1280, 720];
       for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } hdOn = true; // o monitor da tela continua em 960×540
       routeProgramOutput();
@@ -280,8 +295,9 @@
       const needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
       if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
       // Motor de envio: o próprio (WebCodecs: uma só codificação, no navegador) ou o padrão (MediaRecorder → FFmpeg). O padrão é sempre o plano B.
+      if (fixed) log('Perfil 1080p30: preparando saída dedicada');
       let engine = 'webm', nativeSession = null, nativeDown = 0;
-      if ((model.engine || 'auto') !== 'standard' && window.AndromedaEngine) {
+      if ((fixed || (model.engine || 'auto') !== 'standard') && window.AndromedaEngine) {
         const wanted = [needH && [width, height, model.bitrate * 1e6], needV && [window.andromedaVertical.size()[0], window.andromedaVertical.size()[1], (window.andromedaVertical.settings.bitrate || 4) * 1e6]].filter(Boolean);
         const probes = await Promise.all(wanted.map(([w, h, b]) => AndromedaEngine.probe({ width: w, height: h, bitrate: b }))); if (epoch !== liveTx.epoch) return;
         const bad = probes.find(p => !p.ok);
@@ -291,21 +307,29 @@
       // Teste do computador (só o motor próprio e só quando ainda não há resultado recente para este tamanho): do tamanho pedido para baixo, o primeiro que
       // sai a pelo menos 26 quadros por segundo, com a mesa desenhando junto. O resultado vale por 7 dias; escolher a resolução na lista refaz o teste.
       let sizeNote = '';
-      if (engine === 'native' && !liveTx.calibrating && window.AndromedaEngine?.benchmark && !readBench(outRes)) {
+      if (!fixed && engine === 'native' && !liveTx.calibrating && window.AndromedaEngine?.benchmark && !readBench(outRes)) {
         const ladder = [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].filter(x => x[0] <= width); let chosen = null; const tried = [];
         for (const [w, h, label] of ladder) {
           txStatus('Testando o computador em ' + label + '…'); for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = w; canvas.height = h; } await new Promise(r => setTimeout(r, 500)); if (epoch !== liveTx.epoch) return;
-          const rf0 = typeof rf === 'number' ? rf : 0, t0 = performance.now(), r = await AndromedaEngine.benchmark({ canvas: programOutput, width: w, height: h, bitrate: model.bitrate * 1e6 }); if (epoch !== liveTx.epoch) return;
-          const desk = ((typeof rf === 'number' ? rf : 0) - rf0) / ((performance.now() - t0) / 1000); tried.push(label + ' ' + (r.ok ? r.fps + ' q/s' : 'falhou'));
-          if (r.ok && r.fps >= 26 && desk >= 14) { chosen = [w, h, label, r.fps]; break; } if (!r.ok && r.reason) break;
+          const rf0 = window.andromedaProgramFrames || 0, t0 = performance.now(), r = await AndromedaEngine.benchmark({ canvas: programOutput, width: w, height: h, bitrate: model.bitrate * 1e6 }); if (epoch !== liveTx.epoch) return;
+          const desk = ((window.andromedaProgramFrames || 0) - rf0) / ((performance.now() - t0) / 1000); tried.push(label + ' ' + (r.ok ? r.fps + ' q/s' : 'falhou'));
+          if (r.ok && r.fps >= 29 && desk >= 29) { chosen = [w, h, label, r.fps]; break; } if (!r.ok && r.reason) break;
         }
         const pick = chosen || ladder[ladder.length - 1]; [width, height] = [pick[0], pick[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; }
         writeBench(outRes, pick[2], chosen ? chosen[3] : 0); if (pick[2] !== outRes) writeBench(pick[2], pick[2], chosen ? chosen[3] : 0); log('Teste do computador: ' + tried.join(' → ') + '. Transmitindo em ' + pick[2] + '.'); window.andromedaAudit?.('info', 'teste-do-computador', 'Teste do computador: ' + tried.join(' → ') + ' · transmitindo em ' + pick[2]);
         if (pick[2] !== outRes) { writeCap(pick[2]); sizeNote = 'Este computador não sustenta ' + outRes + ': transmitindo em ' + pick[2] + '.'; txStatus(sizeNote); }
-      } else if (engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
+      } else if (!fixed && engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
       let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
-      const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6, makeRecorder = (media, bits) => new MediaRecorder(media, { mimeType: mime, videoBitsPerSecond: bits, audioBitsPerSecond: 160000 });
+      const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6; 
+      function makeRecorder(media, bits) {
+        let error;
+        for (const mimeType of captureTypes) {
+          try { return new MediaRecorder(media, { mimeType, videoBitsPerSecond: bits, audioBitsPerSecond: 160000 }); }
+          catch (e) { error = e; }
+        }
+        throw error;
+      }
       let recorder = null, recorderV = null;
       // Gravadores do motor padrão: criados já no começo quando ele é o escolhido, ou só se o motor próprio falhar.
       const buildStandard = () => {
@@ -359,7 +383,7 @@
       // (1080p → 720p → 540p), reiniciando o codificador e avisando o serviço para abrir um FFmpeg novo. A decisão fica lembrada para a próxima transmissão.
       const STEPS = [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']]; let shiftAt = Date.now(), over = 0, severe = 0, deskSlow = 0, lastRf = typeof rf === 'number' ? rf : 0;
       const downshift = async (reason, force = false, wait = 30000) => {
-        if (engine !== 'native' || epoch !== liveTx.epoch || (!force && Date.now() - shiftAt < wait)) return false; // carência: no começo tudo está aquecendo
+        if (fixed || engine !== 'native' || epoch !== liveTx.epoch || (!force && Date.now() - shiftAt < wait)) return false; // carência: no começo tudo está aquecendo
         const i = STEPS.findIndex(x => x[0] === width); if (i < 0 || i >= STEPS.length - 1) return false;
         shiftAt = Date.now(); over = 0; deskSlow = 0; const [w, h, label] = STEPS[i + 1]; width = w; height = h;
         for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = w; canvas.height = h; }
@@ -375,16 +399,20 @@
         groupsReady = groups; const outputs = [];
         if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: model.bitrate * 1e6, onChunk: sendNative(0) });
         if (needV && groups.includes('v')) { const c = window.andromedaVertical.canvas; outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: (window.andromedaVertical.settings.bitrate || 4) * 1e6, onChunk: sendNative(1) }); }
-        nativeSession = AndromedaEngine.create({
+        nativeSession = (fixed ? AndromedaEngine.createDedicated : AndromedaEngine.create)({
           audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'),
           onError: e => fallbackToStandard(e.message),
-          onStats: s => { liveTx.nativeStats = s; if (s.dropped > 4) nativeDown++; else nativeDown = 0;
+          onStats: s => { liveTx.nativeStats = s;
+            if (Date.now() - (liveTx.workerAuditAt || 0) > 15000) {
+              liveTx.workerAuditAt = Date.now();
+              window.andromedaAudit?.('info','saida-dedicada','Cadência do codificador H.264',s);
+            } if (s.dropped > 4) nativeDown++; else nativeDown = 0;
             over = (s.dropped > 4 || (s.fps > 0 && s.fps < 22)) ? over + 1 : 0; const nowRf = typeof rf === 'number' ? rf : 0, desk = nowRf - lastRf; lastRf = nowRf; deskSlow = desk < 10 && !document.hidden ? deskSlow + 1 : 0;
             severe = s.dropped > 10 ? severe + 1 : 0; // sinal forte (mais de 10 de 30 quadros descartados por segundo): reage em 3 s, depois de 8 s de aquecimento
             if (severe >= 3) downshift('mais de um terço dos quadros descartados por 3 s seguidos', false, 8000); else if (over >= 10) downshift('quadros descartados por 10 s seguidos'); else if (deskSlow >= 8) downshift('a mesa caiu para ' + desk + ' quadros por segundo'); if (nativeDown >= 5 && Date.now() - (liveTx.overloadAt || 0) > 60000) { liveTx.overloadAt = Date.now(); window.andromedaLight = true; const m = 'Atenção: o computador não está acompanhando a codificação (' + s.dropped + ' quadros descartados no último segundo). Mesa em modo leve; feche programas pesados ou use 720p.'; log(m); liveTx.notice = m; window.andromedaAudit?.('warn', 'sobrecarga', m, { motor: 'andromeda', descartados: s.dropped }); } },
         });
         liveTx.native = nativeSession;
-        try { await nativeSession.start(); log('Motor Andrômeda ativo: H.264 ' + (liveTx.hardware ? 'pela placa de vídeo' : 'por software') + ', uma só codificação no navegador.'); } catch (e) { fallbackToStandard(e.message); }
+        try { await nativeSession.start(); log(fixed ? 'Saída dedicada ativa: H.264 em Worker, alvo 30 fps, vídeo compartilhado entre envio e gravação.' : 'Motor Andrômeda ativo: H.264, uma codificação de vídeo.'); } catch (e) { fallbackToStandard(e.message); }
       };
       // Autorrecuperação: o codificador de um formato foi reiniciado no serviço e precisa de um gravador novo (o WebM só tem
       // cabeçalho no começo de cada gravador). O antigo é solto sem enviar mais nada.
@@ -395,10 +423,12 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: model.bitrate, encoder: model.encoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: model.bitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === 'ready') { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…'); }
+        if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');
+          window.andromedaAudit?.('info','captura-pronta','Captura iniciada', { motor: engine, formato: recorder?.mimeType || engine, grupos: groups.join(',') });
+        } catch (e) { finishTransport('Falha ao iniciar a captura do PGM: ' + e.message); } }
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
         else if (msg.type === 'avsync') window.andromedaSync?.onResult(msg);
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
@@ -432,9 +462,24 @@
   window.startBroadcast = startBroadcast;
   startButton.onclick = () => busyTx() ? stopTransport() : startBroadcast();
 
+  const pgmHealth = make('small');
+  document.querySelector('.sim-footer > strong').after(pgmHealth);
+  Object.assign(pgmHealth.style,{flex:'0 0 auto',whiteSpace:'nowrap',color:'white',padding:'0 4px'});
+  let lastHealthAt=performance.now(), lastFrames=0;
+  setInterval(() => {
+    const now=performance.now(), frames=window.andromedaProgramFrames || 0;
+    const fps=Math.round((frames-lastFrames)*1000/Math.max(1,now-lastHealthAt));
+    lastHealthAt=now; lastFrames=frames;
+    pgmHealth.hidden=!busyTx();
+    const mode = model.policy === 'fixed' ? ' · alvo 30 CFR' : '';
+    const encoded = liveTx.engine === 'native' ? liveTx.nativeStats?.fps : null;
+    const fresh = liveTx.engine === 'native' ? liveTx.nativeStats?.freshFps : null;
+    pgmHealth.textContent=programOutput.width+'×'+programOutput.height+' · PGM '+fps+' fps' + (encoded == null ? '' : ' · codificado '+encoded+' fps') + (fresh == null ? '' : ' · novos '+fresh+' fps');
+    pgmHealth.style.color=fps<27 || (encoded != null && encoded<27) || (fresh != null && fresh<27) ? '#ffc76a':'#a9ffcc';
+  },1000);
   // Saída e taxa no cabeçalho; espaço em disco durante a gravação.
   setInterval(() => {
-    const sending = liveTx.phase === 'sending', on = streaming() ? active().length : 0, rate = sending ? (model.bitrate * Math.max(1, on)).toFixed(0) + ' Mbps' + (on > 1 ? ' (' + on + '×' + model.bitrate + ')' : '') : '0 Mbps';
+    const sending = liveTx.phase === 'sending', on = streaming() ? active().length : 0, rate = sending ? (model.bitrate * Math.max(1, on)).toFixed(0) + ' Mbps alvo' + (on > 1 ? ' (' + on + '×' + model.bitrate + ')' : '') : '0 Mbps';
     const out = $$('.tb-stat')[3]; if (out) out.querySelector('.tb-val').textContent = rate;
     const total = $('.bd-val'); if (total) total.textContent = rate;
     if (!busyTx() && live.states.size) { live.states.clear(); paintStatus(); }

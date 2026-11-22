@@ -59,7 +59,6 @@
       sources: list, types: [...document.querySelectorAll('.ttype')].map(t => t.textContent.trim()),
       audio: audioState(),
       trilha: window.andromedaTrilha ? (({ on, out, name, total }) => ({ on, out, name: String(name).slice(0, 80), total }))(window.andromedaTrilha.info()) : null,
-      slides: window.andromedaSlides ? (({ loaded, name, index, total, air, prv }) => ({ loaded, name: String(name).slice(0, 80), index, total, air, prv }))(window.andromedaSlides.info()) : null,
       fx: fxLive ? { layers: fxLive.layers.map(l => ({ name: l.name, on: !!l.on, ready: gcReady(l) })), logo: !!fxLive.logo.on, logoReady: !!g.fx()?.logo, pip: !!fxLive.pip.on } : null,
     };
   }
@@ -98,10 +97,6 @@
       // Slides: o celular vira o "passador" da apresentação aberta na mesa (também funciona com os slides no PREVIEW).
       case 'trilha': { const T = window.andromedaTrilha; if (!T) return false; if (!T.info().total && !T.info().on) { refusal = 'A playlist da trilha está vazia. Adicione músicas na mesa (painel Trilha).'; return false; } done = !!T.toggle(); what = T.info().on || T.info().state === 'in' ? 'Trilha: ligada' : 'Trilha: desligada'; break; }
       case 'trilhanext': { const T = window.andromedaTrilha; if (!T?.info().total) return false; done = !!T.next(); what = 'Trilha: próxima faixa'; break; }
-      case 'slides': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.toPreview(); what = 'Slides → PREVIEW'; break; }
-      case 'slidenext': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.next(); what = 'Próximo slide'; break; }
-      case 'slideprev': { const S = window.andromedaSlides; if (!S?.info().loaded) { refusal = 'Nenhuma apresentação aberta na mesa (painel Slides).'; return false; } done = S.prev(); what = 'Slide anterior'; break; }
-      case 'slidego': { const S = window.andromedaSlides; if (!S?.info().loaded || !Number.isInteger(cmd.n)) return false; done = S.go(cmd.n); what = 'Slide ' + cmd.n; break; }
       case 'amode': { const sel = document.querySelectorAll('.source-strip')[i]?.querySelector('select'); if (!sel || !['off', 'afv', 'on'].includes(cmd.value)) return false; sel.value = cmd.value; sel.dispatchEvent(new Event('change')); done = true; what = 'Áudio ' + ((typeof sources !== 'undefined' ? sources[i] : '') || i) + ': ' + cmd.value.toUpperCase(); break; }
       case 'avol': { const r = document.querySelectorAll('.source-strip')[i]?.querySelector('input[type=range]'); if (!r || !Number.isFinite(cmd.value)) return false; r.value = String(Math.round(Math.min(1, Math.max(0, cmd.value)) * 100)); r.dispatchEvent(new Event('input')); return true; }
       case 'mvol': { const r = document.querySelector('#masterFader'); if (!r || !Number.isFinite(cmd.value) || window.andromedaCommands?.fade?.running) return false; r.value = String(Math.round(Math.min(1, Math.max(0, cmd.value)) * 100)); r.dispatchEvent(new Event('input')); return true; }
