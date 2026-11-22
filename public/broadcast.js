@@ -291,6 +291,7 @@
       }
       // Este computador já mostrou que não sustenta 1080p? Então começa em 720p (a escolha da lista não muda; escolher 1080p de novo limpa o aviso).
       const fixed = ['fixed','fixed4k'].includes(model.policy) && !liveTx.calibrating; const cap = !fixed && readCap(); let outRes = fixed ? (model.policy==='fixed4k'?'2160p':'1080p') : model.resolution; if (cap && outRes === '1080p') { outRes = '720p'; log('Este computador não sustentou 1080p na última transmissão: começando em 720p. Para tentar 1080p de novo, escolha-o em Transmissão → Resolução.'); }
+      const requestedRes=outRes;let outBitrate=model.bitrate;
       let [width, height] = outRes === '2160p' ? [3840,2160] : outRes === '1080p' ? [1920, 1080] : [1280, 720];
       for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } hdOn = true; // o monitor da tela continua em 960×540
       routeProgramOutput();
@@ -329,24 +330,25 @@
         txStatus('Verificando PGM e codificador em '+outRes+'30 antes de abrir o envio…');
         const testOutput = () => {
           const outputs = [];
-          if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:model.bitrate * 1e6 });
+          if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:outBitrate * 1e6 });
           if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
           return AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), cancelled:()=>epoch !== liveTx.epoch });
         };
         let check = await testOutput();
         if (epoch !== liveTx.epoch || check.cancelled) return;
         window.andromedaAudit?.(check.ok ? 'info' : 'warn', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
-        if (!check.ok && outRes === '1080p' && needH && !needV) {
-          for (const [w,h,label] of [[1280,720,'720p'],[960,540,'540p']]) {
-            [width,height]=[w,h];outRes=label;
+        if (!check.ok && ['2160p','1080p'].includes(outRes) && needH && !needV) {
+          const ladder=[[1920,1080,'1080p'],[1280,720,'720p'],[960,540,'540p']].filter(([w])=>w<width);
+          for (const [w,h,label] of ladder) {
+            [width,height]=[w,h];outRes=label;outBitrate=Math.min(outBitrate,label==='1080p'?8:label==='720p'?5:3);
             for (const canvas of [hdBase,overlay,programOutput]) { canvas.width=w;canvas.height=h; }
             routeProgramOutput();await new Promise(r=>setTimeout(r,500));
             if (epoch !== liveTx.epoch) return;
-            txStatus('1080p não sustentou 30 fps. Testando saída em '+label+'30…');
+            txStatus(requestedRes+' não sustentou 30 fps. Testando saída em '+label+'30…');
             check = await testOutput();
             if (epoch !== liveTx.epoch || check.cancelled) return;
             window.andromedaAudit?.(check.ok ? 'info' : 'warn','teste-saida-dedicada',check.reason || 'Teste interrompido',{fps:check.fps,fpsPGM:check.freshFps});
-            if (check.ok) { writeCap(label);liveTx.notice='Saída em '+label+'30: 1080p não sustentou 30 fps';log(liveTx.notice);break; }
+            if (check.ok) { writeCap(label);liveTx.notice='Saída em '+label+'30: '+requestedRes+' não sustentou 30 fps';log(liveTx.notice);window.andromedaAudit?.('warn','resolucao-reduzida',liveTx.notice,{solicitada:requestedRes,efetiva:label});break; }
           }
         }
         if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' A transmissão não foi aberta porque a saída não sustentou 30 fps.');
@@ -354,7 +356,7 @@
       }
       let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
-      const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6; 
+      const hBits = Math.min(24, outBitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6; 
       function makeRecorder(media, bits) {
         let error;
         for (const mimeType of captureTypes) {
@@ -432,7 +434,7 @@
       liveTx.downshift = downshift;
       const startNative = async groups => {
         groupsReady = groups; const outputs = [];
-        if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: model.bitrate * 1e6, onChunk: sendNative(0) });
+        if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: outBitrate * 1e6, onChunk: sendNative(0) });
         if (needV && groups.includes('v')) { const c = window.andromedaVertical.canvas; outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: (window.andromedaVertical.settings.bitrate || 4) * 1e6, onChunk: sendNative(1) }); }
         nativeSession = (fixed ? AndromedaEngine.createDedicated : AndromedaEngine.create)({
           audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'),
@@ -458,7 +460,7 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: model.bitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: window.andromedaVertical?.settings.resolution || '720p', bitrate: window.andromedaVertical?.settings.bitrate || 4 }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');
