@@ -226,7 +226,7 @@
 
   function createDedicated(options) {
     const outputs = options.outputs;
-    let worker, timer, ready = false, closed = false, inFlight = false, lastGeneration = -1;
+    let worker, timer, ready = false, closed = false, inFlight = 0, lastGeneration = -1;
     let rejectStart, resolveStart, resolveStop, abortTimer, lastStats = {}, pgmAt = performance.now(), pgmFrames = window.andromedaProgramFrames || 0;
     const received = new Map(outputs.map(o => [o.id, o]));
     const script = `
@@ -270,6 +270,7 @@
       closed = true; ready = false;
       rejectStart?.(Error("Saída encerrada"));
       clearInterval(timer);
+      window.andromedaFrameSinks?.delete(capture);
       if (worker) {
         try { worker.postMessage({type:'abort'}); abortTimer = setTimeout(() => worker?.terminate(), 1500); }
         catch { worker.terminate(); }
@@ -277,14 +278,14 @@
       resolveStop?.();
     }
     function capture() {
-      if (!ready || closed || inFlight) return;
+      if (!ready || closed || inFlight >= 2) return;
       const generation = window.andromedaProgramFrames || 0;
       if (generation === lastGeneration) return;
       const frames = [];
       try {
         for (const o of outputs) frames.push({id:o.id,frame:new VideoFrame(o.canvas,{timestamp:0})});
         worker.postMessage({type:'frames',frames}, frames.map(x => x.frame));
-        inFlight = true; lastGeneration = generation;
+        inFlight++; lastGeneration = generation;
       } catch(e) { frames.forEach(x => x.frame.close()); fail(e); }
     }
     return {
@@ -297,7 +298,7 @@
           if (m.type === 'aborted') { clearTimeout(abortTimer); worker.terminate(); return; }
           if (closed) return;
           if (m.type === 'ready') { ready = true; resolveStart(); }
-          else if (m.type === 'accepted') inFlight = false;
+          else if (m.type === 'accepted') { inFlight = Math.max(0, inFlight - 1); capture(); }
           else if (m.type === 'chunk') {
             try { received.get(m.id).onChunk(m.bytes); worker.postMessage({type:'ack',bytes:m.bytes.byteLength}); }
             catch(e) { fail(e); }
@@ -315,7 +316,9 @@
         const timeout = setTimeout(() => fail(Error('Inicialização da saída excedeu 8 segundos')),8000);
         try { await started; } finally { clearTimeout(timeout); }
         if (closed) return;
-        capture(); timer = setInterval(capture, 8);
+        // Capture at the completed PGM frame, without polling/ACK phase losses.
+        (window.andromedaFrameSinks ||= new Set()).add(capture);
+        capture(); timer = setInterval(capture, 34);
       },
       restart(id) { if (ready) worker.postMessage({type:'restart',id}); },
       requestKeyframe(id) { if (ready) worker.postMessage({type:'key',id}); },
@@ -323,7 +326,7 @@
       abort,
       async stop() {
         if (closed) return;
-        ready = false; clearInterval(timer);
+        ready = false; clearInterval(timer); window.andromedaFrameSinks?.delete(capture);
         const stopped = new Promise(resolve => {resolveStop=resolve;});
         worker.postMessage({type:'stop'});
         const timeout = setTimeout(abort,3000);

@@ -640,6 +640,7 @@ function render(t){renderAt=performance.now();try{if(t-last>=1000/30-0.5){const 
  guarded('saída do AR',()=>{
    routeProgramOutput();
    window.andromedaProgramFrames = (window.andromedaProgramFrames || 0) + 1;
+   window.andromedaFrameSinks?.forEach(capture => capture());
 
  });
  directProgram = false;
