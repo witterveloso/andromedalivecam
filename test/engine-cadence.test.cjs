@@ -21,8 +21,8 @@ test('30 encoded frames can contain only 10 fresh PGM captures; metrics expose t
  h.deliver(false);h.at(1000.1);h.tick();h.at(2000);const stalled=h.session.stats();assert.equal(stalled.fps,0);assert.equal(stalled.submittedFps,1);h.session.abort();
  assert.equal(h.closedFrames.length,41,'31 temporary encoder frames plus all 10 retained captures released');
 });
-test('encoder overload stops unbounded catch-up and surfaces a cadence failure',async()=>{
- const h=harness();await h.session.start();h.session.setFrame('h',h.frame());h.tick();h.at(1000);h.tick();h.tick();assert.equal(h.failures.length,1);assert.match(h.failures[0],/200 ms/);assert.equal(h.encoded.length,1);h.session.abort();
+test('dedicated output resumes on the current timestamp after a scheduler stall',async()=>{
+ const h=harness();await h.session.start();h.session.setFrame('h',h.frame());h.tick();h.at(1000.1);h.tick();h.tick();assert.deepEqual(h.failures,[]);assert.deepEqual(h.encoded,[0,1000000]);h.session.abort();
 });
 test('H264 level is based on both dimensions, including portrait HD and 4K',async()=>{
  const h=harness();assert.equal((await h.api.probe({width:1280,height:720})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:720,height:1280})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:1080,height:1920})).codec,'avc1.640028');assert.equal((await h.api.probe({width:3840,height:2160})).codec,'avc1.640033');
