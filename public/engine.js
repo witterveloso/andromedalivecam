@@ -231,6 +231,7 @@
     let rejectStart, resolveStart, resolveStop, abortTimer, lastStats = {}, pgmAt = performance.now(), pgmFrames = window.andromedaProgramFrames || 0;
     const received = new Map(outputs.map(o => [o.id, o]));
     const videoTracks = [];
+    const frameSinks = new Set();
     const script = `
       importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
       let session, outstanding = 0, readers = [];
@@ -279,6 +280,8 @@
     function abort() {
       closed = true; ready = false;
       rejectStart?.(Error("Saída encerrada"));
+      for (const sink of frameSinks) window.andromedaFrameSinks?.delete(sink);
+      frameSinks.clear();
       for (const track of videoTracks) track.stop();
       if (worker) {
         try { worker.postMessage({type:'abort'}); abortTimer = setTimeout(() => worker?.terminate(), 1500); }
@@ -312,9 +315,13 @@
         // The browser captures finished canvas frames. The transferable streams let
         // the Worker read them without a full-size VideoFrame copy on the UI thread.
         const videos = outputs.map(o => {
-          const track = o.canvas.captureStream(30).getVideoTracks()[0];
+          const track = o.canvas.captureStream(0).getVideoTracks()[0];
           if (!track) throw Error('Captura do PGM indisponível para '+o.id);
           videoTracks.push(track);
+          const sink = () => track.requestFrame();
+          frameSinks.add(sink);
+          (window.andromedaFrameSinks ||= new Set()).add(sink);
+          sink(); // Primeiro quadro, antes do próximo desenho da mesa.
           return {id:o.id,readable:new MediaStreamTrackProcessor({track}).readable};
         });
         worker.postMessage({type:'init',audio,videos,outputs:outputs.map(({id,width,height,bitrate})=>({id,width,height,bitrate})),avSyncMs:options.avSyncMs || 0},[audio,...videos.map(v=>v.readable)]);
@@ -328,7 +335,10 @@
       abort,
       async stop() {
         if (closed) return;
-        ready = false; for (const track of videoTracks) track.stop();
+        ready = false;
+        for (const sink of frameSinks) window.andromedaFrameSinks?.delete(sink);
+        frameSinks.clear();
+        for (const track of videoTracks) track.stop();
         const stopped = new Promise(resolve => {resolveStop=resolve;});
         worker.postMessage({type:'stop'});
         const timeout = setTimeout(abort,3000);
