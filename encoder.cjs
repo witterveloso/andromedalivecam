@@ -56,8 +56,8 @@ function validateBroadcast(input) {
   const vbit = Number(v.bitrate ?? (vres === '1080p' ? 6 : 4));
   if (!Number.isFinite(vbit) || vbit < 2 || vbit > 12) fail('Bitrate da saída vertical deve ficar entre 2 e 12 Mbps.');
   if (!destinations.length && !record) fail('Ative pelo menos um destino ou a gravação.');
-  const resolution = input.resolution; if (!['720p', '1080p'].includes(resolution)) fail('Esta versão transmite em 720p ou 1080p.');
-  const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < 3 || bitrate > 20) fail('Bitrate deve ficar entre 3 e 20 Mbps.');
+  const resolution = input.resolution; if (!['720p', '1080p', '2160p'].includes(resolution)) fail('Escolha 720p, 1080p ou 2160p (4K).');
+  const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < (resolution === '2160p' ? 30 : 3) || bitrate > (resolution === '2160p' ? 60 : 20)) fail('Bitrate fora do limite da resolução escolhida.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
   // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
   return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
@@ -68,7 +68,7 @@ function groupsFor(cfg) {
   const h = cfg.destinations.filter(d => d.aspect !== '9:16'), v = cfg.destinations.filter(d => d.aspect === '9:16');
   const formats = cfg.record?.formats || '16:9', recH = !!cfg.record && formats !== '9:16', recV = !!cfg.record && formats !== '16:9';
   const groups = [];
-  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
+  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '2160p' ? '3840:2160' : cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
   if (v.length || recV) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null });
   return groups;
 }
