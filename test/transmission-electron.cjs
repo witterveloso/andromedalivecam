@@ -6,7 +6,7 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawn,spawnSync}=require('node:child_process');
 const assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'andromeda-tx-'));
-const fourK=process.env.ANDROMEDA_TEST_4K==='1', dimensions=fourK?'3840x2160':'1920x1080', seconds=fourK?8:12;
+const fourK=process.env.ANDROMEDA_TEST_4K==='1';let dimensions=fourK?'3840x2160':'1920x1080';const seconds=fourK?8:12;
 const reportPath=path.join(root,'transmission-report.json');
 app.setPath('userData',path.join(dir,'profile'));
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
