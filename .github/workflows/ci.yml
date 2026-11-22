@@ -55,13 +55,10 @@ jobs:
           curl -fsS http://127.0.0.1:8080/health | grep -q '"ok":true'
           docker rm -f gw
 
-  windows-installer:
-    name: Instalador Windows
-    needs: test
+  transmission:
+    name: Vídeo real e gravação (Windows)
     runs-on: windows-latest
-    timeout-minutes: 40
-    permissions:
-      contents: write   # só para publicar o instalador na página de versões (releases) a partir da main
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,6 +78,22 @@ jobs:
             transmission-report.json
             transmission-screen.png
           if-no-files-found: warn
+
+  windows-installer:
+    name: Instalador Windows
+    needs: [test, transmission]
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write   # só para publicar o instalador na página de versões (releases) a partir da main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
       - name: Gerar instalador (assina se houver certificado configurado)
         shell: pwsh
         env:

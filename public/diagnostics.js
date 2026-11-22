@@ -28,7 +28,7 @@
     if (liveTx.phase === samplePhase) {
       const pgm = Number(((frames - sampleFrames) * 1000 / (now - sampleAt)).toFixed(1));
       audit('info', 'cadencia-pgm', 'PGM desenhado a ' + pgm + ' q/s · ' + samplePhase,
-        { fase: samplePhase, fpsPGM: pgm, largura: programOutput.width, altura: programOutput.height });
+        { fase: samplePhase, fpsPGM: pgm, fpsCodificado: liveTx.nativeStats?.fps ?? null, fpsPGMNovo: liveTx.nativeStats?.freshFps ?? null, quadrosRepetidos: liveTx.nativeStats?.repeatedTotal ?? null, atrasoCodificadorMs: liveTx.nativeStats?.latencyMs ?? null, motor: liveTx.engine, largura: programOutput.width, altura: programOutput.height });
     }
     sampleAt = now; sampleFrames = frames; samplePhase = liveTx.phase;
   }, 1000);

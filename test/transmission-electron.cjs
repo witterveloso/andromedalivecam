@@ -55,7 +55,7 @@ app.whenReady().then(async()=>{
    }
    await run('stopTransport()');await until(()=>run('liveTx.phase === "idle"'),15000);
    await Promise.race([exited,wait(5000)]);receiver.kill();receiver=null;
-   const records=fs.readdirSync(dir).filter(f=>/^Andromeda_.*\.mkv$/.test(f));assert(records.length>attempt,'recording created');
+   const records=fs.readdirSync(dir).filter(f=>/^Andromeda_.*\.(mp4|mkv)$/.test(f));assert(records.length>attempt,'recording created');
    const record=path.join(dir,records.sort().at(-1));
    const analyze=file=>{
      const decoded=spawnSync(ffmpeg,['-v','error','-i',file,'-map','0:v:0','-fps_mode','passthrough','-f','framemd5','-'],{encoding:'utf8',timeout:30000,maxBuffer:5*1024*1024});assert.equal(decoded.status,0,decoded.stderr);

@@ -303,6 +303,7 @@
         const bad = probes.find(p => !p.ok);
         if (!bad) { engine = 'native'; liveTx.hardware = probes.every(p => p.hardware); } else log('Motor Andrômeda indisponível neste computador: ' + bad.reason + ' Usando o codificador padrão.');
       }
+      if (fixed && engine !== 'native') throw Error('Saída dedicada indisponível. O teste do codificador H.264/Opus falhou neste computador. Consulte Diagnóstico antes de transmitir.');
       model.engineUsed = engine; liveTx.engine = engine;
       // Teste do computador (só o motor próprio e só quando ainda não há resultado recente para este tamanho): do tamanho pedido para baixo, o primeiro que
       // sai a pelo menos 26 quadros por segundo, com a mesa desenhando junto. O resultado vale por 7 dias; escolher a resolução na lista refaz o teste.
@@ -319,6 +320,16 @@
         writeBench(outRes, pick[2], chosen ? chosen[3] : 0); if (pick[2] !== outRes) writeBench(pick[2], pick[2], chosen ? chosen[3] : 0); log('Teste do computador: ' + tried.join(' → ') + '. Transmitindo em ' + pick[2] + '.'); window.andromedaAudit?.('info', 'teste-do-computador', 'Teste do computador: ' + tried.join(' → ') + ' · transmitindo em ' + pick[2]);
         if (pick[2] !== outRes) { writeCap(pick[2]); sizeNote = 'Este computador não sustenta ' + outRes + ': transmitindo em ' + pick[2] + '.'; txStatus(sizeNote); }
       } else if (!fixed && engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
+      if (fixed) {
+        txStatus('Verificando PGM e codificador em 1080p30 antes de abrir o envio…');
+        const outputs = [];
+        if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:model.bitrate * 1e6 });
+        if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
+        const check = await AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), cancelled:()=>epoch !== liveTx.epoch });
+        if (epoch !== liveTx.epoch || check.cancelled) return;
+        window.andromedaAudit?.(check.ok ? 'info' : 'error', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
+        if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' A transmissão não foi aberta porque a saída não sustentou 30 fps.');
+      }
       let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
       const hBits = Math.min(24, model.bitrate * 1.6) * 1e6, vBits = Math.min(16, (window.andromedaVertical?.settings.bitrate || 4) * 1.6) * 1e6; 
@@ -371,7 +382,9 @@
       // Qualquer falha do motor próprio passa a sessão, sem encerrá-la, para o codificador padrão (o serviço troca o FFmpeg e abre outra gravação, _p2).
       let groupsReady = ['h'];
       const fallbackToStandard = reason => {
-        if (engine !== 'native' || epoch !== liveTx.epoch) return; engine = 'webm'; liveTx.engine = 'webm'; model.engineUsed = 'webm';
+        if (engine !== 'native' || epoch !== liveTx.epoch) return;
+        if (fixed) { finishTransport('Saída dedicada interrompida: ' + reason + '. Consulte o Diagnóstico.'); return; }
+        engine = 'webm'; liveTx.engine = 'webm'; model.engineUsed = 'webm';
         const dead = nativeSession; nativeSession = null; liveTx.native = null; try { dead?.abort(); } catch { /* já parado */ }
         log('Motor Andrômeda desligado (' + reason + '). Continuando com o codificador padrão.'); window.andromedaAudit?.('warn', 'motor-padrao', 'Motor Andrômeda desligado: ' + reason);
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'engine', engine: 'webm', reason }));

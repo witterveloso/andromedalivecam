@@ -316,5 +316,26 @@
     };
   }
 
-  return { probe, create, createDedicated, benchmark, supported: hasApi };
+  // Exercise the same dedicated path before opening the live network/disk sinks.
+  // This measures current PGM production, not just encoder configuration support.
+  async function qualify({ audioTrack, outputs, avSyncMs = 0, cancelled = () => false, ms = 4200 }) {
+    const samples = []; let failure = null, session, track;
+    try {
+      track = audioTrack.clone();
+      session = createDedicated({ audioTrack: track, outputs: outputs.map(o => ({ ...o, onChunk() {} })), avSyncMs,
+        onError: e => { failure = e; }, onStats: s => samples.push(s) });
+      await session.start();
+      const end = performance.now() + ms;
+      while (performance.now() < end && !failure && !cancelled()) await new Promise(r => setTimeout(r, 100));
+      if (cancelled()) return { ok: false, cancelled: true };
+      if (failure) return { ok: false, reason: failure.message, samples };
+      const steady = samples.slice(-3), average = key => steady.reduce((sum, s) => sum + (s[key] || 0), 0) / Math.max(1, steady.length);
+      const fps = average('fps'), freshFps = average('freshFps');
+      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, samples,
+        reason: 'Teste 1080p30: codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
+    } catch (e) { return { ok: false, reason: e.message, samples }; }
+    finally { session?.abort(); track?.stop(); }
+  }
+
+  return { probe, create, createDedicated, benchmark, qualify, supported: hasApi };
 });
