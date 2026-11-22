@@ -35,16 +35,20 @@ test('capture overload keeps at most two pending frames and closes discarded res
  const h=harness();await h.session.start();for(let i=0;i<10;i++)h.session.setFrame('h',h.frame());
  assert.equal(h.closedFrames.length,8);h.tick();assert.equal(h.session.stats().outputs[0].queueDropped,8);h.session.abort();assert.equal(h.closedFrames.length,11);
 });
-test('PGM completion triggers bounded transfer without waiting for the polling timer',async()=>{
- const workers=[],timers=[],frames=[],window={andromedaProgramFrames:0};
- class Frame{constructor(){frames.push(this);}close(){this.closed=true;}}
- class Worker{constructor(){this.messages=[];workers.push(this);}postMessage(m){this.messages.push(m);if(m.type==='init')queueMicrotask(()=>this.onmessage({data:{type:'ready'}}));if(m.type==='abort')queueMicrotask(()=>this.onmessage({data:{type:'aborted'}}));}terminate(){this.terminated=true;}}
- const ctx={module:{exports:{}},window,location:{origin:'http://localhost'},performance:{now:()=>0},VideoFrame:Frame,Worker,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Blob:class{},MediaStreamTrackProcessor:class{constructor(){this.readable={};}},setInterval(fn,ms){const t={fn,ms};timers.push(t);return t;},clearInterval(t){if(t)t.closed=true;},setTimeout:()=>1,clearTimeout(){},Map,Set,Promise};
+test('dedicated PGM uses a transferable capture stream and releases it on abort',async()=>{
+ const workers=[],tracks=[];
+ class Worker{constructor(){this.messages=[];workers.push(this);}postMessage(m,transfer){this.messages.push({m,transfer});if(m.type==='init')queueMicrotask(()=>this.onmessage({data:{type:'ready'}}));if(m.type==='abort')queueMicrotask(()=>this.onmessage({data:{type:'aborted'}}));}terminate(){this.terminated=true;}}
+ class Processor{constructor({track}){this.readable={track};}}
+ const canvas={captureStream(rate){assert.equal(rate,0);const track={stopped:false,requests:0,requestFrame(){this.requests++;},stop(){this.stopped=true;}};tracks.push(track);return{getVideoTracks:()=>[track]};}};
+ const ctx={module:{exports:{}},window:{andromedaProgramFrames:0},location:{origin:'http://localhost'},performance:{now:()=>0},Worker,URL:{createObjectURL:()=>'',revokeObjectURL(){}},Blob:class{},MediaStreamTrackProcessor:Processor,setTimeout:()=>1,clearTimeout(){},Map,Set,Promise};
  vm.runInNewContext(fs.readFileSync(require.resolve('../public/engine.js'),'utf8'),ctx);
- const session=ctx.module.exports.createDedicated({audioTrack:{},outputs:[{id:'h',canvas:{},width:1920,height:1080,bitrate:6000000,onChunk(){}}]});
- await session.start();const worker=workers[0],sends=()=>worker.messages.filter(m=>m.type==='frames').length;
- assert.equal(sends(),1);window.andromedaProgramFrames++;window.andromedaFrameSinks.forEach(fn=>fn());assert.equal(sends(),2,'next PGM sent without a timer tick');
- window.andromedaProgramFrames++;window.andromedaFrameSinks.forEach(fn=>fn());assert.equal(sends(),2,'at most two batches in transit');
- worker.onmessage({data:{type:'accepted'}});assert.equal(sends(),3,'released credit sends latest pending PGM immediately');
- session.abort();await Promise.resolve();assert.equal(window.andromedaFrameSinks.size,0);assert(worker.terminated);assert(timers.every(t=>t.closed));
+ const session=ctx.module.exports.createDedicated({audioTrack:{},outputs:[{id:'h',canvas,width:1920,height:1080,bitrate:6000000,onChunk(){}}]});
+ await session.start();const worker=workers[0],init=worker.messages[0];
+ assert.equal(init.m.videos.length,1);assert.equal(init.m.videos[0].readable.track,tracks[0]);
+ assert.equal(init.transfer.length,2,'audio and PGM streams transferred together');
+ assert.equal(worker.messages.filter(x=>x.m.type==='frames').length,0,'no main-thread VideoFrame copying');
+ assert.equal(tracks[0].requests,1);assert.equal(ctx.window.andromedaFrameSinks.size,1);
+ ctx.window.andromedaFrameSinks.forEach(capture=>capture());assert.equal(tracks[0].requests,2);
+ session.abort();await Promise.resolve();assert(tracks[0].stopped);assert(worker.terminated);assert.equal(ctx.window.andromedaFrameSinks.size,0);
 });
+
