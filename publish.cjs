@@ -271,7 +271,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         if (at < 0) { r.headTail = joined.subarray(Math.max(0, joined.length - 3)); send({ type: 'ack', bytes: data.length }); return; }
         r.awaitHeader = false; r.headTail = null; chunk = joined.subarray(at);
       }
-      if (r.child.stdin.writableLength + chunk.length > MAX_QUEUE) { groupFailed(r, 'O codificador ' + r.group.aspect + ' não está acompanhando o sinal. Reduza a resolução e tente novamente.'); send({ type: 'ack', bytes: data.length }); return; }
+      const maxQueue = r.group.size === '3840:2160' ? 32 * 1024 * 1024 : MAX_QUEUE;
+      if (r.child.stdin.writableLength + chunk.length > maxQueue) { groupFailed(r, 'O codificador ' + r.group.aspect + ' não está acompanhando o sinal. Reduza a resolução e tente novamente.'); send({ type: 'ack', bytes: data.length }); return; }
       r.child.stdin.write(chunk, err => { if (err && !stopping) died(r, 'O codificador encerrou a entrada de vídeo.'); else if (!err) send({ type: 'ack', bytes: data.length }); });
       return;
     }
