@@ -194,7 +194,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
     // Prioridade acima do normal: em computador apertado, quem disputa a CPU (navegador, antivírus) não deve atrasar o codificador.
-    try { if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL); } catch { /* sem permissão: segue com a prioridade normal */ }
+    // Keep normal priority: the renderer and audio capture also need CPU time.
     child.on('spawn', () => { r.ready = true; if (!restarted && [...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
     child.on('error', () => groupFailed(r, 'Não foi possível iniciar o FFmpeg. Execute o diagnóstico do pacote.'));
     child.stdin.on('error', () => { if (!stopping) died(r, 'Entrada do codificador interrompida.'); });
