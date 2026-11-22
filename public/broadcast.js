@@ -337,17 +337,17 @@
         if (epoch !== liveTx.epoch || check.cancelled) return;
         window.andromedaAudit?.(check.ok ? 'info' : 'warn', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
         if (!check.ok && outRes === '1080p' && needH && !needV) {
-          // Mantém a transmissão possível quando a máquina não sustenta 1080p.
-          // O operador vê a resolução real; nunca anunciamos 1080p para um sinal 720p.
-          [width,height]=[1280,720];outRes='720p';
-          for (const canvas of [hdBase,overlay,programOutput]) { canvas.width=width;canvas.height=height; }
-          routeProgramOutput();await new Promise(r=>setTimeout(r,500));
-          if (epoch !== liveTx.epoch) return;
-          txStatus('1080p não sustentou 30 fps. Testando saída em 720p30…');
-          check = await testOutput();
-          if (epoch !== liveTx.epoch || check.cancelled) return;
-          window.andromedaAudit?.(check.ok ? 'info' : 'error','teste-saida-dedicada',check.reason || 'Teste interrompido',{fps:check.fps,fpsPGM:check.freshFps});
-          if (check.ok) { writeCap('720p');liveTx.notice='Saída em 720p30: 1080p não sustentou 30 fps';log(liveTx.notice); }
+          for (const [w,h,label] of [[1280,720,'720p'],[960,540,'540p']]) {
+            [width,height]=[w,h];outRes=label;
+            for (const canvas of [hdBase,overlay,programOutput]) { canvas.width=w;canvas.height=h; }
+            routeProgramOutput();await new Promise(r=>setTimeout(r,500));
+            if (epoch !== liveTx.epoch) return;
+            txStatus('1080p não sustentou 30 fps. Testando saída em '+label+'30…');
+            check = await testOutput();
+            if (epoch !== liveTx.epoch || check.cancelled) return;
+            window.andromedaAudit?.(check.ok ? 'info' : 'warn','teste-saida-dedicada',check.reason || 'Teste interrompido',{fps:check.fps,fpsPGM:check.freshFps});
+            if (check.ok) { writeCap(label);liveTx.notice='Saída em '+label+'30: 1080p não sustentou 30 fps';log(liveTx.notice);break; }
+          }
         }
         if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' A transmissão não foi aberta porque a saída não sustentou 30 fps.');
         liveTx.outputResolution=outRes;
