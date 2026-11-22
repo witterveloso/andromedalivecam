@@ -9,4 +9,6 @@ test('4K bitrate limit and source resolution are not silently downgraded',()=>{
  for(const b of [0,61])assert.throws(()=>validateBroadcast({resolution:'2160p',bitrate:b,record:{dir:require('node:os').tmpdir()}}));
  const code=fs.readFileSync(require.resolve('../public/broadcast.js'),'utf8');assert.match(code,/outRes === '2160p' \? \[3840,2160\]/);assert.match(code,/fixed4k/);assert.match(code,/AndromedaEngine\.qualify/);
  const engine=fs.readFileSync(require.resolve('../public/engine.js'),'utf8');assert.match(engine,/blocks > 8192 \? '33'/);
+ const publish=fs.readFileSync(require.resolve('../publish.cjs'),'utf8');assert.match(publish,/r\.group\.size === '3840:2160' \? 32 \* 1024 \* 1024/);
+ const server=fs.readFileSync(require.resolve('../server.cjs'),'utf8');assert.match(server,/maxPayload:16\*1024\*1024/);
 });
