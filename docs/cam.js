@@ -198,14 +198,14 @@ navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (cam.strea
 function videoConstraints(deviceId = q('#lens').value) {
   const [width, height] = q('#resolution').value.split('x').map(Number);
   return {
-    width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: Number(q('#fps').value) },
+    width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 },
     ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
   };
 }
 
 function showCapabilities() {
   const track = cam.stream.getVideoTracks()[0], st = track.getSettings();
-  q('#qualityActual').textContent = st.width + '×' + st.height + ' · ' + Math.round(st.frameRate || 0) + ' fps';
+  q('#qualityActual').textContent = st.width + '×' + st.height + ' · captura ' + (Number.isFinite(st.frameRate) ? st.frameRate.toFixed(1) : 'não informada') + ' fps · alvo 30';
   try { track.contentHint = 'motion'; } catch { /* navegador sem dica de conteúdo */ }
   window.AndromedaOptics?.attach(track);
   renderLenses(); layoutGrid();
@@ -217,7 +217,7 @@ async function bitrate() {
   const p = cam.pcs.get('media'); if (!p) return;
   const sender = p.pc.getSenders().find(s => s.track?.kind === 'video'); if (!sender) return;
   const params = sender.getParameters(); if (!params.encodings?.length) return;
-  const e = params.encodings[0], fps = Number(q('#fps').value) || 30;
+  const e = params.encodings[0], fps = 30;
   e.maxBitrate = Math.max(1, Math.min(MAX_MBPS, Number(q('#bitrate').value) || 3)) * 1000000;
   e.maxFramerate = fps; e.priority = 'high'; e.networkPriority = 'high';
   params.degradationPreference = 'maintain-framerate';
@@ -263,15 +263,16 @@ q('#lens').onchange = async () => {
 // Resolução e quadros/s valem na hora: primeiro sem fechar a câmera; se o aparelho não muda ao vivo, reabre.
 async function applyFormat() {
   if (!cam.stream) return;
-  const [width, height] = q('#resolution').value.split('x').map(Number), fps = Number(q('#fps').value);
+  const [width, height] = q('#resolution').value.split('x').map(Number), fps = 30;
   const track = cam.stream.getVideoTracks()[0];
-  const fits = () => { const st = track.getSettings(), long = Math.max(st.width || 0, st.height || 0), short = Math.min(st.width || 0, st.height || 0); return long >= width * 0.95 && short >= height * 0.95 && (st.frameRate || 0) >= fps * 0.9; };
-  let ok = await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps } }).then(() => true, () => false);
+  const fits = () => { const st = track.getSettings(), long = Math.max(st.width || 0, st.height || 0), short = Math.min(st.width || 0, st.height || 0); return long >= width * 0.95 && short >= height * 0.95 && (st.frameRate || 0) >= fps * 0.95 && st.frameRate <= fps + 0.1; };
+  let ok = await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps, max: fps } }).then(() => true, () => false);
   if (!ok || !fits()) ok = !!(await reopenVideo(q('#lens').value));
   else { showCapabilities(); await bitrate().catch(() => {}); }
   const now = cam.stream?.getVideoTracks()[0]?.getSettings() || {};
   const got = (now.width || 0) + '×' + (now.height || 0) + ' · ' + Math.round(now.frameRate || 0) + ' fps';
-  say(Math.max(now.width || 0, now.height || 0) >= width * 0.95 && (now.frameRate || 0) >= fps * 0.9 ? 'Formato aplicado: ' + got + '.' : 'Este aparelho entregou ' + got + ' nesta lente (pedido: ' + q('#resolution').selectedOptions[0].text + ' · ' + fps + ' fps).', 'info');
+  const matches = Math.max(now.width || 0, now.height || 0) >= width * 0.95 && Math.min(now.width || 0, now.height || 0) >= height * 0.95 && (now.frameRate || 0) >= fps * 0.95 && now.frameRate <= fps + 0.1;
+  say(matches ? 'Formato aplicado: ' + got + '.' : 'Este aparelho entregou ' + got + ' nesta lente (pedido: ' + q('#resolution').selectedOptions[0].text + ' · ' + fps + ' fps).', matches ? 'ok' : 'warn');
 }
 // Microfone novo: troca no envio e no intercom sem derrubar o vídeo.
 async function applyMic() {
@@ -457,7 +458,7 @@ async function start() {
     if (!localTest && cam.relay) {
       const info = await relaySession();
       q('#cameraName').textContent = info.name;
-      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
+      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = '30'; q('#bitrate').value = info.profile.bitrate; }
     } else if (!localTest) {
       const invite = message => Object.assign(Error(message), { name: 'InviteError' });
       const response = await fetch(gateway + '/cam/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: cam.key }) })
@@ -465,7 +466,7 @@ async function start() {
       const info = await response.json().catch(() => ({}));
       if (!response.ok) throw invite(info.error || 'Convite recusado pela mesa.');
       q('#cameraName').textContent = info.name;
-      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = info.profile.fps; q('#bitrate').value = info.profile.bitrate; }
+      if (info.profile) { setResolution(info.profile.width, info.profile.height); q('#fps').value = '30'; q('#bitrate').value = info.profile.bitrate; }
     }
     if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(Error('Abra este link no Safari ou Chrome atualizado. O navegador interno do mensageiro pode não permitir a câmera.'), { name: 'InviteError' });
     cam.stream = await navigator.mediaDevices.getUserMedia({
