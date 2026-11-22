@@ -7,7 +7,7 @@
  */
 (() => {
   const PRESETS = {
-    youtube:   { name: 'YouTube',      server: 'rtmps://a.rtmps.youtube.com:443/live2',      help: 'YouTube Studio → Criar → Transmitir ao vivo → Transmissão → Chave de transmissão.' },
+    youtube:   { name: 'YouTube',      server: 'rtmps://a.rtmps.youtube.com:443/live2',      help: 'YouTube Studio → Criar → Transmitir ao vivo → Transmissão → Chave de transmissão. Para buscar até 5 s em 1080p, selecione Latência ultrabaixa no YouTube Studio antes de entrar no ar.' },
     facebook:  { name: 'Facebook',     server: 'rtmps://live-api-s.facebook.com:443/rtmp/',   help: 'Facebook → Vídeo ao vivo → Software de streaming → Chave de stream.' },
     instagram: { name: 'Instagram',    server: 'rtmps://live-upload.instagram.com:443/rtmp/', help: 'Instagram no computador → Criar → Vídeo ao vivo. Copie a URL e a chave (conta profissional). Recebe a saída vertical 9:16, enquadrada abaixo.', aspect: '9:16' },
     twitch:    { name: 'Twitch',       server: 'rtmp://live.twitch.tv/app',                   help: 'Painel do criador → Configurações → Stream → Chave de transmissão principal.' },

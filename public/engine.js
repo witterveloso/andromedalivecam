@@ -116,9 +116,14 @@
       for (const o of outs) {
         if (!o.encoder) continue;
         // The first capture may arrive after audio/probing: do not replay a stale startup backlog.
-        const slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
+        let slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
         if (slot > target || (!dedicated && slot <= o.lastSlot)) continue;
-        if (dedicated && target - slot > 6) { fail('cadência', 'o codificador acumulou mais de 200 ms de atraso'); return; }
+        if (dedicated && target - slot > 6) {
+          // Resume at the live edge after a scheduler stall. Audio uses the same clock.
+          slot = target;
+          o.forceKey = true;
+          while (o.queue.length > 1) { o.queue.shift().frame.close(); o.queueDropped++; }
+        }
         if (dedicated && o.queue.length && o.encoder.encodeQueueSize <= 3) {
           const item = o.queue.shift(); o.canvas?.close?.(); o.canvas = item.frame; o.generation = item.generation;
         }
@@ -126,7 +131,7 @@
         if (o.lastSlot >= 0) o.missed += Math.max(0, slot-o.lastSlot-1);
         o.lastSlot = slot;
         // Fila do codificador cheia = computador sem fôlego: descarta este quadro em vez de acumular atraso.
-        if (o.encoder.encodeQueueSize > 3) { if(dedicated)o.lastSlot--; else o.dropped++; continue; }
+        if (o.encoder.encodeQueueSize > 3) { o.dropped++; o.forceKey = true; continue; }
         const ts = Math.round(slot * frameMs * 1000);
         let frame; try { frame = new VideoFrame(o.canvas, { timestamp: ts, duration: Math.round(1000000 / FPS) }); } catch (e) { fail('captura de vídeo (' + o.id + ')', e); return; }
         const key = o.forceKey || slot - o.lastKeySlot >= keySlots;
