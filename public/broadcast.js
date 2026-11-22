@@ -33,13 +33,13 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const gb = bytes => bytes == null ? '—' : bytes >= 1e12 ? (bytes / 1e12).toFixed(2) + ' TB' : bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(bytes / 1e6)) + ' MB';
 
-  const model = { recordFormats: 'both', formatsVersion: 2, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
+  const model = { recordFormats: '16:9', formatsVersion: 2, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', bitrate: 6, encoder: 'libx264', record: false, dir: '', remember: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE));
     if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false, aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' })) });
   } catch { /* primeiro uso */ }
-  // A partir da 0.18 a gravação sai nos dois formatos por padrão (16:9 e 9:16); o operador ainda pode escolher um só.
-  if (model.formatsVersion !== 2) { model.recordFormats = 'both'; model.formatsVersion = 2; }
+  // Novas configurações gravam apenas 16:9; preserva a escolha explícita de dois formatos.
+  if (model.formatsVersion !== 2) { if (!['16:9', '9:16', 'both'].includes(model.recordFormats)) model.recordFormats = '16:9'; model.formatsVersion = 2; }
   // Modo de saída escolhido pelo operador: transmitir e gravar, só transmitir ou só gravar.
   const MODES = { both: 'Transmitir e gravar', stream: 'Só transmitir', record: 'Só gravar' };
   if (!MODES[model.mode]) model.mode = model.record ? 'both' : 'stream';
