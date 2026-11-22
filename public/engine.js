@@ -364,7 +364,7 @@
       const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
       const receivedFps = average('receivedFps'), submittedFps = average('submittedFps');
       return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, receivedFps, submittedFps, samples,
-        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : '1080p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
+        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : outputs[0]?.width === 1920 ? '1080p30' : outputs[0]?.width === 1280 ? '720p30' : '540p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
     } catch (e) { return { ok: false, reason: e.message, samples }; }
     finally { session?.abort(); track?.stop(); }
   }
