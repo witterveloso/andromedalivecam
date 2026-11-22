@@ -6,13 +6,13 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawn,spawnSync}=require('node:child_process');
 const assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'andromeda-tx-'));
-const fourK=process.env.ANDROMEDA_TEST_4K==='1';let dimensions=fourK?'3840x2160':'1920x1080';const seconds=fourK?8:12;
+const fourK=process.env.ANDROMEDA_TEST_4K==='1';let dimensions=fourK?'3840x2160':'1920x1080';const seconds=fourK?10:12;
 const reportPath=path.join(root,'transmission-report.json');
 app.setPath('userData',path.join(dir,'profile'));
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
 for(const f of ['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'])app.commandLine.appendSwitch(f);
 process.env.ANDROMEDA_DATA_DIR=dir;process.env.ANDROMEDA_LOG_DIR=path.join(dir,'logs');
-let bridge,win,receiver;const report={ok:false,platform:process.platform,electron:process.versions.electron,output:dimensions,source:'1920x1080 testsrc2 (4K test validates output scaling, not 4K ingest)',runs:[],errors:[]};
+let bridge,win,receiver;const report={ok:false,platform:process.platform,electron:process.versions.electron,requestedOutput:dimensions,output:dimensions,source:'1920x1080 testsrc2 (4K test validates output scaling, not 4K ingest)',runs:[],errors:[]};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const deadline=setTimeout(()=>finish(Error('Transmission test exceeded 240 seconds')),240000);
 function finish(error){clearTimeout(deadline);if(error)report.errors.push(error.stack||String(error));report.ok=!error;fs.writeFileSync(reportPath,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));receiver?.kill();bridge?.shutdown();win?.destroy();app.exit(error?1:0);}
@@ -49,7 +49,7 @@ app.whenReady().then(async()=>{
    await wait(750);await run('startBroadcast()');
    try{await until(()=>run('liveTx.phase === "sending"'));}catch(e){throw Error(e.message+' '+await run('JSON.stringify({phase:liveTx.phase,status:document.querySelector("#txStatus")?.textContent,logs:document.querySelector(".log-list")?.textContent})'));}
    const actual=await run('liveTx.outputResolution');dimensions=actual==='720p'?'1280x720':actual==='1080p'?'1920x1080':actual==='540p'?'960x540':dimensions;report.output=dimensions;
-   assert(fourK||['540p','720p','1080p'].includes(actual),'actual output resolution reported');
+   assert(['540p','720p','1080p','2160p'].includes(actual),'actual output resolution reported');
    const samples=[];
    for(let i=0;i<seconds;i++){
      await wait(1000);
