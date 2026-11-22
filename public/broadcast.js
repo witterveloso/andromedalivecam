@@ -134,23 +134,28 @@
   function readBench(req) { try { const v = JSON.parse(localStorage.getItem(BENCH_KEY) || 'null'); return v && v.req === req && Date.now() - v.at < 7 * 864e5 ? v : null; } catch { return null; } }
   function writeBench(req, res, fps) { try { localStorage.setItem(BENCH_KEY, JSON.stringify({ req, res, fps, at: Date.now() })); } catch { /* sem armazenamento */ } }
   const field = (text, control) => { const label = make('label', '', text); label.append(control); return label; };
-  const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['1080p']) resolution.add(new Option(r + ' · 30 fps', r)); // sem a opção 720p
+  const resolution = make('select'); resolution.id = 'txResolution'; for (const r of ['1080p', '2160p']) resolution.add(new Option(r === '2160p' ? '4K 3840×2160 · 30 fps' : '1080p · 30 fps', r));
   const bitrate = make('input'); bitrate.id = 'txBitrate'; bitrate.type = 'number'; bitrate.min = 3; bitrate.max = 20; bitrate.step = .5;
   const encoder = make('select'); encoder.id = 'txEncoder'; encoder.add(new Option('Automático · priorizar GPU', 'auto')); encoder.add(new Option('Processador (x264)', 'libx264'));
   const upload = make('p', 'quality-note');
   const policy = make('select');
   policy.add(new Option('Adaptativo', 'adaptive'));
   policy.add(new Option('1080p fixo · 30 fps CFR', 'fixed'));
-  policy.value = model.policy === 'fixed' ? 'fixed' : 'adaptive';
-  policy.onchange = () => { model.policy = policy.value; clearCap(); save(); };
+  policy.add(new Option('4K 3840×2160 fixo · 30 fps CFR', 'fixed4k'));
+  policy.value = ['fixed','fixed4k'].includes(model.policy) ? model.policy : 'adaptive';
+  policy.onchange = () => { model.policy = policy.value; model.resolution = policy.value === 'fixed4k' ? '2160p' : '1080p'; resolution.value = model.resolution; model.bitrate = policy.value === 'fixed4k' ? Math.max(30, model.bitrate, 42) : Math.min(20, model.bitrate); bitrate.max=policy.value === 'fixed4k'?60:20; bitrate.value=model.bitrate; clearCap(); save(); summary(); };
   const retest = make('button', '', 'Refazer teste no próximo envio');
   retest.onclick = () => { clearCap(); txStatus('Teste do motor Andrômeda agendado para o próximo envio adaptativo.'); };
   quality.append(field('Perfil de saída', policy), retest);
   quality.append(field('Resolução', resolution), field('Bitrate de vídeo (Mbps)', bitrate), field('Codificador', encoder), upload);
-  if (model.resolution !== '1080p') model.resolution = '1080p'; // configuração salva antes com 720p
-  resolution.value = model.resolution; bitrate.value = model.bitrate;
-  resolution.onchange = () => { model.resolution = resolution.value; clearCap(); save(); summary(); };
-  bitrate.onchange = () => { model.bitrate = Math.max(3, Math.min(20, Number(bitrate.value) || 6)); bitrate.value = model.bitrate; save(); summary(); };
+  if (!['1080p','2160p'].includes(model.resolution)) model.resolution = '1080p'; // configuração salva antes com 720p
+  if (model.policy === 'fixed4k') model.resolution = '2160p';
+  if (model.resolution === '2160p') model.policy = 'fixed4k';
+  model.bitrate = model.resolution === '2160p' ? Math.min(60, Math.max(30, model.bitrate)) : Math.min(20, model.bitrate);
+  policy.value = model.policy;
+  resolution.value = model.resolution; bitrate.max = model.resolution === '2160p' ? 60 : 20; bitrate.value = model.bitrate;
+  resolution.onchange = () => { model.resolution = resolution.value; model.policy=resolution.value==='2160p'?'fixed4k':'fixed'; policy.value=model.policy; model.bitrate = model.policy === 'fixed4k' ? Math.min(60, Math.max(30, model.bitrate, 42)) : Math.min(20, model.bitrate); bitrate.max=model.policy==='fixed4k'?60:20; bitrate.value=model.bitrate; clearCap(); save(); summary(); };
+  bitrate.onchange = () => { model.bitrate = Math.max(model.resolution === '2160p' ? 30 : 3, Math.min(model.resolution === '2160p' ? 60 : 20, Number(bitrate.value) || 6)); bitrate.value = model.bitrate; save(); summary(); };
   encoder.onchange = () => { model.encoder = encoder.value; save(); };
   const ENCODER_NAMES = { h264_nvenc: 'Placa NVIDIA (NVENC)', h264_qsv: 'Intel Quick Sync', h264_amf: 'Placa AMD (AMF)', h264_videotoolbox: 'Apple VideoToolbox' };
   function offerEncoders(session) {
@@ -242,7 +247,7 @@
     startButton.dataset.live = String(busy);
     armButton.textContent = busy && live.recording ? '● GRAVANDO' : model.record ? '● Gravação armada' : '○ Gravação desligada';
     armButton.setAttribute('aria-pressed', String(model.record)); armButton.disabled = busy; armButton.dataset.live = String(busy && !!live.recording);
-    policy.disabled = resolution.disabled = bitrate.disabled = encoder.disabled = busy; retest.disabled = busy || policy.value === "fixed";
+    policy.disabled = resolution.disabled = bitrate.disabled = encoder.disabled = busy; retest.disabled = busy || policy.value !== 'adaptive';
     recEnable.disabled = recDir.disabled = $('#recCheck').disabled = recFormats.disabled = busy;
     $$('.volume').forEach(b => { b.disabled = busy; });
     const stats = $$('.tb-stat');
@@ -285,8 +290,8 @@
         mic.getAudioTracks()[0].onended = () => { if (busyTx()) finishTransport('Microfone desconectado. O envio foi interrompido.'); };
       }
       // Este computador já mostrou que não sustenta 1080p? Então começa em 720p (a escolha da lista não muda; escolher 1080p de novo limpa o aviso).
-      const fixed = model.policy === 'fixed' && !liveTx.calibrating; const cap = !fixed && readCap(); let outRes = fixed ? "1080p" : model.resolution; if (cap && outRes === '1080p') { outRes = '720p'; log('Este computador não sustentou 1080p na última transmissão: começando em 720p. Para tentar 1080p de novo, escolha-o em Transmissão → Resolução.'); }
-      let [width, height] = outRes === '1080p' ? [1920, 1080] : [1280, 720];
+      const fixed = ['fixed','fixed4k'].includes(model.policy) && !liveTx.calibrating; const cap = !fixed && readCap(); let outRes = fixed ? (model.policy==='fixed4k'?'2160p':'1080p') : model.resolution; if (cap && outRes === '1080p') { outRes = '720p'; log('Este computador não sustentou 1080p na última transmissão: começando em 720p. Para tentar 1080p de novo, escolha-o em Transmissão → Resolução.'); }
+      let [width, height] = outRes === '2160p' ? [3840,2160] : outRes === '1080p' ? [1920, 1080] : [1280, 720];
       for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } hdOn = true; // o monitor da tela continua em 960×540
       routeProgramOutput();
       // Formatos desta transmissão: 16:9 para YouTube/Facebook…, 9:16 para Instagram/TikTok, e os da gravação.
@@ -295,7 +300,7 @@
       const needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
       if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
       // Motor de envio: o próprio (WebCodecs: uma só codificação, no navegador) ou o padrão (MediaRecorder → FFmpeg). O padrão é sempre o plano B.
-      if (fixed) log('Perfil 1080p30: preparando saída dedicada');
+      if (fixed) log('Perfil '+outRes+'30: preparando saída dedicada');
       let engine = 'webm', nativeSession = null, nativeDown = 0;
       if ((fixed || (model.engine || 'auto') !== 'standard') && window.AndromedaEngine) {
         const wanted = [needH && [width, height, model.bitrate * 1e6], needV && [window.andromedaVertical.size()[0], window.andromedaVertical.size()[1], (window.andromedaVertical.settings.bitrate || 4) * 1e6]].filter(Boolean);
@@ -321,7 +326,7 @@
         if (pick[2] !== outRes) { writeCap(pick[2]); sizeNote = 'Este computador não sustenta ' + outRes + ': transmitindo em ' + pick[2] + '.'; txStatus(sizeNote); }
       } else if (!fixed && engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
       if (fixed) {
-        txStatus('Verificando PGM e codificador em 1080p30 antes de abrir o envio…');
+        txStatus('Verificando PGM e codificador em '+outRes+'30 antes de abrir o envio…');
         const outputs = [];
         if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:model.bitrate * 1e6 });
         if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
@@ -376,7 +381,7 @@
       const sendNative = channel => bytes => {
         if (epoch !== liveTx.epoch || engine !== 'native') return;
         if (socket.readyState !== WebSocket.OPEN) { finishTransport('A conexão com o serviço local foi perdida.'); return; }
-        if (socket.bufferedAmount > 6 * 1024 * 1024) { fallbackToStandard('o envio ao serviço local acumulou'); return; }
+        if (socket.bufferedAmount > (outRes === '2160p' ? 32 : 6) * 1024 * 1024) { fallbackToStandard('o envio ao serviço local acumulou'); return; }
         if (dual) { const out = new Uint8Array(bytes.length + 1); out[0] = channel; out.set(bytes, 1); socket.send(out); } else socket.send(bytes);
       };
       // Qualquer falha do motor próprio passa a sessão, sem encerrá-la, para o codificador padrão (o serviço troca o FFmpeg e abre outra gravação, _p2).
@@ -484,7 +489,7 @@
     const fps=Math.round((frames-lastFrames)*1000/Math.max(1,now-lastHealthAt));
     lastHealthAt=now; lastFrames=frames;
     pgmHealth.hidden=!busyTx();
-    const mode = model.policy === 'fixed' ? ' · alvo 30 CFR' : '';
+    const mode = model.policy !== 'adaptive' ? ' · alvo 30 CFR' : '';
     const encoded = liveTx.engine === 'native' ? liveTx.nativeStats?.fps : null;
     const fresh = liveTx.engine === 'native' ? liveTx.nativeStats?.freshFps : null;
     pgmHealth.textContent=programOutput.width+'×'+programOutput.height+' · PGM '+fps+' fps' + (encoded == null ? '' : ' · codificado '+encoded+' fps') + (fresh == null ? '' : ' · novos '+fresh+' fps');
