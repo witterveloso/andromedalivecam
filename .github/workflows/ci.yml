@@ -79,6 +79,33 @@ jobs:
             transmission-screen.png
           if-no-files-found: warn
 
+  transmission-4k:
+    name: Diagnóstico 4K30 (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    # O runner compartilhado pode não ter GPU 4K. Preservamos o diagnóstico sem bloquear o instalador 1080p.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Envio local 4K30 e gravação no mesmo fluxo
+        env:
+          ANDROMEDA_TEST_4K: '1'
+        run: npx electron test/transmission-electron.cjs
+      - name: Guardar diagnóstico 4K
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transmission-4k-diagnostic
+          path: |
+            transmission-report.json
+            transmission-screen.png
+          if-no-files-found: warn
+
   windows-installer:
     name: Instalador Windows
     needs: [test, transmission]
