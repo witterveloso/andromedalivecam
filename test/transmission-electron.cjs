@@ -48,7 +48,7 @@ app.whenReady().then(async()=>{
    receiver.stderr.on('data',b=>receiverLog+=b);const exited=new Promise(r=>receiver.once('exit',r));
    await wait(750);await run('startBroadcast()');
    try{await until(()=>run('liveTx.phase === "sending"'));}catch(e){throw Error(e.message+' '+await run('JSON.stringify({phase:liveTx.phase,status:document.querySelector("#txStatus")?.textContent,logs:document.querySelector(".log-list")?.textContent})'));}
-   const samples=[];
+   const actual=await run('liveTx.outputResolution');dimensions=actual==='720p'?'1280x720':actual==='1080p'?'1920x1080':actual==='540p'?'960x540':dimensions;report.output=dimensions;\n   assert(fourK||['540p','720p','1080p'].includes(actual),'actual output resolution reported');\n   const samples=[];
    for(let i=0;i<seconds;i++){
      await wait(1000);
      samples.push(await run('({phase:liveTx.phase,engine:liveTx.engine,stats:liveTx.nativeStats,pgm:window.andromedaProgramFrames})'));
