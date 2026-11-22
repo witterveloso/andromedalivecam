@@ -52,7 +52,7 @@
     const MKV = (typeof AndromedaMkv !== 'undefined' ? AndromedaMkv : (typeof require === 'function' ? require('./mkvmux.js') : null));
     const fail = (where, e) => { if (failed) return; failed = true; try { onError(Error(where + ': ' + (e?.message || e))); } catch { /* o chamador decide */ } };
 
-    const outs = outputs.map(o => ({ ...o, generation: 0, encodedGeneration: -1, repeated: 0, lastOut: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, emitted: 0, missed: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
+    const outs = outputs.map(o => ({ ...o, generation: 0, nextGeneration: 0, queue: [], queueDropped: 0, encodedGeneration: -1, repeated: 0, lastOut: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, emitted: 0, missed: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
 
     // O empacotador de cada saída só nasce quando o vídeo trouxe a descrição do H.264 e o áudio já disse seu formato.
     function ensureMux(o) {
@@ -114,11 +114,15 @@
       if (!running || failed) return;
       const elapsed = now() - t0, target = Math.floor(elapsed / frameMs);
       for (const o of outs) {
-        if (!o.encoder || !o.canvas) continue;
+        if (!o.encoder) continue;
         // The first capture may arrive after audio/probing: do not replay a stale startup backlog.
         const slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
         if (slot > target || (!dedicated && slot <= o.lastSlot)) continue;
         if (dedicated && target - slot > 6) { fail('cadência', 'o codificador acumulou mais de 200 ms de atraso'); return; }
+        if (dedicated && o.queue.length && o.encoder.encodeQueueSize <= 3) {
+          const item = o.queue.shift(); o.canvas?.close?.(); o.canvas = item.frame; o.generation = item.generation;
+        }
+        if (!o.canvas) continue;
         if (o.lastSlot >= 0) o.missed += Math.max(0, slot-o.lastSlot-1);
         o.lastSlot = slot;
         // Fila do codificador cheia = computador sem fôlego: descarta este quadro em vez de acumular atraso.
@@ -144,7 +148,7 @@
         repeated: repeated - last.repeated, repeatedTotal: repeated,
         dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
         latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))),
-        outputs: outs.map(o => ({ id: o.id, frames: o.frames, emitted: o.emitted, missed: o.missed, keys: o.keys, bytes: o.bytes, dropped: o.dropped, repeated: o.repeated }))
+        outputs: outs.map(o => ({ id: o.id, frames: o.frames, emitted: o.emitted, missed: o.missed, keys: o.keys, bytes: o.bytes, dropped: o.dropped, repeated: o.repeated, queueDropped: o.queueDropped }))
       };
       last = { frames, emitted, repeated, dropped, at: t }; return s;
     }
@@ -168,7 +172,10 @@
       setFrame(id, frame) {
         const o = outs.find(o => o.id === id);
         if (!o || !running) { frame.close(); return; }
-        o.canvas?.close?.(); o.canvas = frame; o.generation++;
+        // Two captures absorb scheduling jitter between the UI and encoder clocks (<=67 ms).
+        // Discard only the oldest pending frame when capture genuinely outruns output.
+        o.queue.push({ frame, generation: ++o.nextGeneration });
+        while (o.queue.length > 2) { o.queue.shift().frame.close(); o.queueDropped++; }
       },
       // O FFmpeg do serviço foi reiniciado: cabeçalho novo e um quadro-chave logo, para a imagem voltar sem esperar 2 s.
       restart(id) { const o = outs.find(x => x.id === id); if (!o || !o.mux) return; emit(o, o.mux.restart()); o.forceKey = true; },
@@ -176,12 +183,12 @@
       stats,
       get failed() { return failed; },
       // Encerramento sem descarregar nada (falha ou troca de motor): nenhum pacote a mais sai daqui.
-      abort() {  closed = true; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate(); try { audio.reader?.cancel(); } catch { /* já encerrado */ } for (const o of outs) { try { o.encoder?.close(); if(dedicated){o.canvas?.close?.();o.canvas=null;} } catch { /* já fechado */ } } try { audio.encoder?.close(); } catch { /* já fechado */ } },
+      abort() {  closed = true; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate(); try { audio.reader?.cancel(); } catch { /* já encerrado */ } for (const o of outs) { try { o.encoder?.close(); } catch { /* já fechado */ } if(dedicated){o.canvas?.close?.();o.canvas=null;for(const item of o.queue.splice(0))item.frame.close();} } try { audio.encoder?.close(); } catch { /* já fechado */ } },
       async stop() {
         
         if (!running) return; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate();
         try { await audio.reader?.cancel(); } catch { /* já encerrado */ }
-        for (const o of outs) { try { await o.encoder?.flush(); } catch { /* descartado */ } try { o.encoder?.close(); if(dedicated){o.canvas?.close?.();o.canvas=null;} } catch { /* já fechado */ } }
+        for (const o of outs) { try { await o.encoder?.flush(); } catch { /* descartado */ } try { o.encoder?.close(); } catch { /* já fechado */ } if(dedicated){o.canvas?.close?.();o.canvas=null;for(const item of o.queue.splice(0))item.frame.close();} }
         try { await audio.encoder?.flush(); } catch {}
         closed = true;
         try { audio.encoder?.close(); } catch { /* já fechado */ }
@@ -220,7 +227,7 @@
   function createDedicated(options) {
     const outputs = options.outputs;
     let worker, timer, ready = false, closed = false, inFlight = false, lastGeneration = -1;
-    let rejectStart, resolveStart, resolveStop, lastStats = {};
+    let rejectStart, resolveStart, resolveStop, abortTimer, lastStats = {}, pgmAt = performance.now(), pgmFrames = window.andromedaProgramFrames || 0;
     const received = new Map(outputs.map(o => [o.id, o]));
     const script = `
       importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
@@ -249,6 +256,7 @@
           else if (m.type === 'restart') session.restart(m.id);
           else if (m.type === 'key') session.requestKeyframe(m.id);
           else if (m.type === 'stop') { await session.stop(); postMessage({type:'stopped'}); }
+          else if (m.type === 'abort') { session?.abort(); postMessage({type:'aborted'}); }
         } catch(e) { postMessage({type:'error',message:e.message}); }
       };
     `;
@@ -262,7 +270,10 @@
       closed = true; ready = false;
       rejectStart?.(Error("Saída encerrada"));
       clearInterval(timer);
-      worker?.terminate();
+      if (worker) {
+        try { worker.postMessage({type:'abort'}); abortTimer = setTimeout(() => worker?.terminate(), 1500); }
+        catch { worker.terminate(); }
+      }
       resolveStop?.();
     }
     function capture() {
@@ -283,13 +294,18 @@
         try { worker = new Worker(url); } finally { URL.revokeObjectURL(url); }
         worker.onerror = e => fail(Error(e.message || 'Falha no processo de vídeo'));
         worker.onmessage = ({data:m}) => {
+          if (m.type === 'aborted') { clearTimeout(abortTimer); worker.terminate(); return; }
           if (closed) return;
           if (m.type === 'ready') { ready = true; resolveStart(); }
           else if (m.type === 'accepted') inFlight = false;
           else if (m.type === 'chunk') {
             try { received.get(m.id).onChunk(m.bytes); worker.postMessage({type:'ack',bytes:m.bytes.byteLength}); }
             catch(e) { fail(e); }
-          } else if (m.type === 'stats') { lastStats = m.stats; options.onStats?.(m.stats); }
+          } else if (m.type === 'stats') {
+            const at = performance.now(), frames = window.andromedaProgramFrames || 0;
+            lastStats = { ...m.stats, composedFps: (frames - pgmFrames) * 1000 / Math.max(1, at - pgmAt) };
+            pgmAt = at; pgmFrames = frames; options.onStats?.(lastStats);
+          }
           else if (m.type === 'error') fail(Error(m.message));
           else if (m.type === 'stopped') abort();
         };
@@ -330,9 +346,9 @@
       if (cancelled()) return { ok: false, cancelled: true };
       if (failure) return { ok: false, reason: failure.message, samples };
       const steady = samples.slice(-3), average = key => steady.reduce((sum, s) => sum + (s[key] || 0), 0) / Math.max(1, steady.length);
-      const fps = average('fps'), freshFps = average('freshFps');
-      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, samples,
-        reason: 'Teste 1080p30: codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
+      const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
+      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, samples,
+        reason: 'Teste 1080p30: codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps; composição ' + composedFps.toFixed(1) + ' fps.' };
     } catch (e) { return { ok: false, reason: e.message, samples }; }
     finally { session?.abort(); track?.stop(); }
   }
