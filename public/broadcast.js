@@ -327,13 +327,30 @@
       } else if (!fixed && engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
       if (fixed) {
         txStatus('Verificando PGM e codificador em '+outRes+'30 antes de abrir o envio…');
-        const outputs = [];
-        if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:model.bitrate * 1e6 });
-        if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
-        const check = await AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), cancelled:()=>epoch !== liveTx.epoch });
+        const testOutput = () => {
+          const outputs = [];
+          if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:model.bitrate * 1e6 });
+          if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
+          return AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), cancelled:()=>epoch !== liveTx.epoch });
+        };
+        let check = await testOutput();
         if (epoch !== liveTx.epoch || check.cancelled) return;
-        window.andromedaAudit?.(check.ok ? 'info' : 'error', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
+        window.andromedaAudit?.(check.ok ? 'info' : 'warn', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
+        if (!check.ok && outRes === '1080p' && needH && !needV) {
+          // Mantém a transmissão possível quando a máquina não sustenta 1080p.
+          // O operador vê a resolução real; nunca anunciamos 1080p para um sinal 720p.
+          [width,height]=[1280,720];outRes='720p';
+          for (const canvas of [hdBase,overlay,programOutput]) { canvas.width=width;canvas.height=height; }
+          routeProgramOutput();await new Promise(r=>setTimeout(r,500));
+          if (epoch !== liveTx.epoch) return;
+          txStatus('1080p não sustentou 30 fps. Testando saída em 720p30…');
+          check = await testOutput();
+          if (epoch !== liveTx.epoch || check.cancelled) return;
+          window.andromedaAudit?.(check.ok ? 'info' : 'error','teste-saida-dedicada',check.reason || 'Teste interrompido',{fps:check.fps,fpsPGM:check.freshFps});
+          if (check.ok) { writeCap('720p');liveTx.notice='Saída em 720p30: 1080p não sustentou 30 fps';log(liveTx.notice); }
+        }
         if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' A transmissão não foi aberta porque a saída não sustentou 30 fps.');
+        liveTx.outputResolution=outRes;
       }
       let stream = null, vStream = null;
       // Trecho navegador → serviço com folga de bitrate, para a codificação final não herdar perdas.
