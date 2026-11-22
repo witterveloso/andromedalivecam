@@ -116,9 +116,16 @@
       for (const o of outs) {
         if (!o.encoder) continue;
         // The first capture may arrive after audio/probing: do not replay a stale startup backlog.
-        const slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
+        let slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
         if (slot > target || (!dedicated && slot <= o.lastSlot)) continue;
-        if (dedicated && target - slot > 6) { fail('cadência', 'o codificador acumulou mais de 200 ms de atraso'); return; }
+        if (dedicated && target - slot > 6) {
+          // A brief scheduling pause must not abort the live. Skip stale clock slots;
+          // the qualification and live metrics still count the lost frames.
+          o.missed += target - slot;
+          o.lastSlot = target - 1;
+          o.dropped += target - slot;
+          slot = target;
+        }
         if (dedicated && o.queue.length && o.encoder.encodeQueueSize <= 3) {
           const item = o.queue.shift(); o.canvas?.close?.(); o.canvas = item.frame; o.generation = item.generation;
         }
