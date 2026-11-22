@@ -30,13 +30,13 @@ test('toda inserção direta no AR (GC, LOGO, JANELA e REGRESSIVA) entra e sai c
 test('o desenho da mesa é blindado: cada etapa isolada, o laço sempre se reagenda e as falhas vão para o diagnóstico', () => {
   const html = read('public/index.html'), render = html.slice(html.indexOf('function render(t)'), html.indexOf("$('#export').onclick"));
   for (const stage of ["'miniaturas'", "'preview'", "'PGM'", "'saída do AR'", "'medidores'"]) assert.ok(render.includes('guarded(' + stage), 'etapa ' + stage);
-  assert.match(render, /finally\{scheduleRender\(\)\}/, 'o laço se reagenda mesmo com exceção'); assert.match(html, /andromedaAudit\?\.\(kind==='falha'\?'error':'warn','desenho-'\+kind/);
+  assert.match(render, /finally\{directProgram=false;scheduleRender\(\)\}/, 'o laço se reagenda mesmo com exceção'); assert.match(html, /andromedaAudit\?\.\(kind==='falha'\?'error':'warn','desenho-'\+kind/);
   assert.match(html, /gap>1000\)noteRender\('tela principal'/, 'relógio fora da tela principal acusa travas'); assert.match(read('public/pgm-quality.js'), /pgm-economico/, 'PGM se rebaixa sozinho em PC fraco');
 });
 
 test('o monitor da tela nunca cresce: só a superfície HD, o overlay e a saída mudam de tamanho', () => {
   const html = read('public/index.html'), broadcast = read('public/broadcast.js'), effects = read('public/effects.js'), live = read('public/live-client.js');
-  assert.match(html, /const hdBase=document\.createElement\('canvas'\)/); assert.match(html, /function pgmBase\(\)\{return hdOn\?hdBase:\$\('#monProgram canvas'\)\}/);
+  assert.match(html, /const hdBase=document\.createElement\('canvas'\)/); assert.match(html, /function pgmBase\(\)\{return directProgram\?programOutput:hdOn\?hdBase:\$\('#monProgram canvas'\)\}/);
   assert.match(broadcast, /for \(const canvas of \[hdBase, overlay, programOutput\]\)/); assert.match(live, /\[hdBase,overlay,programOutput\]/); assert.match(effects, /const base=pgmBase\(\)/);
   assert.doesNotMatch(broadcast + live, /\[\$\('#monProgram canvas'\), overlay, programOutput\]|\[\$\('#monProgram canvas'\),overlay,programOutput\]/, 'o monitor da tela não é redimensionado pelo envio');
 });
@@ -50,8 +50,8 @@ test('regulador de carga: reduz a resolução sem encerrar o envio, o serviço r
 
 test('teste do computador antes de ir ao ar: mede os quadros por segundo no tamanho pedido, escolhe o primeiro que sustenta e lembra por 7 dias', () => {
   const b = read('public/broadcast.js'), e = read('public/engine.js');
-  assert.match(e, /async function benchmark\(/); assert.match(e, /return \{ probe, create, benchmark, supported: hasApi \}/); assert.match(e, /new VideoFrame\(canvas/);
-  assert.match(b, /AndromedaEngine\.benchmark\(\{ canvas: programOutput/); assert.match(b, /r\.fps >= 26 && desk >= 14/); assert.match(b, /7 \* 864e5/); assert.match(b, /\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]/);
+  assert.match(e, /async function benchmark\(/); assert.match(e, /return \{ probe, create, createDedicated, benchmark, qualify, supported: hasApi \}/); assert.match(e, /new VideoFrame\(canvas/);
+  assert.match(b, /AndromedaEngine\.benchmark\(\{ canvas: programOutput/); assert.match(b, /r\.fps >= 29 && desk >= 29/); assert.match(b, /7 \* 864e5/); assert.match(b, /\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]/);
   assert.match(b, /severe >= 3\) downshift\([^)]*\)?, false, 8000|severe >= 3\) downshift\('mais de um terço/, 'reação rápida a descartes fortes'); assert.match(b, /liveTx\.notice = sizeNote/, 'o aviso do tamanho não é apagado ao conectar');
   assert.match(read('public/index.html'), /master:q\('\.audio-master select'\)\?\.selectedIndex\?\?0/, 'salvamento de configurações à prova de painel ausente');
 });
