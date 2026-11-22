@@ -136,21 +136,22 @@
       }
     }
 
-    let statsTimer = null, last = { frames: 0, emitted: 0, repeated: 0, dropped: 0, at: 0 };
+    let statsTimer = null, last = { received: 0, frames: 0, emitted: 0, repeated: 0, dropped: 0, at: 0 };
     function stats() {
       const t = now(), dt = Math.max(1, t - last.at) / 1000;
       const sum = name => outs.reduce((n, o) => n + o[name], 0);
-      const frames = sum('frames'), emitted = sum('emitted'), repeated = sum('repeated'), dropped = sum('dropped');
+      const received = sum('nextGeneration'), frames = sum('frames'), emitted = sum('emitted'), repeated = sum('repeated'), dropped = sum('dropped');
       const s = {
+        receivedFps: dedicated ? Math.round((received - last.received) / dt / outs.length) : null,
         fps: Math.round((emitted - last.emitted) / dt / outs.length),
         submittedFps: Math.round((frames - last.frames) / dt / outs.length),
         freshFps: dedicated ? Math.round((frames - last.frames - repeated + last.repeated) / dt / outs.length) : null,
         repeated: repeated - last.repeated, repeatedTotal: repeated,
         dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
         latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))),
-        outputs: outs.map(o => ({ id: o.id, frames: o.frames, emitted: o.emitted, missed: o.missed, keys: o.keys, bytes: o.bytes, dropped: o.dropped, repeated: o.repeated, queueDropped: o.queueDropped }))
+        outputs: outs.map(o => ({ id: o.id, received: o.nextGeneration, frames: o.frames, emitted: o.emitted, missed: o.missed, keys: o.keys, bytes: o.bytes, dropped: o.dropped, repeated: o.repeated, queueDropped: o.queueDropped, encoderQueue: o.encoder?.encodeQueueSize || 0 }))
       };
-      last = { frames, emitted, repeated, dropped, at: t }; return s;
+      last = { received, frames, emitted, repeated, dropped, at: t }; return s;
     }
 
     return {
@@ -226,12 +227,23 @@
 
   function createDedicated(options) {
     const outputs = options.outputs;
-    let worker, timer, ready = false, closed = false, inFlight = 0, lastGeneration = -1;
+    let worker, ready = false, closed = false;
     let rejectStart, resolveStart, resolveStop, abortTimer, lastStats = {}, pgmAt = performance.now(), pgmFrames = window.andromedaProgramFrames || 0;
     const received = new Map(outputs.map(o => [o.id, o]));
+    const videoTracks = [];
     const script = `
       importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
-      let session, outstanding = 0;
+      let session, outstanding = 0, readers = [];
+      async function readVideo(id, readable) {
+        const reader = readable.getReader(); readers.push(reader);
+        try {
+          for (;;) {
+            const {value, done} = await reader.read();
+            if (done) break;
+            session.setFrame(id, value);
+          }
+        } catch(e) { postMessage({type:'error',message:'Captura do PGM ('+id+'): '+e.message}); }
+      }
       onmessage = async ({ data: m }) => {
         try {
           if (m.type === 'init') {
@@ -248,15 +260,13 @@
               onStats: stats => postMessage({type:'stats',stats})
             });
             await session.start();
+            for (const input of m.videos) readVideo(input.id, input.readable);
             postMessage({type:'ready'});
-          } else if (m.type === 'frames') {
-            for (const item of m.frames) session.setFrame(item.id, item.frame);
-            postMessage({type:'accepted'});
           } else if (m.type === 'ack') outstanding = Math.max(0, outstanding - m.bytes);
           else if (m.type === 'restart') session.restart(m.id);
           else if (m.type === 'key') session.requestKeyframe(m.id);
-          else if (m.type === 'stop') { await session.stop(); postMessage({type:'stopped'}); }
-          else if (m.type === 'abort') { session?.abort(); postMessage({type:'aborted'}); }
+          else if (m.type === 'stop') { await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); await session.stop(); postMessage({type:'stopped'}); }
+          else if (m.type === 'abort') { session?.abort(); await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); postMessage({type:'aborted'}); }
         } catch(e) { postMessage({type:'error',message:e.message}); }
       };
     `;
@@ -269,24 +279,12 @@
     function abort() {
       closed = true; ready = false;
       rejectStart?.(Error("Saída encerrada"));
-      clearInterval(timer);
-      window.andromedaFrameSinks?.delete(capture);
+      for (const track of videoTracks) track.stop();
       if (worker) {
         try { worker.postMessage({type:'abort'}); abortTimer = setTimeout(() => worker?.terminate(), 1500); }
         catch { worker.terminate(); }
       }
       resolveStop?.();
-    }
-    function capture() {
-      if (!ready || closed || inFlight >= 2) return;
-      const generation = window.andromedaProgramFrames || 0;
-      if (generation === lastGeneration) return;
-      const frames = [];
-      try {
-        for (const o of outputs) frames.push({id:o.id,frame:new VideoFrame(o.canvas,{timestamp:0})});
-        worker.postMessage({type:'frames',frames}, frames.map(x => x.frame));
-        inFlight++; lastGeneration = generation;
-      } catch(e) { frames.forEach(x => x.frame.close()); fail(e); }
     }
     return {
       async start() {
@@ -298,7 +296,6 @@
           if (m.type === 'aborted') { clearTimeout(abortTimer); worker.terminate(); return; }
           if (closed) return;
           if (m.type === 'ready') { ready = true; resolveStart(); }
-          else if (m.type === 'accepted') { inFlight = Math.max(0, inFlight - 1); capture(); }
           else if (m.type === 'chunk') {
             try { received.get(m.id).onChunk(m.bytes); worker.postMessage({type:'ack',bytes:m.bytes.byteLength}); }
             catch(e) { fail(e); }
@@ -312,13 +309,18 @@
         };
         const started = new Promise((resolve,reject) => {resolveStart=resolve;rejectStart=reject;});
         const audio = new MediaStreamTrackProcessor({track:options.audioTrack}).readable;
-        worker.postMessage({type:'init',audio,outputs:outputs.map(({id,width,height,bitrate})=>({id,width,height,bitrate})),avSyncMs:options.avSyncMs || 0},[audio]);
+        // The browser captures finished canvas frames. The transferable streams let
+        // the Worker read them without a full-size VideoFrame copy on the UI thread.
+        const videos = outputs.map(o => {
+          const track = o.canvas.captureStream(30).getVideoTracks()[0];
+          if (!track) throw Error('Captura do PGM indisponível para '+o.id);
+          videoTracks.push(track);
+          return {id:o.id,readable:new MediaStreamTrackProcessor({track}).readable};
+        });
+        worker.postMessage({type:'init',audio,videos,outputs:outputs.map(({id,width,height,bitrate})=>({id,width,height,bitrate})),avSyncMs:options.avSyncMs || 0},[audio,...videos.map(v=>v.readable)]);
         const timeout = setTimeout(() => fail(Error('Inicialização da saída excedeu 8 segundos')),8000);
         try { await started; } finally { clearTimeout(timeout); }
         if (closed) return;
-        // Capture at the completed PGM frame, without polling/ACK phase losses.
-        (window.andromedaFrameSinks ||= new Set()).add(capture);
-        capture(); timer = setInterval(capture, 34);
       },
       restart(id) { if (ready) worker.postMessage({type:'restart',id}); },
       requestKeyframe(id) { if (ready) worker.postMessage({type:'key',id}); },
@@ -326,7 +328,7 @@
       abort,
       async stop() {
         if (closed) return;
-        ready = false; clearInterval(timer); window.andromedaFrameSinks?.delete(capture);
+        ready = false; for (const track of videoTracks) track.stop();
         const stopped = new Promise(resolve => {resolveStop=resolve;});
         worker.postMessage({type:'stop'});
         const timeout = setTimeout(abort,3000);
@@ -350,11 +352,13 @@
       if (failure) return { ok: false, reason: failure.message, samples };
       const steady = samples.slice(-3), average = key => steady.reduce((sum, s) => sum + (s[key] || 0), 0) / Math.max(1, steady.length);
       const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
-      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, samples,
-        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : '1080p30') + ': codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps; composição ' + composedFps.toFixed(1) + ' fps.' };
+      const receivedFps = average('receivedFps'), submittedFps = average('submittedFps');
+      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, receivedFps, submittedFps, samples,
+        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : '1080p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
     } catch (e) { return { ok: false, reason: e.message, samples }; }
     finally { session?.abort(); track?.stop(); }
   }
 
   return { probe, create, createDedicated, benchmark, qualify, supported: hasApi };
 });
+
