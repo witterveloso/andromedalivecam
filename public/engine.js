@@ -52,7 +52,7 @@
     const MKV = (typeof AndromedaMkv !== 'undefined' ? AndromedaMkv : (typeof require === 'function' ? require('./mkvmux.js') : null));
     const fail = (where, e) => { if (failed) return; failed = true; try { onError(Error(where + ': ' + (e?.message || e))); } catch { /* o chamador decide */ } };
 
-    const outs = outputs.map(o => ({ ...o, lastOut: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
+    const outs = outputs.map(o => ({ ...o, lastOut: 0, emitted: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
 
     // O empacotador de cada saída só nasce quando o vídeo trouxe a descrição do H.264 e o áudio já disse seu formato.
     function ensureMux(o) {
@@ -73,7 +73,7 @@
           const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); const key = chunk.type === 'key', ms = chunk.timestamp / 1000 + videoShift;
           if (meta?.decoderConfig?.description) o.desc = new Uint8Array(meta.decoderConfig.description instanceof ArrayBuffer ? meta.decoderConfig.description : meta.decoderConfig.description.buffer.slice(meta.decoderConfig.description.byteOffset, meta.decoderConfig.description.byteOffset + meta.decoderConfig.description.byteLength));
           const t = o.sent.get(chunk.timestamp); if (t !== undefined) { o.sent.delete(chunk.timestamp); o.lat.push(now() - t); if (o.lat.length > 60) o.lat.shift(); }
-          o.lastOut = now(); if (key) o.keys++;
+          o.emitted++; o.lastOut = now(); if (key) o.keys++;
           if (!ensureMux(o)) { o.held.push({ data, ms, key }); if (o.held.length > 120) fail('vídeo', 'o áudio não chegou a tempo'); return; }
           pushVideo(o, data, ms, key);
         },
@@ -97,7 +97,8 @@
                 output: (chunk, meta) => {
                   if (!audio.desc && meta?.decoderConfig?.description) { const d = meta.decoderConfig.description; audio.desc = new Uint8Array(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); }
                   const bytes = new Uint8Array(chunk.byteLength); chunk.copyTo(bytes); const ms = audio.anchor + (chunk.timestamp - audio.firstTs) / 1000 + audioShift;
-                  audio.samples++; for (const o of outs) { if (o.mux) pushAudio(o, bytes, ms); else { audio.backlog.push({ data: bytes, ms }); if (audio.backlog.length > 200) audio.backlog.shift(); ensureMux(o); } }
+                  audio.samples++; audio.backlog.push({ data: bytes, ms }); if (audio.backlog.length > 200) audio.backlog.shift();
+                  for (const o of outs) { if (o.mux) pushAudio(o, bytes, ms); else ensureMux(o); }
                 },
                 error: e => fail('codificador de áudio', e),
               });
@@ -127,18 +128,19 @@
       }
     }
 
-    let statsTimer = null, last = { frames: 0, dropped: 0, at: 0 };
+    let statsTimer = null, last = { frames: 0, emitted: 0, dropped: 0, at: 0 };
     function stats() {
-      const t = now(), dt = Math.max(1, t - last.at) / 1000, frames = outs.reduce((a, o) => a + o.frames, 0), dropped = outs.reduce((a, o) => a + o.dropped, 0);
-      const s = { fps: Math.round((frames - last.frames) / dt / outs.length), dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
-        latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))), outputs: outs.map(o => ({ id: o.id, frames: o.frames, keys: o.keys, bytes: o.bytes, dropped: o.dropped })) };
-      last = { frames, dropped, at: t }; return s;
+      const t = now(), dt = Math.max(1, t - last.at) / 1000, frames = outs.reduce((a, o) => a + o.frames, 0), emitted = outs.reduce((a, o) => a + o.emitted, 0), dropped = outs.reduce((a, o) => a + o.dropped, 0);
+      const s = { fps: Math.round((emitted - last.emitted) / dt / outs.length), submittedFps: Math.round((frames - last.frames) / dt / outs.length), dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
+        latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))), outputs: outs.map(o => ({ id: o.id, frames: o.frames, emitted: o.emitted, keys: o.keys, bytes: o.bytes, dropped: o.dropped })) };
+      last = { frames, emitted, dropped, at: t }; return s;
     }
 
     return {
       async start() {
         if (running) return; running = true; failed = false; t0 = now(); last.at = t0;
         for (const o of outs) { o.config = null; for (const hw of ['prefer-hardware', 'prefer-software']) { for (const codec of profiles(o.height)) { const c = videoConfig(o, codec, hw); try { if ((await VideoEncoder.isConfigSupported(c)).supported) { o.config = c; break; } } catch { /* próximo */ } } if (o.config) break; } if (!o.config) throw Error('H.264 indisponível para ' + o.width + '×' + o.height + '.'); startVideo(o); }
+        t0 = now(); last.at = t0; // codec probing must not become an initial timestamp gap
         await startAudio();
         try { worker = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),' + Math.round(frameMs / 2) + ')'], { type: 'text/javascript' }))); worker.onmessage = tick; } catch { timer = setInterval(tick, Math.round(frameMs / 2)); }
         // Vigia: um codificador que deixa de entregar quadros não derruba a live, mas entrega a sessão ao plano B.
@@ -159,6 +161,7 @@
         if (!running) return; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate();
         try { await audio.reader?.cancel(); } catch { /* já encerrado */ }
         for (const o of outs) { try { await o.encoder?.flush(); } catch { /* descartado */ } try { o.encoder?.close(); } catch { /* já fechado */ } }
+        try { await audio.encoder?.flush(); } catch { /* descartado */ } closed = true;
         try { audio.encoder?.close(); } catch { /* já fechado */ }
       },
     };
