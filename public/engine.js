@@ -351,7 +351,7 @@
       const steady = samples.slice(-3), average = key => steady.reduce((sum, s) => sum + (s[key] || 0), 0) / Math.max(1, steady.length);
       const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
       return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, samples,
-        reason: 'Teste 1080p30: codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps; composição ' + composedFps.toFixed(1) + ' fps.' };
+        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : '1080p30') + ': codificador ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps; composição ' + composedFps.toFixed(1) + ' fps.' };
     } catch (e) { return { ok: false, reason: e.message, samples }; }
     finally { session?.abort(); track?.stop(); }
   }
