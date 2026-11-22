@@ -56,7 +56,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     });
   };
 
-  let finished = false;
+  let finished = false, receivedMedia = false;
   function finish() {
     if (finished) return; finished = true;
     clearInterval(watchdog);
@@ -83,7 +83,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
 
   const watchdog = setInterval(() => {
     if (stopping || !alive().length) return;
-    if (Date.now() - lastInput > 10000) { fail('O navegador parou de enviar o sinal. Transmissão encerrada.'); return; }
+    if (Date.now() - lastInput > (receivedMedia ? 10000 : 25000)) { fail(receivedMedia ? 'A captura parou de entregar pacotes ao codificador por 10 segundos.' : 'A captura do PGM não entregou o primeiro pacote ao codificador em 25 segundos.'); return; }
     for (const r of alive()) if (Date.now() - r.lastProgress > 30000) groupFailed(r, 'Sem progresso do codificador por 30 segundos. Confira a conexão e reinicie.');
   }, 1000);
   watchdog.unref?.();
@@ -193,8 +193,6 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     runners.set(group.id, r);
     if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
-    // Prioridade acima do normal: em computador apertado, quem disputa a CPU (navegador, antivírus) não deve atrasar o codificador.
-    try { if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL); } catch { /* sem permissão: segue com a prioridade normal */ }
     child.on('spawn', () => { r.ready = true; if (!restarted && [...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
     child.on('error', () => groupFailed(r, 'Não foi possível iniciar o FFmpeg. Execute o diagnóstico do pacote.'));
     child.stdin.on('error', () => { if (!stopping) died(r, 'Entrada do codificador interrompida.'); });
@@ -215,7 +213,21 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         const line = r.progress.slice(0, idx).trim(); r.progress = r.progress.slice(idx + 1);
         if (line.startsWith('dup_frames=')) { starving(r, Number(line.slice(11))); continue; }
         if (line.startsWith('out_time_us=')) { r.curOut = Number(line.slice(12)); continue; }
-        if (line === 'progress=continue') { load(r); if (broadcast?.engine === 'native' && Number.isFinite(r.curOut)) progressed(Math.round(r.curOut / 1e6 * 30)); continue; }
+        if (line === 'progress=continue') {
+          if (broadcast?.engine !== 'native') {
+            const now = Date.now(), prev = r.cadenceSample;
+            if (!prev || now - prev.at >= 15000) {
+              if (prev) {
+                const dt = (now - prev.at) / 1000;
+                audit.info('transmissao', 'cadencia-saida', 'Cadência medida na saída ' + group.aspect, {
+                  formato: group.aspect, fpsSaida: +((r.lastFrame - prev.frames) / dt).toFixed(1),
+                  repetidos: r.dups - prev.dups, segundos: +dt.toFixed(1)
+                });
+              }
+              r.cadenceSample = { at: now, frames: r.lastFrame, dups: r.dups };
+            }
+          }
+          load(r); if (broadcast?.engine === 'native' && Number.isFinite(r.curOut)) progressed(Math.round(r.curOut / 1e6 * 30)); continue; }
         if (!line.startsWith('frame=') || broadcast?.engine === 'native') continue; // com o vídeo apenas copiado o FFmpeg não conta quadros: o tempo de saída (a 30 q/s) faz o papel
         progressed(Number(line.slice(6)));
       }
@@ -248,6 +260,10 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       if (dual) { id = data[0] === 1 ? 'v' : 'h'; chunk = data.subarray(1); }
       const r = runners.get(id);
       if (!r || !r.ready || r.closed || r.failed) { send({ type: 'ack', bytes: data.length }); return; }
+      if (!r.receivedMedia && chunk.length) {
+        r.receivedMedia = receivedMedia = true;
+        audit.info('transmissao', 'primeiro-pacote', 'Primeiro pacote recebido da mesa', { formato: r.group.aspect, bytes: chunk.length, esperaMs: Date.now() - startedAt });
+      }
       if (r.awaitHeader) {
         // O Chrome costuma dividir o começo do WebM em pedaços pequenos (o 1º pode ter 1 byte): procura a assinatura do cabeçalho
         // (1A 45 DF A3) na sequência, inclusive entre dois pedaços, e só então começa a entregar dados ao codificador.
@@ -255,7 +271,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         if (at < 0) { r.headTail = joined.subarray(Math.max(0, joined.length - 3)); send({ type: 'ack', bytes: data.length }); return; }
         r.awaitHeader = false; r.headTail = null; chunk = joined.subarray(at);
       }
-      if (r.child.stdin.writableLength + chunk.length > MAX_QUEUE) { groupFailed(r, 'O codificador ' + r.group.aspect + ' não está acompanhando o sinal. Reduza a resolução e tente novamente.'); send({ type: 'ack', bytes: data.length }); return; }
+      const maxQueue = r.group.size === '3840:2160' ? 32 * 1024 * 1024 : MAX_QUEUE;
+      if (r.child.stdin.writableLength + chunk.length > maxQueue) { groupFailed(r, 'O codificador ' + r.group.aspect + ' não está acompanhando o sinal. Reduza a resolução e tente novamente.'); send({ type: 'ack', bytes: data.length }); return; }
       r.child.stdin.write(chunk, err => { if (err && !stopping) died(r, 'O codificador encerrou a entrada de vídeo.'); else if (!err) send({ type: 'ack', bytes: data.length }); });
       return;
     }

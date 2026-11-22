@@ -123,13 +123,13 @@
           </select>
         </label>
         <label>Quadros/s
-          <select id="fps"><option>30</option><option>24</option><option>60</option></select>
+          <select id="fps" disabled><option value="30">30</option></select>
         </label>
       </div>
       <label>Bitrate alvo (Mbps)
         <input id="bitrate" type="number" inputmode="decimal" min="1" max="25" step="0.5" value="3">
       </label>
-      <p class="hint">Os ajustes valem na hora, com a câmera ligada. Ao conectar, o perfil do convite da mesa é o ponto de partida. Referência: 1080p30 · 5 Mbps; 1080p60 · 8 Mbps; 4K30 · 16 Mbps. Se a rede apertar, o envio mantém os quadros por segundo e reduz a nitidez, para o movimento continuar fluido.</p>
+      <p class="hint">Os ajustes valem na hora, com a câmera ligada. Ao conectar, o perfil do convite da mesa é o ponto de partida. Referência: 1080p30 · 5 Mbps; 4K30 · 16 Mbps. Captura e envio limitados a 30 fps. O aparelho e a rede podem entregar menos; a taxa de captura indicada não garante a taxa recebida pela mesa.</p>
     </section>
 
     <section class="group">
