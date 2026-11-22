@@ -32,6 +32,11 @@ async function regressions(read, assert) {
  clock+=1000;let stats=session.stats();assert.equal(stats.outputs[0].emitted,1);
  deliver=false;clock+=34;tick();stats=session.stats();assert.equal(stats.fps,0);assert(stats.submittedFps>0);
  await session.stop();assert.equal(flushes,1);assert.equal(failures.length,0);
+ const timerCount=timers.length;let unblock;
+ VE.isConfigSupported=()=>new Promise(resolve=>{unblock=resolve;});
+ const cancelled=api.create({audioTrack:{},now:()=>clock,outputs:[{id:'h',canvas:{},width:1920,height:1080,bitrate:5000000,onChunk(){}}]});
+ const starting=cancelled.start();cancelled.abort();unblock({supported:true});await starting;
+ assert.equal(timers.length,timerCount);
  assert.equal(read('docs/cam.js'),read('public/cam/cam.js'));
  assert.equal(read('docs/index.html'),read('public/cam/index.html'));
  assert.equal(read('docs/optics.js'),read('public/cam/optics.js'));
