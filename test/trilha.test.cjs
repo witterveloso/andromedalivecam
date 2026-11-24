@@ -62,7 +62,7 @@ test('o serviço entrega áudio de um endereço (com Range e lista .pls) e recus
 
 test('a mesa carrega a trilha e liga atalhos, comandos e controle remoto', () => {
   const html = read('public/index.html'), server = read('server.cjs'), commands = read('public/commands.js'), desk = read('public/remote-desk.js');
-  assert.ok(html.indexOf('/slides.js') < html.indexOf('/trilha.js') && html.indexOf('/trilha.js') < html.indexOf('/workspace-custom.js'));
+  assert.ok(html.indexOf('/rundown.js') < html.indexOf('/trilha.js') && html.indexOf('/trilha.js') < html.indexOf('/workspace-custom.js'));
   assert.match(server, /'\/trilha\.js':'trilha\.js'/);
   for (const id of ['trilha', 'trilhanext']) assert.match(commands, new RegExp("id: '" + id + "'"));
   assert.match(commands, /id: 'trilha', label: [^\n]*key: 'T'/);

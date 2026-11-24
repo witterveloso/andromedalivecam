@@ -23,7 +23,7 @@
   const hasApi = () => typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && typeof AudioData !== 'undefined' && typeof MediaStreamTrackProcessor !== 'undefined';
 
   // Perfis em ordem de preferência. O nível acompanha a resolução (3.1 até 720p, 4.0 em 1080p).
-  const profiles = height => { const level = height > 720 ? '28' : '1f'; return ['64', '4d', '42'].map(p => 'avc1.' + p + '00' + level); };
+  const profiles = (width, height) => { const blocks = Math.ceil(width / 16) * Math.ceil(height / 16); const level = blocks > 8192 ? '33' : blocks > 3600 ? '28' : '1f'; return ['64', '4d', '42'].map(p => 'avc1.' + p + '00' + level); };
   const videoConfig = (o, codec, hardwareAcceleration) => ({ codec, width: o.width, height: o.height, bitrate: Math.round(o.bitrate), framerate: FPS, bitrateMode: 'constant', latencyMode: 'realtime', hardwareAcceleration, avc: { format: 'avc' } });
 
   // Descobre, neste computador, o que dá para usar. Nunca lança: devolve { ok:false, reason } para o plano B.
@@ -32,7 +32,7 @@
     if (!hasApi()) return { ok: false, reason: 'Este navegador não oferece o codificador de vídeo e áudio necessário (WebCodecs).' };
     let found = null;
     for (const hw of ['prefer-hardware', 'prefer-software']) {
-      for (const codec of profiles(need.height)) {
+      for (const codec of profiles(need.width, need.height)) {
         try { const r = await VideoEncoder.isConfigSupported(videoConfig(need, codec, hw)); if (r.supported) { found = { codec, hardware: hw === 'prefer-hardware', config: r.config }; break; } } catch { /* tenta o próximo */ }
       }
       if (found) break;
@@ -43,7 +43,7 @@
     return { ok: true, hardware: found.hardware, codec: found.codec };
   }
 
-  function create({ audioTrack, outputs, avSyncMs = 0, onError = () => {}, onStats = () => {}, now = () => performance.now() }) {
+  function create({ audioTrack, audioReadable, dedicated = false, outputs, avSyncMs = 0, onError = () => {}, onStats = () => {}, now = () => performance.now() }) {
     if (!outputs?.length) throw Error('Nenhuma saída configurada.');
     const frameMs = 1000 / FPS, keySlots = Math.round(KEY_MS / frameMs);
     const audioShift = avSyncMs > 0 ? avSyncMs : 0, videoShift = avSyncMs < 0 ? -avSyncMs : 0; // só o lado adiantado recebe atraso
@@ -52,7 +52,7 @@
     const MKV = (typeof AndromedaMkv !== 'undefined' ? AndromedaMkv : (typeof require === 'function' ? require('./mkvmux.js') : null));
     const fail = (where, e) => { if (failed) return; failed = true; try { onError(Error(where + ': ' + (e?.message || e))); } catch { /* o chamador decide */ } };
 
-    const outs = outputs.map(o => ({ ...o, lastOut: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
+    const outs = outputs.map(o => ({ ...o, generation: 0, nextGeneration: 0, queue: [], queueDropped: 0, encodedGeneration: -1, repeated: 0, lastOut: 0, encoder: null, mux: null, desc: null, lastSlot: -1, lastKeySlot: -1e9, forceKey: true, held: [], frames: 0, emitted: 0, missed: 0, dropped: 0, keys: 0, bytes: 0, lat: [], sent: new Map() }));
 
     // O empacotador de cada saída só nasce quando o vídeo trouxe a descrição do H.264 e o áudio já disse seu formato.
     function ensureMux(o) {
@@ -73,7 +73,7 @@
           const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); const key = chunk.type === 'key', ms = chunk.timestamp / 1000 + videoShift;
           if (meta?.decoderConfig?.description) o.desc = new Uint8Array(meta.decoderConfig.description instanceof ArrayBuffer ? meta.decoderConfig.description : meta.decoderConfig.description.buffer.slice(meta.decoderConfig.description.byteOffset, meta.decoderConfig.description.byteOffset + meta.decoderConfig.description.byteLength));
           const t = o.sent.get(chunk.timestamp); if (t !== undefined) { o.sent.delete(chunk.timestamp); o.lat.push(now() - t); if (o.lat.length > 60) o.lat.shift(); }
-          o.lastOut = now(); if (key) o.keys++;
+          o.emitted++; o.lastOut = now(); if (key) o.keys++;
           if (!ensureMux(o)) { o.held.push({ data, ms, key }); if (o.held.length > 120) fail('vídeo', 'o áudio não chegou a tempo'); return; }
           pushVideo(o, data, ms, key);
         },
@@ -83,7 +83,7 @@
     }
 
     async function startAudio() {
-      const reader = new MediaStreamTrackProcessor({ track: audioTrack }).readable.getReader(); audio.reader = reader;
+      const reader = (audioReadable || new MediaStreamTrackProcessor({ track: audioTrack }).readable).getReader(); audio.reader = reader;
       (async () => {
         try {
           for (;;) {
@@ -91,20 +91,20 @@
             if (!audio.encoder) {
               // Formato real do mixer: 48 kHz estéreo (a mesa abre o mixer assim); outro formato é recusado aqui, e o plano B assume.
               const cfg = { codec: 'opus', sampleRate: data.sampleRate, numberOfChannels: data.numberOfChannels, bitrate: AUDIO_BITRATE, opus: { frameDuration: 20000, application: 'audio', signal: 'music' } };
-              const sup = await AudioEncoder.isConfigSupported(cfg).catch(() => ({ supported: false })); if (!sup.supported) { data.close(); fail('áudio', 'formato ' + data.sampleRate + ' Hz × ' + data.numberOfChannels + ' não suportado pelo Opus'); return; }
+              const sup = await AudioEncoder.isConfigSupported(cfg).catch(() => ({ supported: false })); if (closed || !running) { data.close(); return; } if (!sup.supported) { data.close(); fail('áudio', 'formato ' + data.sampleRate + ' Hz × ' + data.numberOfChannels + ' não suportado pelo Opus'); return; }
               audio.cfg = cfg; audio.anchor = now() - t0 - data.duration / 1000; audio.firstTs = data.timestamp;
               audio.encoder = new AudioEncoder({
                 output: (chunk, meta) => {
                   if (!audio.desc && meta?.decoderConfig?.description) { const d = meta.decoderConfig.description; audio.desc = new Uint8Array(d instanceof ArrayBuffer ? d : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength)); }
                   const bytes = new Uint8Array(chunk.byteLength); chunk.copyTo(bytes); const ms = audio.anchor + (chunk.timestamp - audio.firstTs) / 1000 + audioShift;
-                  audio.samples++; for (const o of outs) { if (o.mux) pushAudio(o, bytes, ms); else { audio.backlog.push({ data: bytes, ms }); if (audio.backlog.length > 200) audio.backlog.shift(); ensureMux(o); } }
+                  audio.samples++; audio.backlog.push({data:bytes,ms}); if(audio.backlog.length>200)audio.backlog.shift(); for(const o of outs){if(o.mux)pushAudio(o,bytes,ms);else ensureMux(o);}
                 },
                 error: e => fail('codificador de áudio', e),
               });
               audio.encoder.configure(cfg);
             }
             if (audio.encoder.encodeQueueSize > 50) { audio.dropped++; data.close(); continue; }
-            audio.encoder.encode(data); data.close();
+            try { audio.encoder.encode(data); } finally { data.close(); }
           }
         } catch (e) { if (running) fail('captura de áudio', e); }
       })();
@@ -112,35 +112,62 @@
 
     function tick() {
       if (!running || failed) return;
-      const elapsed = now() - t0, slot = Math.round(elapsed / frameMs);
+      const elapsed = now() - t0, target = Math.floor(elapsed / frameMs);
       for (const o of outs) {
-        if (!o.encoder || slot <= o.lastSlot) continue;
+        if (!o.encoder) continue;
+        // The first capture may arrive after audio/probing: do not replay a stale startup backlog.
+        let slot = dedicated && o.lastSlot >= 0 ? o.lastSlot + 1 : target;
+        if (slot > target || (!dedicated && slot <= o.lastSlot)) continue;
+        if (dedicated && target - slot > 6) {
+          // Resume at the live edge after a scheduler stall. Audio uses the same clock.
+          slot = target;
+          o.forceKey = true;
+          while (o.queue.length > 1) { o.queue.shift().frame.close(); o.queueDropped++; }
+        }
+        if (dedicated && o.queue.length && o.encoder.encodeQueueSize <= 3) {
+          const item = o.queue.shift(); o.canvas?.close?.(); o.canvas = item.frame; o.generation = item.generation;
+        }
+        if (!o.canvas) continue;
+        if (o.lastSlot >= 0) o.missed += Math.max(0, slot-o.lastSlot-1);
         o.lastSlot = slot;
         // Fila do codificador cheia = computador sem fôlego: descarta este quadro em vez de acumular atraso.
-        if (o.encoder.encodeQueueSize > 3) { o.dropped++; continue; }
+        if (o.encoder.encodeQueueSize > 3) { o.dropped++; o.forceKey = true; continue; }
         const ts = Math.round(slot * frameMs * 1000);
-        let frame; try { frame = new VideoFrame(o.canvas, { timestamp: ts }); } catch (e) { fail('captura de vídeo (' + o.id + ')', e); return; }
+        let frame; try { frame = new VideoFrame(o.canvas, { timestamp: ts, duration: Math.round(1000000 / FPS) }); } catch (e) { fail('captura de vídeo (' + o.id + ')', e); return; }
         const key = o.forceKey || slot - o.lastKeySlot >= keySlots;
         if (key) { o.lastKeySlot = slot; o.forceKey = false; }
         o.sent.set(ts, now()); if (o.sent.size > 120) o.sent.delete(o.sent.keys().next().value);
-        try { o.encoder.encode(frame, { keyFrame: key }); o.frames++; } catch (e) { fail('codificador de vídeo (' + o.id + ')', e); } finally { frame.close(); }
+        try { o.encoder.encode(frame, { keyFrame: key }); o.frames++; if(dedicated && o.encodedGeneration === o.generation)o.repeated++; o.encodedGeneration=o.generation; } catch (e) { fail('codificador de vídeo (' + o.id + ')', e); } finally { frame.close(); }
       }
     }
 
-    let statsTimer = null, last = { frames: 0, dropped: 0, at: 0 };
+    let statsTimer = null, last = { received: 0, frames: 0, emitted: 0, repeated: 0, dropped: 0, at: 0 };
     function stats() {
-      const t = now(), dt = Math.max(1, t - last.at) / 1000, frames = outs.reduce((a, o) => a + o.frames, 0), dropped = outs.reduce((a, o) => a + o.dropped, 0);
-      const s = { fps: Math.round((frames - last.frames) / dt / outs.length), dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
-        latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))), outputs: outs.map(o => ({ id: o.id, frames: o.frames, keys: o.keys, bytes: o.bytes, dropped: o.dropped })) };
-      last = { frames, dropped, at: t }; return s;
+      const t = now(), dt = Math.max(1, t - last.at) / 1000;
+      const sum = name => outs.reduce((n, o) => n + o[name], 0);
+      const received = sum('nextGeneration'), frames = sum('frames'), emitted = sum('emitted'), repeated = sum('repeated'), dropped = sum('dropped');
+      const s = {
+        receivedFps: dedicated ? Math.round((received - last.received) / dt / outs.length) : null,
+        fps: Math.round((emitted - last.emitted) / dt / outs.length),
+        submittedFps: Math.round((frames - last.frames) / dt / outs.length),
+        freshFps: dedicated ? Math.round((frames - last.frames - repeated + last.repeated) / dt / outs.length) : null,
+        repeated: repeated - last.repeated, repeatedTotal: repeated,
+        dropped: dropped - last.dropped, droppedTotal: dropped, audioPackets: audio.samples,
+        latencyMs: Math.round(Math.max(0, ...outs.map(o => o.lat.length ? o.lat.reduce((a, b) => a + b, 0) / o.lat.length : 0))),
+        outputs: outs.map(o => ({ id: o.id, received: o.nextGeneration, frames: o.frames, emitted: o.emitted, missed: o.missed, keys: o.keys, bytes: o.bytes, dropped: o.dropped, repeated: o.repeated, queueDropped: o.queueDropped, encoderQueue: o.encoder?.encodeQueueSize || 0 }))
+      };
+      last = { received, frames, emitted, repeated, dropped, at: t }; return s;
     }
 
     return {
       async start() {
-        if (running) return; running = true; failed = false; t0 = now(); last.at = t0;
-        for (const o of outs) { o.config = null; for (const hw of ['prefer-hardware', 'prefer-software']) { for (const codec of profiles(o.height)) { const c = videoConfig(o, codec, hw); try { if ((await VideoEncoder.isConfigSupported(c)).supported) { o.config = c; break; } } catch { /* próximo */ } } if (o.config) break; } if (!o.config) throw Error('H.264 indisponível para ' + o.width + '×' + o.height + '.'); startVideo(o); }
+        if (closed) throw Error('Saída encerrada'); if (running) return; running = true; failed = false; t0 = now(); last.at = t0;
+        for (const o of outs) { o.config = null; for (const hw of ['prefer-hardware', 'prefer-software']) { for (const codec of profiles(o.width, o.height)) { const c = videoConfig(o, codec, hw); try { if ((await VideoEncoder.isConfigSupported(c)).supported) { o.config = c; break; } if (closed || !running) return; } catch { /* próximo */ } } if (o.config) break; } if (closed || !running) return; if (!o.config) throw Error('H.264 indisponível para ' + o.width + '×' + o.height + '.'); startVideo(o); }
+        if (closed || !running) return;
+        t0 = now(); last.at = t0;
         await startAudio();
-        try { worker = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),' + Math.round(frameMs / 2) + ')'], { type: 'text/javascript' }))); worker.onmessage = tick; } catch { timer = setInterval(tick, Math.round(frameMs / 2)); }
+        if (closed) return;
+        timer = setInterval(tick, dedicated ? 4 : Math.round(frameMs / 2));
         // Vigia: um codificador que deixa de entregar quadros não derruba a live, mas entrega a sessão ao plano B.
         statsTimer = setInterval(() => {
           if (!running) return; const t = now();
@@ -148,17 +175,28 @@
           try { onStats(stats()); } catch { /* informativo */ }
         }, 1000);
       },
+      setFrame(id, frame) {
+        const o = outs.find(o => o.id === id);
+        if (!o || !running) { frame.close(); return; }
+        // Two captures absorb scheduling jitter between the UI and encoder clocks (<=67 ms).
+        // Discard only the oldest pending frame when capture genuinely outruns output.
+        o.queue.push({ frame, generation: ++o.nextGeneration });
+        while (o.queue.length > 2) { o.queue.shift().frame.close(); o.queueDropped++; }
+      },
       // O FFmpeg do serviço foi reiniciado: cabeçalho novo e um quadro-chave logo, para a imagem voltar sem esperar 2 s.
       restart(id) { const o = outs.find(x => x.id === id); if (!o || !o.mux) return; emit(o, o.mux.restart()); o.forceKey = true; },
       requestKeyframe(id) { for (const o of outs) if (!id || o.id === id) o.forceKey = true; },
       stats,
       get failed() { return failed; },
       // Encerramento sem descarregar nada (falha ou troca de motor): nenhum pacote a mais sai daqui.
-      abort() { closed = true; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate(); try { audio.reader?.cancel(); } catch { /* já encerrado */ } for (const o of outs) { try { o.encoder?.close(); } catch { /* já fechado */ } } try { audio.encoder?.close(); } catch { /* já fechado */ } },
+      abort() {  closed = true; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate(); try { audio.reader?.cancel(); } catch { /* já encerrado */ } for (const o of outs) { try { o.encoder?.close(); } catch { /* já fechado */ } if(dedicated){o.canvas?.close?.();o.canvas=null;for(const item of o.queue.splice(0))item.frame.close();} } try { audio.encoder?.close(); } catch { /* já fechado */ } },
       async stop() {
+        
         if (!running) return; running = false; clearInterval(statsTimer); clearInterval(timer); worker?.terminate();
         try { await audio.reader?.cancel(); } catch { /* já encerrado */ }
-        for (const o of outs) { try { await o.encoder?.flush(); } catch { /* descartado */ } try { o.encoder?.close(); } catch { /* já fechado */ } }
+        for (const o of outs) { try { await o.encoder?.flush(); } catch { /* descartado */ } try { o.encoder?.close(); } catch { /* já fechado */ } if(dedicated){o.canvas?.close?.();o.canvas=null;for(const item of o.queue.splice(0))item.frame.close();} }
+        try { await audio.encoder?.flush(); } catch {}
+        closed = true;
         try { audio.encoder?.close(); } catch { /* já fechado */ }
       },
     };
@@ -170,7 +208,7 @@
     if (!hasApi() || !canvas) return { ok: false, reason: 'sem WebCodecs' };
     const o = { width, height, bitrate }; let config = null, hardware = false;
     for (const hw of ['prefer-hardware', 'prefer-software']) {
-      for (const codec of profiles(height)) { try { const r = await VideoEncoder.isConfigSupported(videoConfig(o, codec, hw)); if (r.supported) { config = r.config; hardware = hw === 'prefer-hardware'; break; } } catch { /* tenta o próximo */ } }
+      for (const codec of profiles(width, height)) { try { const r = await VideoEncoder.isConfigSupported(videoConfig(o, codec, hw)); if (r.supported) { config = r.config; hardware = hw === 'prefer-hardware'; break; } } catch { /* tenta o próximo */ } }
       if (config) break;
     }
     if (!config) return { ok: false, reason: 'sem codificador H.264' };
@@ -192,5 +230,150 @@
     return { ok: !failed, fps: Math.round(outAfter / secs * 10) / 10, skipped, hardware, width, height };
   }
 
-  return { probe, create, benchmark, supported: hasApi };
+  function createDedicated(options) {
+    const outputs = options.outputs;
+    let worker, ready = false, closed = false;
+    let rejectStart, resolveStart, resolveStop, abortTimer, lastStats = {}, pgmAt = performance.now(), pgmFrames = window.andromedaProgramFrames || 0;
+    const received = new Map(outputs.map(o => [o.id, o]));
+    const videoTracks = [];
+    const frameSinks = new Set();
+    const script = `
+      importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
+      let session, outstanding = 0, readers = [];
+      async function readVideo(id, readable) {
+        const reader = readable.getReader(); readers.push(reader);
+        try {
+          for (;;) {
+            const {value, done} = await reader.read();
+            if (done) break;
+            session.setFrame(id, value);
+          }
+        } catch(e) { postMessage({type:'error',message:'Captura do PGM ('+id+'): '+e.message}); }
+      }
+      onmessage = async ({ data: m }) => {
+        try {
+          if (m.type === 'init') {
+            session = AndromedaEngine.create({
+              audioReadable: m.audio, dedicated: true, outputs: m.outputs.map(o => ({...o, canvas: null,
+                onChunk(bytes) {
+                  outstanding += bytes.byteLength;
+                  if (outstanding > 6 * 1024 * 1024) throw Error('Fila de saída excedeu 6 MB');
+                  postMessage({type:'chunk',id:o.id,bytes}, [bytes.buffer]);
+                }
+              })),
+              avSyncMs: m.avSyncMs,
+              onError: e => postMessage({type:'error',message:e.message}),
+              onStats: stats => postMessage({type:'stats',stats})
+            });
+            await session.start();
+            for (const input of m.videos) readVideo(input.id, input.readable);
+            postMessage({type:'ready'});
+          } else if (m.type === 'ack') outstanding = Math.max(0, outstanding - m.bytes);
+          else if (m.type === 'restart') session.restart(m.id);
+          else if (m.type === 'key') session.requestKeyframe(m.id);
+          else if (m.type === 'stop') { await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); await session.stop(); postMessage({type:'stopped'}); }
+          else if (m.type === 'abort') { session?.abort(); await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); postMessage({type:'aborted'}); }
+        } catch(e) { postMessage({type:'error',message:e.message}); }
+      };
+    `;
+    function fail(error) {
+      if (closed) return;
+      rejectStart?.(error);
+      abort();
+      options.onError?.(error);
+    }
+    function abort() {
+      closed = true; ready = false;
+      rejectStart?.(Error("Saída encerrada"));
+      for (const sink of frameSinks) window.andromedaFrameSinks?.delete(sink);
+      frameSinks.clear();
+      for (const track of videoTracks) track.stop();
+      if (worker) {
+        try { worker.postMessage({type:'abort'}); abortTimer = setTimeout(() => worker?.terminate(), 1500); }
+        catch { worker.terminate(); }
+      }
+      resolveStop?.();
+    }
+    return {
+      async start() {
+        if (closed) throw Error('Saída encerrada');
+        const url = URL.createObjectURL(new Blob([script], {type:'text/javascript'}));
+        try { worker = new Worker(url); } finally { URL.revokeObjectURL(url); }
+        worker.onerror = e => fail(Error(e.message || 'Falha no processo de vídeo'));
+        worker.onmessage = ({data:m}) => {
+          if (m.type === 'aborted') { clearTimeout(abortTimer); worker.terminate(); return; }
+          if (closed) return;
+          if (m.type === 'ready') { ready = true; resolveStart(); }
+          else if (m.type === 'chunk') {
+            try { received.get(m.id).onChunk(m.bytes); worker.postMessage({type:'ack',bytes:m.bytes.byteLength}); }
+            catch(e) { fail(e); }
+          } else if (m.type === 'stats') {
+            const at = performance.now(), frames = window.andromedaProgramFrames || 0;
+            lastStats = { ...m.stats, composedFps: (frames - pgmFrames) * 1000 / Math.max(1, at - pgmAt) };
+            pgmAt = at; pgmFrames = frames; options.onStats?.(lastStats);
+          }
+          else if (m.type === 'error') fail(Error(m.message));
+          else if (m.type === 'stopped') abort();
+        };
+        const started = new Promise((resolve,reject) => {resolveStart=resolve;rejectStart=reject;});
+        const audio = new MediaStreamTrackProcessor({track:options.audioTrack}).readable;
+        // The browser captures finished canvas frames. The transferable streams let
+        // the Worker read them without a full-size VideoFrame copy on the UI thread.
+        const videos = outputs.map(o => {
+          const track = o.canvas.captureStream(0).getVideoTracks()[0];
+          if (!track) throw Error('Captura do PGM indisponível para '+o.id);
+          videoTracks.push(track);
+          const sink = () => track.requestFrame();
+          frameSinks.add(sink);
+          (window.andromedaFrameSinks ||= new Set()).add(sink);
+          sink(); // Primeiro quadro, antes do próximo desenho da mesa.
+          return {id:o.id,readable:new MediaStreamTrackProcessor({track}).readable};
+        });
+        worker.postMessage({type:'init',audio,videos,outputs:outputs.map(({id,width,height,bitrate})=>({id,width,height,bitrate})),avSyncMs:options.avSyncMs || 0},[audio,...videos.map(v=>v.readable)]);
+        const timeout = setTimeout(() => fail(Error('Inicialização da saída excedeu 8 segundos')),8000);
+        try { await started; } finally { clearTimeout(timeout); }
+        if (closed) return;
+      },
+      restart(id) { if (ready) worker.postMessage({type:'restart',id}); },
+      requestKeyframe(id) { if (ready) worker.postMessage({type:'key',id}); },
+      stats() { return lastStats; },
+      abort,
+      async stop() {
+        if (closed) return;
+        ready = false;
+        for (const sink of frameSinks) window.andromedaFrameSinks?.delete(sink);
+        frameSinks.clear();
+        for (const track of videoTracks) track.stop();
+        const stopped = new Promise(resolve => {resolveStop=resolve;});
+        worker.postMessage({type:'stop'});
+        const timeout = setTimeout(abort,3000);
+        try { await stopped; } finally {clearTimeout(timeout);}
+      }
+    };
+  }
+
+  // Exercise the same dedicated path before opening the live network/disk sinks.
+  // This measures current PGM production, not just encoder configuration support.
+  async function qualify({ audioTrack, outputs, avSyncMs = 0, cancelled = () => false, ms = 4200 }) {
+    const samples = []; let failure = null, session, track;
+    try {
+      track = audioTrack.clone();
+      session = createDedicated({ audioTrack: track, outputs: outputs.map(o => ({ ...o, onChunk() {} })), avSyncMs,
+        onError: e => { failure = e; }, onStats: s => samples.push(s) });
+      await session.start();
+      const end = performance.now() + ms;
+      while (performance.now() < end && !failure && !cancelled()) await new Promise(r => setTimeout(r, 100));
+      if (cancelled()) return { ok: false, cancelled: true };
+      if (failure) return { ok: false, reason: failure.message, samples };
+      const steady = samples.slice(-3), average = key => steady.reduce((sum, s) => sum + (s[key] || 0), 0) / Math.max(1, steady.length);
+      const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
+      const receivedFps = average('receivedFps'), submittedFps = average('submittedFps');
+      return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, receivedFps, submittedFps, samples,
+        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : outputs[0]?.width === 1920 ? '1080p30' : outputs[0]?.width === 1280 ? '720p30' : '540p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
+    } catch (e) { return { ok: false, reason: e.message, samples }; }
+    finally { session?.abort(); track?.stop(); }
+  }
+
+  return { probe, create, createDedicated, benchmark, qualify, supported: hasApi };
 });
+

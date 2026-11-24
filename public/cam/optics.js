@@ -220,8 +220,8 @@
       schedule();
     };
     const schedule = () => { if (stopped) return; if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(draw); else requestAnimationFrame(draw); };
-    // Sem taxa fixa: cada quadro desenhado vira um quadro enviado.
-    const track = canvas.captureStream().getVideoTracks()[0];
+    // A saída processada também respeita o limite de 30 fps.
+    const track = canvas.captureStream(30).getVideoTracks()[0];
     canvas.hidden = false; document.body.dataset.optics = 'digital'; schedule();
     return {
       track, frames: () => frames, shake: () => shake,
