@@ -246,7 +246,9 @@
           for (;;) {
             const {value, done} = await reader.read();
             if (done) break;
-            session.setFrame(id, value);
+            // Todo quadro lido precisa ser fechado: sem sessão (ainda iniciando ou já encerrada) ou com erro na entrega, fecha aqui.
+            if (!session) { value.close(); continue; }
+            try { session.setFrame(id, value); } catch (e) { try { value.close(); } catch {} throw e; }
           }
         } catch(e) { postMessage({type:'error',message:'Captura do PGM ('+id+'): '+e.message}); }
       }

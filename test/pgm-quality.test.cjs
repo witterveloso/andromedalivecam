@@ -73,3 +73,8 @@ test('posições 1 a 4 no rodapé de cada câmera: clique chama a posição daqu
   assert.match(k, /function cancelGlide\(slot = camCtl\.slot\)/, 'um movimento suave por câmera'); assert.match(t, /camCtl\.glides\?\.has\(s\.i\)/);
   assert.match(css, /\.cell-presets \{ position: absolute; right: 42px; bottom: 6px/); assert.match(css, /@container \(max-width: 300px\) \{ \.cell-presets \{ right: auto; left: 6px; bottom: 34px; \} \}/);
 });
+
+test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
+  const e = read('public/engine.js');
+  assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);
+});
