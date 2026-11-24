@@ -65,13 +65,10 @@ test('sem a opção 720p na transmissão, no convite da câmera e no app da câm
   assert.equal(read('public/cam/index.html'), page); assert.equal(read('public/cam/cam.js'), cam);
 });
 
-test('posições 1 a 4 no rodapé de cada câmera: clique chama a posição daquela câmera, dois cliques abrem o Controle de câmera em GRAVAR', () => {
-  const c = read('public/commands.js'), k = read('public/camctl.js'), css = read('public/andromeda-ui.css'), t = read('public/tracking.js');
-  assert.match(c, /make\('div', 'cell-presets'\)/); assert.match(c, /for \(let n = 0; n < 4; n\+\+\)/); assert.match(c, /P\.recallFor\(slot, n\)/); assert.match(c, /P\.editFor\(slot, n\); openCamCtl\(\)/);
-  assert.match(c, /setTimeout\(\(\) => \{ timer = null; callPreset\(slot, n\); \}, 260\)/, 'clique simples espera o duplo clique');
-  assert.match(k, /recallFor: \(slot, n\) => recallPreset\(n, camCtl\.glideSeconds, slot\)/); assert.match(k, /function camCtlSend\(change, slot = camCtl\.slot\)/, 'cada câmera recebe os seus comandos');
-  assert.match(k, /function cancelGlide\(slot = camCtl\.slot\)/, 'um movimento suave por câmera'); assert.match(t, /camCtl\.glides\?\.has\(s\.i\)/);
-  assert.match(css, /\.cell-presets \{ position: absolute; right: 42px; bottom: 6px/); assert.match(css, /@container \(max-width: 300px\) \{ \.cell-presets \{ right: auto; left: 6px; bottom: 34px; \} \}/);
+test('0.27.5: sem botões de posição no rodapé das câmeras (poluíam o quadro); as 6 posições continuam no Controle de câmera', () => {
+  const c = read('public/commands.js'), css = read('public/andromeda-ui.css'), html = read('public/index.html'), k = read('public/camctl.js');
+  assert.doesNotMatch(c, /cell-preset/); assert.doesNotMatch(css, /\.cell-preset/);
+  assert.match(html + k, /camCtlPresets/, 'o banco de posições do painel continua');
 });
 
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {

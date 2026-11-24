@@ -425,44 +425,6 @@
     });
     function paintModes() { for (const [group, sel] of groups) for (const btn of group.children) { const on = btn.dataset.mode === sel.value; if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on)); } }
     paintModes(); setInterval(paintModes, 150); }
-  // Posições salvas no rodapé de cada câmera: 1 a 4. Um clique leva a câmera à posição; dois cliques abrem o Controle de câmera
-  // nessa câmera, em modo GRAVAR, para marcar a posição. O clique simples espera um instante para não confundir com o duplo.
-  { const P = window.andromedaCamCtl, rows = [];
-    $$('.mv-cell').forEach((cell, slot) => {
-      if (slot >= 10 || !P) return;
-      const row = make('div', 'cell-presets'); row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Posições salvas de ' + (sources[slot] || 'CAM ' + (slot + 1)));
-      for (let n = 0; n < 4; n++) {
-        const btn = make('button', 'cell-preset', String(n + 1)); btn.type = 'button'; btn.dataset.n = String(n);
-        let timer = null;
-        for (const type of ['pointerdown', 'keydown']) btn.addEventListener(type, e => e.stopPropagation());
-        btn.addEventListener('click', e => {
-          e.stopPropagation(); e.preventDefault(); if (editingIn(cell)) return;
-          clearTimeout(timer); timer = setTimeout(() => { timer = null; callPreset(slot, n); }, 260);
-        });
-        btn.addEventListener('dblclick', e => { e.stopPropagation(); e.preventDefault(); clearTimeout(timer); timer = null; if (editingIn(cell)) return; P.editFor(slot, n); openCamCtl(); log('Controle de câmera: marque a Posição ' + (n + 1) + ' de ' + (sources[slot] || 'CAM ' + (slot + 1)) + '.'); });
-        row.append(btn);
-      }
-      const anchor = cell.querySelector('.cell-mode'); if (anchor) anchor.after(row); else cell.append(row);
-      rows.push([row, slot]);
-    });
-    function callPreset(slot, n) {
-      const name = sources[slot] || 'CAM ' + (slot + 1);
-      if (!P.presetOf(slot, n)) { log(name + ': a Posição ' + (n + 1) + ' está vazia. Dê dois cliques no botão ' + (n + 1) + ' para marcá-la.'); return; }
-      if (!P.state().enabled) { log('Ative o Controle de câmera para levar ' + name + ' à Posição ' + (n + 1) + '.'); openCamCtl(); return; }
-      if (!P.connected(slot)) { log(name + ': sem celular conectado para ir à Posição ' + (n + 1) + '.'); return; }
-      if (P.recallFor(slot, n)) log(name + ' → Posição ' + (n + 1));
-    }
-    function paintPresets() {
-      const on = !!P?.state().enabled;
-      for (const [row, slot] of rows) for (const btn of row.children) {
-        const n = +btn.dataset.n, filled = !!P.presetOf(slot, n), active = filled && P.lastOf(slot) === n;
-        if (btn.dataset.filled !== String(filled)) btn.dataset.filled = String(filled);
-        if (btn.getAttribute('aria-pressed') !== String(active)) btn.setAttribute('aria-pressed', String(active));
-        const tip = (filled ? 'Posição ' + (n + 1) + ': clique leva a câmera até ela' + (on ? '' : ' (ative o Controle de câmera)') : 'Posição ' + (n + 1) + ' vazia') + ' · dois cliques: marcar no Controle de câmera';
-        if (btn.title !== tip) btn.title = tip;
-      }
-    }
-    paintPresets(); setInterval(paintPresets, 400); }
   // O número de atalho aparece em cada câmera do multiview; clicar nele faz o mesmo que a tecla: a câmera corta direto para o AR.
   // O resto do quadro continua como antes (um clique escolhe o PREVIEW, duplo clique abre as fontes).
   { const chips = [];

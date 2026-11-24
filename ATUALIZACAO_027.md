@@ -1,6 +1,7 @@
 # Andrômeda Live 0.27 — Tracking fluido em tempo real e PGM em alta definição
 
-## 0.27.5 — versão certa no topo e app da câmera publicado
+## 0.27.5 — quadro das câmeras limpo, versão certa no topo e app da câmera publicado
+- **Sem os botões 1–4 no rodapé das câmeras.** Os atalhos de posição da 0.27.3 poluíam o quadro de cada câmera e foram retirados: o rodapé volta a ter só OFF / AR / ON e M. As **6 posições salvas** continuam no **Controle de câmera** (GRAVAR, chamar, apagar), com as posições já gravadas preservadas.
 - **Versão no topo da mesa.** O selo ao lado do logotipo mostrava um texto fixo antigo (*LIVE · 0.27.3 β13*), ainda como versão de teste. Agora ele mostra a versão real do programa instalado (*LIVE · 0.27.5*), lida do próprio serviço.
 - **App da câmera (celular) publicado de novo.** A publicação da página do app da câmera falhou nas versões 0.27.3 e 0.27.4 por um erro do GitHub (o passo que publica procurava o pacote antes de ele estar registrado). A montagem e a publicação agora rodam em etapas separadas. Com isso, o celular passa a receber a trava de **30 quadros por segundo** da 0.27.3/0.27.4.
 
