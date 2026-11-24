@@ -45,14 +45,14 @@ test('the camera keeps motion fluid and applies settings live', () => {
   assert.match(cam, /q\('#resolution'\)\.onchange = q\('#fps'\)\.onchange = \(\) => \{ if \(cam\.running\) applyFormat\(\)/, 'resolution and fps apply while live');
   assert.match(cam, /q\('#input'\)\.onchange = \(\) => \{ if \(cam\.running\) applyMic\(\)/, 'microphone applies while live');
   assert.doesNotMatch(cam, /Pare e reconecte para aplicar/, 'no more "stop and reconnect"');
-  assert.match(optics, /captureStream\(\)/, 'processed video sends every drawn frame');
+  assert.match(optics, /captureStream\(30\)/, 'processed video is capped at 30 fps');
   assert.match(optics, /1920 \/ Math\.max/, 'digital processing capped at 1080p so 4K stays fluid');
   assert.match(html, /<script src="\.\/cam\.js"><\/script>\s*<script src="\.\/optics\.js"><\/script>/);
   assert.match(html, /id="bitrate"[^>]*max="25"/);
   assert.match(html, /id="homeSheet"/, 'iPhone full screen guide');
 });
 
-test('the desk can invite 1080p60 and 4K cameras, and nothing beyond', () => {
+test('the gateway accepts legacy profiles, while new desk invitations are capped at 30 fps', () => {
   const hub = createCameraHub({ sessionToken: 't' }); hub.configure('https://cam.example.test/');
   try {
     assert.equal(hub.invite(0, 'CAM 1', { width: 3840, height: 2160, fps: 30, bitrate: 16 }).profile?.width ?? 3840, 3840);
@@ -61,5 +61,5 @@ test('the desk can invite 1080p60 and 4K cameras, and nothing beyond', () => {
     assert.throws(() => hub.invite(2, 'CAM 3', { width: 3840, height: 2160, fps: 30, bitrate: 40 }), /Perfil/);
   } finally { hub.close(); }
   const desk = read('public/cam-desk.js');
-  assert.match(desk, /value="3840x2160">4K · 30 fps · 16 Mbps/); assert.match(desk, /value="1920x1080@60">1080p · 60 fps · 8 Mbps/);
+  assert.match(desk, /value="3840x2160">4K · 30 fps · 16 Mbps/); assert.doesNotMatch(desk, /value="1920x1080@60"/);
 });

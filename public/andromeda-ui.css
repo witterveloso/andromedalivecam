@@ -1446,3 +1446,50 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .camctl-preview canvas.trk-drawing { cursor: crosshair; outline: 2px solid #7fd0ff; outline-offset: -2px; }
 .trk-areas { align-self: center; color: var(--d-muted); font-size: 11.5px; }
 .trk-opts #trkArea[aria-pressed="true"] { background: rgba(255, 59, 107, .22); border-color: #ff6b88; color: #fff; }
+
+@media(min-width:901px){
+.piano-desk [data-tool=cut] .trans-panel{display:grid;grid-template-columns:minmax(145px,1.1fr) minmax(140px,1fr) minmax(230px,2fr) minmax(120px,.8fr);align-items:center;gap:12px;padding:3px 12px;height:auto}
+.piano-desk [data-tool=cut] .trans-types,.piano-desk [data-tool=cut] .cut-auto-row{display:flex;gap:4px;align-items:center}
+.piano-desk [data-tool=cut] .btn-cut,.piano-desk [data-tool=cut] .btn-auto{min-height:32px;flex:1}
+.piano-desk [data-tool=cut] .lever-hint,.piano-desk [data-tool=cut] #mode{display:none}
+.piano-desk [data-tool=bus] .cmd-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-auto-rows:minmax(40px,auto)!important;overflow:auto}
+.piano-desk [data-tool=layers] .master-panel.master-panel{gap:4px!important;padding:4px 8px!important;overflow:auto}
+.piano-desk .master-panel .master-meters{order:-1;padding:5px 8px;background:var(--d-inset)}
+.piano-desk .master-meters .pgm-audio-channels{grid-template-columns:1fr 1fr;gap:4px}
+.piano-desk .master-meters .pgm-audio-channels>div{display:flex;flex-direction:column;align-items:center;gap:1px}
+.piano-desk .master-panel .master-meters .vu-widget{display:flex;flex-direction:column;align-items:center;gap:1px}
+.piano-desk .master-panel .master-meters .vu-track{width:21px;height:clamp(48px,8vh,95px);border-color:var(--d-line-2)}
+.piano-desk .master-panel .master-meters .vu-lit{inset:auto 2px 2px;height:max(0px,calc(var(--vu-level) - 3px));width:auto;background:linear-gradient(to top,#28c85e,#a9d839 65%,#ffcb39 83%,#ff5442);background-size:100% clamp(48px,8vh,95px);background-position:bottom;transition:height .06s linear}
+.piano-desk .master-panel .master-meters .vu-track::after{background:repeating-linear-gradient(to top,transparent 0 3px,var(--d-inset) 3px 5px)}
+.piano-desk .master-panel .master-meters .vu-scale{display:none!important}
+.piano-desk .master-panel .master-switch{min-height:30px}
+.piano-desk .master-panel .master-fader{padding:3px 8px}
+.piano-desk .master-panel .master-fade-row{gap:3px}
+}
+
+.dock-panel[hidden]{display:none!important}
+.operator-visibility{color:var(--d-text);background:var(--d-panel);border:1px solid var(--d-line-2);border-radius:10px;width:min(620px,90vw);max-height:78vh;overflow:auto;padding:18px;color-scheme:dark}
+.operator-visibility::backdrop{background:#0009}
+.operator-visibility h2{margin:0 0 12px;font-size:18px}
+.operator-visibility fieldset{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:6px;border:1px solid var(--d-line);margin:0 0 12px;padding:10px}
+.operator-visibility label{display:flex;align-items:center;gap:7px;min-height:28px;cursor:pointer}
+.operator-visibility button{padding:7px 16px}
+.free-grid>.dock-panel[data-tool=bus] .cmd-btn .cmd-key:not(:empty){display:block;background:var(--d-inset);color:var(--d-text);padding:1px 4px;border-radius:3px;line-height:1.2}
+.free-grid>.dock-panel[data-tool=bus] .cmd-btn .cmd-name{padding-top:6px}
+.piano-desk [data-tool=bus] .cmd-grid{grid-template-columns:repeat(var(--cmd-cols,4),minmax(0,1fr))!important}
+
+/* ---------- 0.27.3: posições salvas 1 a 4 no rodapé de cada câmera (clique chama, dois cliques marcam no Controle de câmera) ---------- */
+.cell-presets { position: absolute; right: 42px; bottom: 6px; z-index: 4; display: inline-flex; gap: 3px; }
+.mv-cell.no-signal .cell-presets { display: none; }
+/* Câmera estreita (10 monitores numa tela pequena): os números sobem para uma linha acima de OFF / AR / ON. */
+@container (max-width: 300px) { .cell-presets { right: auto; left: 6px; bottom: 34px; } }
+@container (max-width: 130px) { .cell-presets { display: none; } }
+.cell-preset { min-width: 24px; min-height: 24px; padding: 0 6px; border-radius: 6px; border: 1.5px dashed rgba(255, 255, 255, .3); background: rgba(0, 0, 0, .62); color: rgba(242, 244, 255, .55); font: 800 11px var(--d-mono); line-height: 1; cursor: pointer; transition: background .12s, box-shadow .12s, color .12s, border-color .12s; }
+.cell-preset[data-filled="true"] { border-style: solid; border-color: rgba(120, 190, 255, .85); color: #e9f2ff; }
+.cell-preset[aria-pressed="true"] { background: var(--brand-blue); border-color: var(--brand-blue); color: var(--d-accent-ink); box-shadow: 0 0 10px rgba(0, 153, 255, .5); }
+.cell-preset:not([aria-pressed="true"]):hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.cell-preset:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 1px; }
+/* posição que o operador escolheu marcar com dois cliques no rodapé da câmera */
+.camctl-preset.camctl-target { outline: 2px solid var(--brand-blue); outline-offset: 2px; animation: camctlTarget 1.1s ease-in-out infinite; }
+@keyframes camctlTarget { 50% { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .camctl-preset.camctl-target { animation: none; } }

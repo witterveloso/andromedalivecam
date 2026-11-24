@@ -7,7 +7,7 @@
   * Um painel solto sobre outro empurra o outro para baixo. As demais páginas mantêm painéis em fluxo (largura total ou meia).
   * Layouts v2 salvos são ignorados: o padrão novo tem monitores menores.
   */
- const key='andromeda.workspace.v3',COLS=48,ROWS=48,MIN_W=6,MIN_H=4,GAP=8;
+ const key='andromeda.workspace.black-piano.v1',COLS=48,ROWS=48,MIN_W=6,MIN_H=4,GAP=8;
  const make=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text)e.textContent=text;return e};
  const grid=make('div','free-grid');
  operation.classList.add('custom-workspace','free-workspace');operation.append(grid);
@@ -16,11 +16,12 @@
  const secondHolder=make('div','second-holder');secondHolder.hidden=true;document.body.append(secondHolder);
  const pages={operation:grid,configuration,transmission,effects:effectsPage,second:secondHolder};
  const pageNames={operation:'Operação',second:'Segunda tela',configuration:'Configurações',transmission:'Transmissão',effects:'GC e efeitos'};
- const definitions=[['preview','Preview',$('#monPreview'),'operation','half'],['program','PGM / AR',programCard,'operation','half'],['cameras','Câmeras',multiview,'operation','full'],['cut','Corte e transições',controls,'operation','full'],['bus','Comandos',bus,'operation','full'],['layers','Áudio master',fxQuick,'operation','full'],['vt','VT · Playlist',typeof vtPanel!=='undefined'?vtPanel:null,'operation','full'],['camctl','Controle de câmera',typeof camCtlPanel!=='undefined'?camCtlPanel:null,'operation','full'],['slides','Slides · Apresentação',window.slidesPanel||null,'operation','full'],['trilha','Trilha · Música de fundo',window.trilhaPanel||null,'operation','full'],['intercom','Intercom',intercom,'operation','full'],['audio','Mixer de áudio',audioPanel,'operation','full'],['camera-links','Convites Andromeda Cam',camSettings,'configuration','full'],['blackmagic','Entradas Blackmagic',bmPanel,'configuration','full'],['transport','Codificador',transportPanel,'transmission','full'],['destinations','Destinos',$('.stream-panel'),'transmission','full'],['events','Eventos',$('.events'),'configuration','full'],['fx-editor','Ajustes GC / PiP',$('.effects-editor'),'effects','half'],['fx-preview','Prévia dos efeitos',$('.effects-preview'),'effects','half'],['remote','Mesa na nuvem',$('.remote-panel'),'configuration','full']];
+ const definitions=[['preview','Preview',$('#monPreview'),'operation','half'],['program','PGM / AR',programCard,'operation','half'],['cameras','Câmeras',multiview,'operation','full'],['cut','Corte e transições',controls,'operation','full'],['bus','Comandos',bus,'operation','full'],['layers','Áudio master',fxQuick,'operation','full'],['vt','VT · Playlist',typeof vtPanel!=='undefined'?vtPanel:null,'operation','full'],['camctl','Controle de câmera',typeof camCtlPanel!=='undefined'?camCtlPanel:null,'operation','full'],['trilha','Trilha · Música de fundo',window.trilhaPanel||null,'operation','full'],['intercom','Intercom',intercom,'operation','full'],['audio','Mixer de áudio',audioPanel,'operation','full'],['camera-links','Convites Andromeda Cam',camSettings,'configuration','full'],['blackmagic','Entradas Blackmagic',bmPanel,'configuration','full'],['transport','Codificador',transportPanel,'transmission','full'],['destinations','Destinos',$('.stream-panel'),'transmission','full'],['events','Eventos',$('.events'),'configuration','full'],['fx-editor','Ajustes GC / PiP',$('.effects-editor'),'effects','half'],['fx-preview','Prévia dos efeitos',$('.effects-preview'),'effects','half'],['remote','Mesa na nuvem',$('.remote-panel'),'configuration','full']];
  // [coluna, linha, largura, altura] na grade de 48 × 48 (uma tela).
  const PRESETS={
+  piano:{name:'Broadcast',rects:{preview:[0,0,20,22],program:[20,0,20,22],layers:[40,0,8,22],cut:[0,42,48,6],cameras:[0,22,32,20],bus:[32,22,16,20],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,20,22],camctl:[20,66,28,22],trilha:[0,88,48,28]}},
   // Padrão: comandos à esquerda, PREVIEW e PGM no meio, áudio master à direita.
-  padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,20,22],camctl:[20,66,28,22],slides:[0,88,28,28],trilha:[28,88,20,28]}},
+  padrao:{name:'Padrão · monitores menores',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cameras:[0,18,48,21],cut:[0,39,48,9],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,20,22],camctl:[20,66,28,22],trilha:[0,88,48,28]}},
   cameras:{name:'Câmeras em destaque',rects:{cameras:[0,0,30,28],preview:[30,0,18,14],program:[30,14,18,14],cut:[0,28,48,9],bus:[0,37,24,11],layers:[24,37,24,11],audio:[0,48,28,18],intercom:[28,48,20,18],vt:[0,66,30,16],camctl:[30,66,18,16]}},
   // Duas telas: comandos, monitores, áudio, corte e VT no monitor principal; câmeras, mixer e intercom na segunda tela.
   duas:{name:'Duas telas · câmeras e mixer na segunda tela',rects:{bus:[0,0,13,18],preview:[13,0,12,18],program:[25,0,12,18],layers:[37,0,11,18],cut:[0,18,48,9],vt:[0,27,30,16],camctl:[30,27,18,16]},second:{cameras:[0,0,48,30],audio:[0,30,28,18],intercom:[28,30,20,18]}},
@@ -45,17 +46,38 @@
  const GRID_PAGES=['operation','second'],onGrid=item=>GRID_PAGES.includes(item.page);
  const opItems=(page='operation')=>items.filter(i=>i.page===page);
  const bottomRow=(except,page=except?.page==='second'?'second':'operation')=>Math.max(0,...opItems(page).filter(i=>i!==except&&i.rect).map(i=>i.rect.y+i.rect.h));
- function applyPreset(name){const preset=PRESETS[name];for(const item of items){if(item.scaleOut)item.scale=SCALE_MAX;const r=preset.rects[item.id],r2=preset.second?.[item.id];if(r){item.page='operation';item.rect={x:r[0],y:r[1],w:r[2],h:r[3]};}else if(r2){item.page='second';item.rect={x:r2[0],y:r2[1],w:r2[2],h:r2[3]};}else{item.page=item.defaultPage;item.width=item.defaultWidth;if(item.page==='operation')item.rect={x:0,y:bottomRow(item),w:COLS,h:12};}item.order=definitions.findIndex(d=>d[0]===item.id);}}
+ function applyPreset(name){const preset=PRESETS[name];for(const item of items){if(item.scaleOut)item.scale=SCALE_MAX;item.operatorHidden=false;const r=preset.rects[item.id],r2=preset.second?.[item.id];if(r){item.page='operation';item.rect={x:r[0],y:r[1],w:r[2],h:r[3]};}else if(r2){item.page='second';item.rect={x:r2[0],y:r2[1],w:r2[2],h:r2[3]};}else{item.page=item.defaultPage;item.width=item.defaultWidth;if(item.page==='operation')item.rect={x:0,y:bottomRow(item),w:COLS,h:12};}item.order=definitions.findIndex(d=>d[0]===item.id);}}
  const panel=make('section','layout-settings');
  panel.innerHTML='<h2>Personalizar a mesa</h2><p>Na Operação, cada painel tem o tamanho e o lugar que você quiser. Toque em <b>Personalizar</b> no topo: arraste o painel pelo título para mover e pelo canto inferior direito para mudar o tamanho. Com o título selecionado, as setas movem e Shift + setas mudam o tamanho. A grade tem 48 colunas e 48 linhas por tela. <b>Dois monitores:</b> escolha <b>Segunda tela</b> na coluna Página de um painel (ou o modelo <b>Duas telas</b>) e toque em <b>Abrir segunda tela</b>; no programa instalado ela abre sozinha no outro monitor, e lá também dá para arrastar os painéis. Os ajustes ficam salvos neste computador e não mudam o sinal do AR.</p><div class="layout-actions"><button id="layoutEdit">Editar posições</button><label>Modelo <select id="layoutPreset"></select></label><span class="layout-save"><input id="layoutName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="layoutSave">Salvar layout</button><button id="layoutDelete">Excluir</button></span><button id="layoutSecond">Abrir segunda tela</button><button id="layoutPack">Juntar painéis</button><button id="layoutRestore">Restaurar padrão</button><button id="layoutExport">Exportar layout</button><label>Importar layout <input id="layoutImport" type="file" accept="application/json,.json"></label></div><div class="layout-head" aria-hidden="true"><span>Painel</span><span>Página</span><span>Coluna · Linha</span><span>Largura · Altura</span><span>Ordem · imagem</span></div><div id="layoutRows"></div><p id="layoutMessage" role="status"></p>';
  configuration.prepend(panel);
  const editBar=make('div','free-editbar');editBar.setAttribute('role','toolbar');editBar.setAttribute('aria-label','Personalizar a mesa');
  editBar.innerHTML='<strong>Personalizando</strong><span>Título: mover · canto ◢: tamanho · setas e Shift + setas no teclado · Esc conclui</span><label>Modelo <select id="freePreset"></select></label><span class="layout-save"><input id="freeName" maxlength="40" placeholder="Nome do layout" aria-label="Nome do layout para salvar"><button id="freeSave">Salvar layout</button><button id="freeDelete">Excluir</button></span><button id="freeSecond">Abrir segunda tela</button><button id="freePack">Juntar painéis</button><button id="freeRestore">Restaurar padrão</button><button id="freeDone" class="free-done">Concluir</button>';
  operation.prepend(editBar);editBar.hidden=true;
+ const visibilityButton=make('button','','Itens visíveis');
+ visibilityButton.type='button';editBar.insertBefore(visibilityButton,editBar.querySelector('#freeDone'));
+ const chooser=make('dialog','operator-visibility');chooser.setAttribute('aria-label','Itens visíveis');
+ document.body.append(chooser);
+ visibilityButton.onclick=()=>{
+   chooser.replaceChildren(make('h2','','Itens visíveis'));
+   function group(title,entries){
+     const field=make('fieldset');field.append(make('legend','',title));chooser.append(field);
+     for(const [name,visible,change] of entries){
+       const label=make('label'),box=make('input');box.type='checkbox';box.checked=visible;
+       box.onchange=()=>change(box.checked);label.append(box,document.createTextNode(name));field.append(label);
+     }
+   }
+   group('Painéis',items.map(item=>[item.title,!item.operatorHidden,show=>{
+     item.operatorHidden=!show;render();save(true);
+   }]));
+   const prod=window.andromedaCommands;
+   if(prod)group('Botões de Comandos',prod.COMMANDS.map(c=>[c.name(),!prod.layout().hidden.includes(c.id),show=>prod.setVisible(c.id,show)]));
+   const done=make('button','','Concluir');done.type='button';done.onclick=()=>chooser.close();chooser.append(done);chooser.showModal();
+ };
+
  // Layouts gravados pelo operador: um nome por arrumação (ex.: "Culto domingo", "Entrevista"), até 20.
  const SAVED_KEY='andromeda.layouts.v1',SAVED_MAX=20;
  let savedLayouts=[];try{const list=JSON.parse(localStorage.getItem(SAVED_KEY)||'[]');if(Array.isArray(list))savedLayouts=list.filter(l=>l&&typeof l.name==='string'&&l.data).slice(0,SAVED_MAX)}catch{/* sem armazenamento */}
- let currentModel='padrao';
+ let currentModel='piano';
  function paintModels(){for(const id of ['layoutPreset','freePreset']){const sel=$('#'+id);sel.replaceChildren();const ready=document.createElement('optgroup');ready.label='Prontos';for(const [key,p] of Object.entries(PRESETS))ready.append(new Option(p.name,key));sel.append(ready);
    if(savedLayouts.length){const mine=document.createElement('optgroup');mine.label='Meus layouts';savedLayouts.forEach((l,i)=>mine.append(new Option(l.name,'meu:'+i)));sel.append(mine)}
    if(!currentModel.startsWith('meu:')&&!PRESETS[currentModel]){const custom=new Option('Personalizado (não salvo)','');custom.disabled=true;sel.prepend(custom)}
@@ -70,27 +92,34 @@
   const ok=storeSaved();currentModel='meu:'+(i>=0?i:savedLayouts.length-1);paintModels();
   const text=ok?(i>=0?'Layout "'+name+'" atualizado.':'Layout "'+name+'" salvo. Ele aparece em Modelo → Meus layouts.'):'Armazenamento indisponível: use Exportar layout.';$('#layoutMessage').textContent=text;flash(text);
   window.andromedaAudit?.('info','layout-salvo','Layout salvo: '+name)}
- function useSaved(index){const l=savedLayouts[index];if(!l)return;applying=true;try{applyPreset('padrao');load(l.data);currentModel='meu:'+index;settle(null);render();save();paintModels();$('#layoutMessage').textContent='Layout aplicado: '+l.name+'.';flash('Layout aplicado: '+l.name+'.')}catch(e){$('#layoutMessage').textContent='Layout "'+l.name+'" inválido: '+e.message}finally{applying=false}}
+ function useSaved(index){const l=savedLayouts[index];if(!l)return;applying=true;try{applyPreset('piano');load(l.data);currentModel='meu:'+index;settle(null);render();save();paintModels();$('#layoutMessage').textContent='Layout aplicado: '+l.name+'.';flash('Layout aplicado: '+l.name+'.')}catch(e){$('#layoutMessage').textContent='Layout "'+l.name+'" inválido: '+e.message}finally{applying=false}}
  function deleteSaved(){if(!currentModel.startsWith('meu:'))return;const i=Number(currentModel.slice(4)),l=savedLayouts[i];if(!l)return;savedLayouts.splice(i,1);storeSaved();currentModel='';paintModels();$('#layoutMessage').textContent='Layout "'+l.name+'" excluído. A mesa continua com a arrumação atual.';flash('Layout "'+l.name+'" excluído.')}
  const flashBox=make('span','free-flash');flashBox.setAttribute('role','status');let flashTimer=null;editBar.append(flashBox);
  function flash(text){flashBox.textContent=text;clearTimeout(flashTimer);flashTimer=setTimeout(()=>{flashBox.textContent=''},4000)}
  const navButton=make('button','','Personalizar');navButton.id='layoutNavButton';navButton.onclick=()=>{openWorkspace('operation');setEditing(!editing)};nav.append(navButton);
  let editing=false,drag=null,rowPx=20;
- function snapshot(){return {version:3,items:items.map(({id,page,width,order,rect,scale})=>({id,page,width,order,rect,...(scale?{scale}:{})}))}}
+ function snapshot(){return {version:3,items:items.map(({id,page,width,order,rect,scale,operatorHidden})=>({id,page,width,order,rect,operatorHidden:!!operatorHidden,...(scale?{scale}:{})}))}}
  function validRect(r){return r===null||(r&&[r.x,r.y,r.w,r.h].every(Number.isInteger)&&r.x>=0&&r.y>=0&&r.y<1000&&r.w>=MIN_W&&r.h>=MIN_H&&r.h<=400&&r.x+r.w<=COLS)}
  function validate(data){if(data?.version!==3||!Array.isArray(data.items)||!data.items.length||data.items.length>items.length)throw Error('Layout inválido');const seen=new Set();for(const r of data.items){if(!byId(r.id)||seen.has(r.id)||!pages[r.page]||!['half','full'].includes(r.width)||!Number.isFinite(r.order)||!validRect(r.rect)||(r.page==='operation'&&!r.rect)||(r.scale!==undefined&&!(Number.isInteger(r.scale)&&r.scale>=SCALE_MIN&&r.scale<=SCALE_MAX)))throw Error('Painel inválido');seen.add(r.id)}return data}
- function load(data){validate(data);for(const r of data.items){const item=byId(r.id);Object.assign(item,{page:r.page,width:r.width,order:r.order,rect:r.rect&&{...r.rect}});if(item.scaleOut)item.scale=r.scale||SCALE_MAX}}
+ function load(data){validate(data);for(const r of data.items){const item=byId(r.id);Object.assign(item,{operatorHidden:r.operatorHidden===true,page:r.page,width:r.width,order:r.order,rect:r.rect&&{...r.rect}});if(item.scaleOut)item.scale=r.scale||SCALE_MAX}}
  let applying=false;
- function save(){if(!applying&&currentModel){currentModel='';paintModels()}try{localStorage.setItem(key,JSON.stringify({...snapshot(),model:currentModel}));$('#layoutMessage').textContent='Layout salvo neste computador.'}catch{$('#layoutMessage').textContent='Armazenamento indisponível. Exporte o layout para guardar.'}}
+ function save(keepModel=false){if(!keepModel&&!applying&&currentModel){currentModel='';paintModels()}try{localStorage.setItem(key,JSON.stringify({...snapshot(),model:currentModel}));$('#layoutMessage').textContent='Layout salvo neste computador.'}catch{$('#layoutMessage').textContent='Armazenamento indisponível. Exporte o layout para guardar.'}}
  const overlap=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h;
  // O painel movido fica onde foi solto; quem estiver embaixo dele desce o necessário.
  function settle(moved){for(const pg of moved?[moved.page]:GRID_PAGES){const placed=moved?[moved]:[];const rest=opItems(pg).filter(i=>i!==moved&&i.rect).sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x);for(const item of rest){let hit;while((hit=placed.find(p=>overlap(item.rect,p.rect))))item.rect.y=hit.rect.y+hit.rect.h;placed.push(item)}}}
  // Sobe cada painel até encostar no de cima: remove buracos sem trocar a ordem.
  function pack(){for(const pg of GRID_PAGES){const done=[];for(const item of opItems(pg).filter(i=>i.rect).sort((a,b)=>a.rect.y-b.rect.y||a.rect.x-b.rect.x)){while(item.rect.y>0&&!done.some(p=>overlap({...item.rect,y:item.rect.y-1},p.rect)))item.rect.y--;done.push(item)}}}
- function fitRows(){const top=grid.getBoundingClientRect().top+(window.scrollY||0),footer=$('.sim-footer')?.getBoundingClientRect().height||32,available=window.innerHeight-top-footer-12;rowPx=Math.max(18,Math.floor(available/ROWS*100)/100);grid.style.setProperty('--free-row',rowPx+'px')}
- function place(item){const r=item.rect;item.shell.style.gridArea=(r.y+1)+' / '+(r.x+1)+' / span '+r.h+' / span '+r.w;item.size.textContent=r.w+' × '+r.h}
- function render(){fitRows();items.sort((a,b)=>a.order-b.order);
-  for(const item of items){item.shell.dataset.width=item.width;item.shell.dataset.page=item.page;if(item.page==='operation'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;grid.append(item.shell)}else if(item.page==='second'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;(second?second.grid:secondHolder).append(item.shell)}else{item.shell.style.gridArea='';item.header.removeAttribute('tabindex');pages[item.page].append(item.shell)}}
+ function fitRows(){const top=grid.getBoundingClientRect().top+(window.scrollY||0),footer=$('.sim-footer')?.getBoundingClientRect().height||32,available=window.innerHeight-top-footer-12;rowPx=Math.max(currentModel==="piano"?11:18,Math.floor(available/ROWS*100)/100);grid.style.setProperty('--free-row',rowPx+'px')}
+ function place(item){let r=item.rect;
+  if(item.page==='operation' && !editing && currentModel==='piano'){
+   const visible=opItems().filter(i=>!i.operatorHidden&&i.rect);
+   let empty=0;
+   for(let y=0;y<r.y;y++) if(!visible.some(i=>i.rect.y<=y && y<i.rect.y+i.rect.h))empty++;
+   r={...r,y:r.y-empty};
+  }
+ item.shell.style.gridArea=(r.y+1)+' / '+(r.x+1)+' / span '+r.h+' / span '+r.w;item.size.textContent=r.w+' × '+r.h}
+ function render(){grid.classList.toggle('piano-desk',currentModel==='piano');fitRows();items.sort((a,b)=>a.order-b.order);
+  for(const item of items){item.shell.hidden=!!item.operatorHidden;item.shell.dataset.width=item.width;item.shell.dataset.page=item.page;if(item.page==='operation'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;grid.append(item.shell)}else if(item.page==='second'){if(!item.rect)item.rect={x:0,y:bottomRow(item),w:COLS,h:12};place(item);item.header.tabIndex=editing?0:-1;(second?second.grid:secondHolder).append(item.shell)}else{item.shell.style.gridArea='';item.header.removeAttribute('tabindex');pages[item.page].append(item.shell)}}
   for(const item of items)paintScale(item);paintRows();paintSecond();requestAnimationFrame?.(()=>{fitRows();fitSecond();fitContents()})}
  function numberInput(label,value,min,max,onchange){const input=make('input');input.type='number';input.min=min;input.max=max;input.step=1;input.value=value;input.setAttribute('aria-label',label);input.onchange=()=>{const v=Math.round(Number(input.value));if(Number.isFinite(v))onchange(Math.min(max,Math.max(min,v)))};return input}
  function paintRows(){const rows=$('#layoutRows');rows.replaceChildren();
@@ -109,7 +138,7 @@
  const freeMode=()=>window.innerWidth>900;
  function fitCameras(){const item=byId('cameras'),mv=multiview?.querySelector('.mv-grid');if(!item||!mv)return;if(!onGrid(item)||(item.page==='operation'&&!freeMode())){mv.style.gridTemplateColumns='';mv.style.maxWidth='';return}
   const n=[...mv.children].filter(c=>!c.hidden).length||1,W=item.shell.clientWidth-24,H=item.shell.clientHeight-chrome(item.shell,mv)-20;let best={c:Math.min(5,n),t:0};
-  for(let c=1;c<=n;c++){const r=Math.ceil(n/c),t=Math.min((W-(c-1)*GAP)/c,((H-(r-1)*GAP)/r)*16/9);if(t>best.t+.5)best={c,t}}
+  for(let c=1;c<=n;c++){if(currentModel==="piano" && c!==Math.min(n,5))continue;const r=Math.ceil(n/c),t=Math.min((W-(c-1)*GAP)/c,((H-(r-1)*GAP)/r)*16/9);if(t>best.t+.5)best={c,t}}
   const t=Math.max(90,best.t);mv.style.gridTemplateColumns='repeat('+best.c+',minmax(0,1fr))';mv.style.maxWidth=Math.floor(best.c*t+(best.c-1)*GAP+24)+'px'}
  // Preview e PGM lado a lado com a mesma altura ficam do mesmo tamanho: o limite vem da caixa de encaixe
  // (que não depende do tamanho da imagem), então medir de novo nunca muda o resultado.
@@ -169,17 +198,20 @@
  for(const [input,button] of [['layoutName','layoutSave'],['freeName','freeSave']]){$('#'+button).onclick=()=>saveNamed($('#'+input));$('#'+input).addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();saveNamed($('#'+input))}})}
  for(const id of ['layoutDelete','freeDelete'])$('#'+id).onclick=deleteSaved;
  for(const id of ['layoutPack','freePack'])$('#'+id).onclick=()=>{pack();render();save()};
- for(const id of ['layoutRestore','freeRestore'])$('#'+id).onclick=()=>{currentModel='padrao';usePreset('padrao');paintModels()};
+ for(const id of ['layoutRestore','freeRestore'])$('#'+id).onclick=()=>{currentModel='piano';usePreset('piano');paintModels()};
  document.addEventListener('keydown',e=>{if(editing&&e.key==='Escape')setEditing(false)});
  $('#layoutExport').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(snapshot(),null,2)],{type:'application/json'}));const a=make('a');a.href=url;a.download='andromeda-layout.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
  $('#layoutImport').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>50000)throw Error('Arquivo muito grande');load(JSON.parse(await f.text()));render();save()}catch(err){$('#layoutMessage').textContent='Não importado: '+err.message}finally{e.target.value=''}};
- applyPreset('padrao');
+ applyPreset('piano');
  try{const saved=localStorage.getItem(key);if(saved){const d=JSON.parse(saved);load(d);currentModel=typeof d.model==='string'?d.model:'';
+  if(currentModel==='piano'&&byId('cut')?.rect?.y===22&&byId('cameras')?.rect?.y===28){
+    for(const id of ['cut','cameras','bus']){const [x,y,w,h]=PRESETS.piano.rects[id];byId(id).rect={x,y,w,h}}
+  }
   // Quem estava com o Padrão antigo (comandos e áudio empilhados à direita) passa ao Padrão novo; layout mexido pelo operador fica como está.
   const OLD={preview:[0,0,16,22],program:[16,0,16,22],bus:[32,0,16,11],layers:[32,11,16,11]},same=(id,r)=>{const x=byId(id)?.rect;return !!x&&x.x===r[0]&&x.y===r[1]&&x.w===r[2]&&x.h===r[3]};
   if(Object.entries(OLD).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['bus','preview','program','layers',...(same('cameras',[0,22,48,17])?['cameras']:[])]){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}
   // Controle de câmera maior (preview ao lado): quem ainda tem o tamanho antigo do VT e do controle passa ao novo.
-  const OLD2={vt:[0,66,30,16],camctl:[30,66,18,16]};if(Object.entries(OLD2).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['vt','camctl']){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}}}catch{applyPreset('padrao');currentModel='padrao'}
+  const OLD2={vt:[0,66,30,16],camctl:[30,66,18,16]};if(Object.entries(OLD2).every(([id,r])=>same(id,r))){const novo=PRESETS.padrao.rects;for(const id of ['vt','camctl']){const r=novo[id];byId(id).rect={x:r[0],y:r[1],w:r[2],h:r[3]}}}}}catch{applyPreset('piano');currentModel='piano'}
  if(currentModel.startsWith('meu:')&&!savedLayouts[Number(currentModel.slice(4))])currentModel='';
  settle(null);render();paintModels();
  // A barra do topo termina de se montar depois deste script: medir de novo quando a página assenta.

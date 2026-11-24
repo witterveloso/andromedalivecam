@@ -1,5 +1,11 @@
 # Andrômeda Live 0.27 — Tracking fluido em tempo real e PGM em alta definição
 
+## 0.27.3 — versão oficial: posições salvas no rodapé das câmeras e saída de vídeo fora da tela principal
+- **Posições 1 a 4 no rodapé de cada câmera.** Ao lado de OFF / AR / ON, cada câmera ganhou os botões **1 2 3 4**. **Um clique** leva aquela câmera à posição salva (zoom, recorte, exposição e cor, com o movimento suave escolhido no Controle de câmera), mesmo que o painel esteja mostrando outra câmera; várias câmeras podem ir às suas posições ao mesmo tempo. **Dois cliques** abrem o **Controle de câmera** já nessa câmera, em modo **GRAVAR**, com a posição escolhida piscando: ajuste o enquadramento e toque nela para guardar. Botão com contorno tracejado = posição vazia; aceso em azul = última posição chamada. Em câmeras estreitas (muitos monitores numa tela pequena) os números ficam numa linha acima de OFF / AR / ON. O painel continua com as 6 posições.
+- **Saída de vídeo fora da tela principal** (trabalho das versões de teste 0.27.3-beta.11 a beta.17). A captura dos quadros do PGM e a codificação H.264 + Opus rodam num Worker, sincronizadas ao desenho do PGM, com fila limitada a dois quadros (sem acúmulo de vídeo antigo). O pré-voo mede a saída real (fluxo e gravação) antes de abrir os destinos e reduz até 540p quando a resolução pedida não passa. Métricas separadas de composição, quadros enviados e quadros codificados aparecem no Diagnóstico. Correções do monitor PGM durante o envio e da recuperação de atraso na saída ao vivo.
+- **Teste de transmissão real no CI (Windows).** A cada versão, o instalador só é gerado depois de um ensaio no Windows com Electron real: três vídeos Full HD em movimento, cortes, créditos, transmissão RTMP para um receptor local e gravação ao mesmo tempo, 1080p30. Um ensaio 4K30 também roda, sem bloquear o instalador.
+- **4K30 (2160p) protegido**: só é usado quando o pré-voo confirma que o computador sustenta; caso contrário a mesa reduz antes de abrir a transmissão e a gravação.
+
 ## 0.27.2 — sem a opção 720p
 - **Transmissão:** a lista *Resolução* agora tem só **1080p**. Uma configuração salva antes com 720p passa a 1080p.
 - **Câmera:** o app da câmera (celular) e o convite gerado na mesa não oferecem mais 720p (ficam 1080p 30 fps, 1080p 60 fps e 4K). Um convite antigo que peça 720p abre em 1080p.
