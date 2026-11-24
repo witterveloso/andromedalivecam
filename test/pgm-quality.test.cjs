@@ -73,3 +73,24 @@ test('posições 1 a 4 no rodapé de cada câmera: clique chama a posição daqu
   assert.match(k, /function cancelGlide\(slot = camCtl\.slot\)/, 'um movimento suave por câmera'); assert.match(t, /camCtl\.glides\?\.has\(s\.i\)/);
   assert.match(css, /\.cell-presets \{ position: absolute; right: 42px; bottom: 6px/); assert.match(css, /@container \(max-width: 300px\) \{ \.cell-presets \{ right: auto; left: 6px; bottom: 34px; \} \}/);
 });
+
+test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
+  const e = read('public/engine.js');
+  assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);
+});
+
+test('prioridade do AR: enquanto transmite, PREVIEW e miniaturas só usam a folga do quadro e rodam mais devagar', () => {
+  const h = read('public/index.html');
+  assert.match(h, /const monitorBudget = \(\) => onAirNow\(\) \? 13 : 22;/); assert.match(h, /if \(performance\.now\(\) - renderAt >= monitorBudget\(\)\) break;/);
+  assert.match(h, /cams\[i\]\?\.conn \? \(onAirNow\(\) \? 200 : 95\) : 995/, 'miniaturas a 5 q/s no ar'); assert.match(h, /nextPreview = t \+ \(onAirNow\(\) \? 100 : 64\)/, 'PREVIEW a 10 q/s no ar');
+  assert.match(h, /\[w, h\] = onAirNow\(\) \? \[640, 360\] : \[960, 540\]/);
+});
+
+test('monitores nativos: PREVIEW e miniaturas de câmeras ao vivo vão por <video> (compositor), o canvas não converte o vídeo na tela principal', () => {
+  const n = read('public/native-monitors.js'), h = read('public/index.html'), r = read('public/remote-desk.js'), server = read('server.cjs');
+  assert.match(n, /el\.srcObject instanceof MediaStream/); assert.match(n, /el\.captureStream\(\)/, 'arquivo local sem decodificar de novo'); assert.match(n, /covers\(canvas\)/);
+  assert.match(h, /<script src="\/stage\.js"><\/script><script src="\/native-monitors\.js"><\/script>/); assert.match(server, /'\/native-monitors\.js':'native-monitors\.js'/);
+  assert.match(h, /if \(window\.andromedaNativeMonitors\?\.covers\(c\)\) \{ monitorDue\.set\(c, t \+ 500\); continue; \}/);
+  assert.match(h, /const prvNative = window\.andromedaNativeMonitors\?\.covers\(\$\('#monPreview canvas'\)\) && !window\.andromedaRemotePreview\?\.\(\);/, 'a mesa remota que assiste o PREVIEW continua recebendo o canvas');
+  assert.match(r, /window\.andromedaRemotePreview = \(\) =>/);
+});

@@ -618,6 +618,12 @@ function guarded(name,fn){const t0=performance.now();try{fn()}catch(e){noteRende
 function noteRender(name,kind,detail){const key=name+':'+kind,h=renderHealth.get(key)||{count:0,at:-1e9};h.count++;const now=performance.now();if(now-h.at>5000){h.at=now;const tx=typeof liveTx!=='undefined'?liveTx.phase+'/'+(liveTx.engine||'-'):'-',msg='Desenho da mesa: etapa "'+name+'" '+kind+' ('+detail+')'+(h.count>1?' · '+h.count+'×':'')+' · envio '+tx;try{log(msg);window.andromedaAudit?.(kind==='falha'?'error':'warn','desenho-'+kind,msg)}catch{/* o registro nunca derruba o desenho */}}renderHealth.set(key,h)}
 // Cadência da mesa e do multiview são independentes. Nenhum quadro de monitor é enfileirado.
 let nextCamera = 0, nextPreview = 0, directProgram = false;
+/* Prioridade do AR: durante a transmissão/gravação o PGM (que vai ao ar) tem a tela principal; PREVIEW e miniaturas são só monitoração.
+   Medido num computador de 2 núcleos sem placa de vídeo: PGM ~10 ms, PREVIEW ~11 ms e cada miniatura ~3,4 ms por desenho, num quadro de 33 ms.
+   Enquanto envia: PREVIEW a 10 q/s num canvas 640×360 (o tamanho do monitor na tela), miniaturas a 5 q/s, e monitores só com folga no quadro. */
+const onAirNow = () => typeof busyTx === 'function' && busyTx();
+const monitorBudget = () => onAirNow() ? 13 : 22;
+function sizePreviewForAir() { const c = $('#monPreview canvas'), [w, h] = onAirNow() ? [640, 360] : [960, 540]; if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
 const monitorDue = new WeakMap();
 function refreshMultiview(t) {
   const cells = $$('.mv-cell canvas');
@@ -627,9 +633,11 @@ function refreshMultiview(t) {
     nextCamera = (i + 1) % cells.length;
     const c = cells[i];
     if (c.parentElement.hidden || !c.getClientRects().length || (monitorDue.get(c) || 0) > t) continue;
+    if (window.andromedaNativeMonitors?.covers(c)) { monitorDue.set(c, t + 500); continue; } // câmera ao vivo: o vídeo nativo mostra, o canvas não precisa desenhar
+    if (performance.now() - renderAt >= monitorBudget()) break; // o PGM vem primeiro: sem folga neste quadro, as miniaturas esperam o próximo
     guarded('câmera ' + (i + 1), () => source(c.getContext('2d'), i, t));
-    monitorDue.set(c, t + (cams[i]?.conn ? 95 : 995));
-    if (++painted >= Math.ceil(cells.length / 3) || performance.now() - renderAt >= 22) break;
+    monitorDue.set(c, t + (cams[i]?.conn ? (onAirNow() ? 200 : 95) : 995));
+    if (++painted >= Math.ceil(cells.length / 3)) break;
   }
 }
 function render(t){renderAt=performance.now();try{if(t-last>=1000/30-0.5){const step=1000/30;last += Math.max(1,Math.floor((t-last+0.5)/step))*step;/* Só o AR (programOutput) precisa de 30 q/s: miniaturas a 10 q/s, preview a 15 q/s, e nada disso quando a página não está à vista. */
@@ -645,9 +653,12 @@ function render(t){renderAt=performance.now();try{if(t-last>=1000/30-0.5){const 
  });
  directProgram = false;
  if (watching) {
-   if (t >= nextPreview && !$('#monPreview').hidden && $('#monPreview canvas').getClientRects().length) {
+   // PREVIEW com câmera ao vivo é mostrado pelo vídeo nativo; o canvas só é desenhado se a mesa remota estiver assistindo o PREVIEW.
+   const prvNative = window.andromedaNativeMonitors?.covers($('#monPreview canvas')) && !window.andromedaRemotePreview?.();
+   if (!prvNative && t >= nextPreview && performance.now() - renderAt < monitorBudget() && !$('#monPreview').hidden && $('#monPreview canvas').getClientRects().length) {
+     sizePreviewForAir();
      guarded('preview', () => source($('#monPreview canvas').getContext('2d'), state.prv, t));
-     nextPreview = t + 64;
+     nextPreview = t + (onAirNow() ? 100 : 64);
    }
    guarded('miniaturas', () => refreshMultiview(t));
  }
@@ -716,7 +727,7 @@ log('Saída fixada no PROGRAM (AR). Preview reservado à preparação.');
 <script src="/rundown.js"></script>
 <script src="/trilha.js"></script>
 <script src="/camctl.js"></script><script src="/tracking-core.js"></script><script src="/tracking.js"></script><link rel="stylesheet" href="/workspace-custom.css"><script src="/cam/relay.js"></script><script src="/remote-desk.js"></script><script src="/workspace-custom.js"></script>
-<script src="/stage.js"></script>
+<script src="/stage.js"></script><script src="/native-monitors.js"></script>
 <script src="/commands.js"></script><script src="/arrange.js"></script><script src="/vertical.js"></script><script src="/broadcast.js"></script><script src="/pgm-quality.js"></script>
 <script src="/mkvmux.js"></script><script src="/engine.js"></script><script src="/syncprobe.js"></script>
 <script src="/preflight.js"></script><script src="/diagnostics.js"></script>

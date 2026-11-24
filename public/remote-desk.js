@@ -110,6 +110,8 @@
 
   /* ---------- mídia enviada ---------- */
   const media = { pgm: null, prv: null };
+  // A mesa remota assiste o PREVIEW pelo canvas: enquanto houver esse fluxo, o canvas do PREVIEW continua sendo desenhado.
+  window.andromedaRemotePreview = () => { const tr = media.prv?.getVideoTracks()[0]; return !!tr && tr.readyState === 'live'; };
   function tracks(kind) {
     if (kind === 'mixer') { const a = window.audioMixer?.destination?.stream?.getAudioTracks()[0]; return { pgm: new MediaStream(a ? [a] : []) }; }
     if (!media.pgm || media.pgm.getVideoTracks()[0]?.readyState === 'ended') media.pgm = document.querySelector('#programOutput')?.captureStream?.(30) || null;
