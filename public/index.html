@@ -633,6 +633,7 @@ function refreshMultiview(t) {
     nextCamera = (i + 1) % cells.length;
     const c = cells[i];
     if (c.parentElement.hidden || !c.getClientRects().length || (monitorDue.get(c) || 0) > t) continue;
+    if (window.andromedaNativeMonitors?.covers(c)) { monitorDue.set(c, t + 500); continue; } // câmera ao vivo: o vídeo nativo mostra, o canvas não precisa desenhar
     if (performance.now() - renderAt >= monitorBudget()) break; // o PGM vem primeiro: sem folga neste quadro, as miniaturas esperam o próximo
     guarded('câmera ' + (i + 1), () => source(c.getContext('2d'), i, t));
     monitorDue.set(c, t + (cams[i]?.conn ? (onAirNow() ? 200 : 95) : 995));
@@ -652,7 +653,9 @@ function render(t){renderAt=performance.now();try{if(t-last>=1000/30-0.5){const 
  });
  directProgram = false;
  if (watching) {
-   if (t >= nextPreview && performance.now() - renderAt < monitorBudget() && !$('#monPreview').hidden && $('#monPreview canvas').getClientRects().length) {
+   // PREVIEW com câmera ao vivo é mostrado pelo vídeo nativo; o canvas só é desenhado se a mesa remota estiver assistindo o PREVIEW.
+   const prvNative = window.andromedaNativeMonitors?.covers($('#monPreview canvas')) && !window.andromedaRemotePreview?.();
+   if (!prvNative && t >= nextPreview && performance.now() - renderAt < monitorBudget() && !$('#monPreview').hidden && $('#monPreview canvas').getClientRects().length) {
      sizePreviewForAir();
      guarded('preview', () => source($('#monPreview canvas').getContext('2d'), state.prv, t));
      nextPreview = t + (onAirNow() ? 100 : 64);
@@ -724,7 +727,7 @@ log('Saída fixada no PROGRAM (AR). Preview reservado à preparação.');
 <script src="/rundown.js"></script>
 <script src="/trilha.js"></script>
 <script src="/camctl.js"></script><script src="/tracking-core.js"></script><script src="/tracking.js"></script><link rel="stylesheet" href="/workspace-custom.css"><script src="/cam/relay.js"></script><script src="/remote-desk.js"></script><script src="/workspace-custom.js"></script>
-<script src="/stage.js"></script>
+<script src="/stage.js"></script><script src="/native-monitors.js"></script>
 <script src="/commands.js"></script><script src="/arrange.js"></script><script src="/vertical.js"></script><script src="/broadcast.js"></script><script src="/pgm-quality.js"></script>
 <script src="/mkvmux.js"></script><script src="/engine.js"></script><script src="/syncprobe.js"></script>
 <script src="/preflight.js"></script><script src="/diagnostics.js"></script>

@@ -85,3 +85,12 @@ test('prioridade do AR: enquanto transmite, PREVIEW e miniaturas só usam a folg
   assert.match(h, /cams\[i\]\?\.conn \? \(onAirNow\(\) \? 200 : 95\) : 995/, 'miniaturas a 5 q/s no ar'); assert.match(h, /nextPreview = t \+ \(onAirNow\(\) \? 100 : 64\)/, 'PREVIEW a 10 q/s no ar');
   assert.match(h, /\[w, h\] = onAirNow\(\) \? \[640, 360\] : \[960, 540\]/);
 });
+
+test('monitores nativos: PREVIEW e miniaturas de câmeras ao vivo vão por <video> (compositor), o canvas não converte o vídeo na tela principal', () => {
+  const n = read('public/native-monitors.js'), h = read('public/index.html'), r = read('public/remote-desk.js'), server = read('server.cjs');
+  assert.match(n, /el\.srcObject instanceof MediaStream/); assert.match(n, /el\.captureStream\(\)/, 'arquivo local sem decodificar de novo'); assert.match(n, /covers\(canvas\)/);
+  assert.match(h, /<script src="\/stage\.js"><\/script><script src="\/native-monitors\.js"><\/script>/); assert.match(server, /'\/native-monitors\.js':'native-monitors\.js'/);
+  assert.match(h, /if \(window\.andromedaNativeMonitors\?\.covers\(c\)\) \{ monitorDue\.set\(c, t \+ 500\); continue; \}/);
+  assert.match(h, /const prvNative = window\.andromedaNativeMonitors\?\.covers\(\$\('#monPreview canvas'\)\) && !window\.andromedaRemotePreview\?\.\(\);/, 'a mesa remota que assiste o PREVIEW continua recebendo o canvas');
+  assert.match(r, /window\.andromedaRemotePreview = \(\) =>/);
+});
