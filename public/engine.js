@@ -239,7 +239,10 @@
     const frameSinks = new Set();
     const script = `
       importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
-      let session, outstanding = 0, readers = [];
+      let session, outstanding = 0, readers = [], reading = [];
+      // Encerramento sem quadros esquecidos: a mesa para as trilhas antes de pedir stop/abort, então cada leitura recebe o que ainda estava na fila
+      // (e fecha, porque a sessão já não aceita quadros) até o fim do fluxo. Cancelar direto descartaria esses quadros sem close().
+      const settle = () => Promise.race([Promise.all(reading), new Promise(r => setTimeout(r, 800))]).then(() => Promise.all(readers.map(r => r.cancel().catch(() => {}))));
       async function readVideo(id, readable) {
         const reader = readable.getReader(); readers.push(reader);
         try {
@@ -268,13 +271,13 @@
               onStats: stats => postMessage({type:'stats',stats})
             });
             await session.start();
-            for (const input of m.videos) readVideo(input.id, input.readable);
+            for (const input of m.videos) reading.push(readVideo(input.id, input.readable));
             postMessage({type:'ready'});
           } else if (m.type === 'ack') outstanding = Math.max(0, outstanding - m.bytes);
           else if (m.type === 'restart') session.restart(m.id);
           else if (m.type === 'key') session.requestKeyframe(m.id);
-          else if (m.type === 'stop') { await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); await session.stop(); postMessage({type:'stopped'}); }
-          else if (m.type === 'abort') { session?.abort(); await Promise.all(readers.map(r=>r.cancel().catch(()=>{}))); postMessage({type:'aborted'}); }
+          else if (m.type === 'stop') { await session.stop(); await settle(); postMessage({type:'stopped'}); }
+          else if (m.type === 'abort') { session?.abort(); await settle(); postMessage({type:'aborted'}); }
         } catch(e) { postMessage({type:'error',message:e.message}); }
       };
     `;
