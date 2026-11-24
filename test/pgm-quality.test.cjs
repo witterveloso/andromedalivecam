@@ -78,3 +78,10 @@ test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão o
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);
 });
+
+test('prioridade do AR: enquanto transmite, PREVIEW e miniaturas só usam a folga do quadro e rodam mais devagar', () => {
+  const h = read('public/index.html');
+  assert.match(h, /const monitorBudget = \(\) => onAirNow\(\) \? 13 : 22;/); assert.match(h, /if \(performance\.now\(\) - renderAt >= monitorBudget\(\)\) break;/);
+  assert.match(h, /cams\[i\]\?\.conn \? \(onAirNow\(\) \? 200 : 95\) : 995/, 'miniaturas a 5 q/s no ar'); assert.match(h, /nextPreview = t \+ \(onAirNow\(\) \? 100 : 64\)/, 'PREVIEW a 10 q/s no ar');
+  assert.match(h, /\[w, h\] = onAirNow\(\) \? \[640, 360\] : \[960, 540\]/);
+});
