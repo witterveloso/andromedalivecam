@@ -71,6 +71,16 @@ test('0.27.5: sem botões de posição no rodapé das câmeras (poluíam o quadr
   assert.match(html + k, /camCtlPresets/, 'o banco de posições do painel continua');
 });
 
+test('0.27.5: MARCAÇÕES — 4 posições da câmera no PREVIEW com miniatura, tecla P, 1 a 4 só com a faixa aberta', () => {
+  const m = read('public/marks.js'), c = read('public/commands.js'), k = read('public/camctl.js'), h = read('public/index.html'), server = read('server.cjs'), css = read('public/andromeda-ui.css');
+  assert.match(m, /const MARKS = 4/); assert.match(m, /document\.getElementById\('monPreview'\)/); assert.match(m, /P\.recallFor\(slot, n\)/); assert.match(m, /P\.saveFor\(slot, n\)/);
+  assert.match(m, /if \(box\.hidden \|\| e\.repeat/, 'as teclas 1 a 4 só são das marcações com a faixa aberta'); assert.match(m, /\}, true\);/, 'antes dos atalhos da mesa');
+  assert.match(m, /addEventListener\('andromeda:preset'/); assert.match(k, /dispatchEvent\(new CustomEvent\('andromeda:preset'/); assert.match(k, /saveFor: \(slot, n\) => savePreset\(n, slot\)/);
+  assert.match(c, /\{ id: 'marks', name: \(\) => 'MARCAÇÕES'/); assert.match(c, /\{ id: 'marks', label: [^}]*key: 'P'/); assert.match(c, /\['marks', 'tracking'\]/);
+  assert.match(h, /<script src="\/native-monitors\.js"><\/script><script src="\/marks\.js"><\/script>/); assert.match(server, /'\/marks\.js':'marks\.js'/);
+  assert.match(css, /\.marks \{ position: absolute; left: 6px; right: 6px; bottom: 6px/);
+});
+
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);

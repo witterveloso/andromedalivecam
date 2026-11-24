@@ -1480,3 +1480,30 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 
 /* ---------- 0.27.4: monitores nativos — PREVIEW e miniaturas de câmeras ao vivo mostrados pelo compositor do navegador ---------- */
 .native-mon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; pointer-events: none; }
+
+/* ---------- 0.27.5: MARCAÇÕES — 4 posições salvas da câmera no PREVIEW, com miniatura, numa faixa compacta no pé do monitor ---------- */
+.marks { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 6; display: flex; flex-direction: column; gap: 4px; padding: 5px 6px 6px; border-radius: 8px; background: rgba(8, 10, 20, .78); border: 1px solid rgba(120, 190, 255, .45); box-shadow: 0 6px 20px rgba(0, 0, 0, .45); }
+.marks[data-air="true"] { border-color: rgba(255, 70, 90, .85); }
+.marks-head { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10px; letter-spacing: .06em; color: #cfe3ff; }
+.marks-head b { color: #fff; letter-spacing: .1em; }
+.marks-cam { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9fc6ff; }
+.marks[data-air="true"] .marks-cam { color: #ff8a9a; font-weight: 700; }
+.marks-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #b9c4dc; letter-spacing: .02em; text-align: right; }
+.marks-close { flex: none; width: 20px; height: 20px; padding: 0; border-radius: 5px; font-size: 14px; line-height: 1; }
+.marks-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; width: min(100%, 72%, 520px); margin: 0 auto; }
+.mark { position: relative; min-width: 0; }
+.mark-go { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; padding: 0; overflow: hidden; border-radius: 6px; border: 1.5px dashed rgba(255, 255, 255, .28); background: #05060c; }
+.mark[data-filled="true"] .mark-go { border-style: solid; border-color: rgba(120, 190, 255, .7); }
+.mark-go[aria-pressed="true"] { border-color: var(--brand-blue); box-shadow: 0 0 0 2px var(--brand-blue); }
+.mark-go:not(:disabled):hover { border-color: #fff; }
+.mark-go:disabled { cursor: default; opacity: 1; }
+.mark-img { position: absolute; inset: 0; background: center / cover no-repeat; }
+.mark[data-filled="false"] .mark-img { background-image: none !important; }
+.mark-go i { position: absolute; left: 4px; top: 3px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px; font: 700 11px/18px var(--font-mono, monospace); font-style: normal; background: rgba(0, 0, 0, .72); color: #fff; }
+.mark-go[aria-pressed="true"] i { background: var(--brand-blue); }
+.mark-go small { position: absolute; right: 4px; top: 3px; padding: 0 4px; border-radius: 4px; font-size: 10px; background: rgba(0, 0, 0, .65); color: #dbe8ff; }
+.mark[data-filled="false"] .mark-go small { left: 0; right: 0; top: 50%; transform: translateY(-50%); background: none; text-align: center; color: rgba(255, 255, 255, .5); }
+.mark-save { position: absolute; right: 4px; bottom: 3px; z-index: 1; padding: 0 4px; min-height: 0; font-size: 8px; line-height: 14px; font-weight: 700; letter-spacing: .04em; border-radius: 4px; color: #ffc2ca; background: rgba(0, 0, 0, .7); border: 1px solid rgba(255, 120, 140, .55); }
+.mark-save:not(:disabled):hover { background: #c3263b; color: #fff; }
+.mark-go:focus-visible, .mark-save:focus-visible, .marks-close:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 1px; }
+@container (max-width: 420px) { .marks-note { display: none; } }

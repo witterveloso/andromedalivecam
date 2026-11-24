@@ -74,6 +74,8 @@
     { id: 'trilhanext', name: () => 'PRÓXIMA FAIXA', icon: () => 'next', sub: () => { const t = R.trilha.info(); return t.total > 1 ? 'troca suave' : 'sem outra faixa'; }, run: () => R.trilha.next(), on: () => false, prv: () => false, settings: () => R.trilha.openPanel() },
     // TRACKING: liga e desliga o seguimento automático da câmera selecionada no Controle de câmera (a que segue o PREVIEW).
     { id: 'tracking', name: () => 'TRACKING', icon: () => 'target', sub: () => { const T = window.andromedaTracking; if (!T) return ''; const cam = String(sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)).split('—')[0].trim(); return T.info().on ? cam + ' · seguindo' : camCtl.enabled && camCtl.caps.has(camCtl.slot) ? cam + ' · desligado' : 'ative o controle de câmera'; }, run: () => window.andromedaTracking?.toggle(), on: () => false, prv: () => !!window.andromedaTracking?.info().on, settings: () => openCamCtl() },
+    // MARCAÇÕES: abre sobre o PREVIEW as 4 posições salvas da câmera que está nele (com miniatura); escolher leva a câmera à posição antes do AR.
+    { id: 'marks', name: () => 'MARCAÇÕES', icon: () => 'marks', sub: () => window.andromedaMarks?.label() || '', run: () => window.andromedaMarks?.toggle(), on: () => false, prv: () => !!window.andromedaMarks?.isOpen(), settings: () => openCamCtl() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
@@ -92,7 +94,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['trilha', 'mosaic'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['trilha', 'mosaic'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext'], ['marks', 'tracking']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -386,6 +388,7 @@
     { id: 'vtstop', label: 'VT PARAR (tira do ar)', key: 'Shift+F8', run: () => R.vtStop() },
     { id: 'vinheta', label: 'VINHETA no PREVIEW', key: 'F10', run: () => R.vinhetaToPreview() },
     { id: 'tracking', label: 'TRACKING da câmera selecionada (liga/desliga)', key: '', run: () => window.andromedaTracking?.toggle() },
+    { id: 'marks', label: 'MARCAÇÕES da câmera no PREVIEW (abre / fecha; com o painel aberto, 1 a 4 escolhem)', key: 'P', run: () => window.andromedaMarks?.toggle() },
     { id: 'trilha', label: 'TRILHA (liga com fade in / desliga com fade out)', key: 'T', run: () => R.trilha.toggle() },
     { id: 'trilhanext', label: 'TRILHA · próxima faixa', key: 'N', run: () => R.trilha.next() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
