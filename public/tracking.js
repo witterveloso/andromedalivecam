@@ -111,7 +111,7 @@
     const c = caps(s.i);
     if (!camCtl.enabled) { s.status = 'Controle de câmera desligado'; return; }
     if (!c) { s.status = 'Sem celular conectado nesta câmera'; return; }
-    if (camCtl.glide && camCtl.slot === s.i) { s.status = 'Indo a uma posição salva…'; s.tracker.holdOff(1.5); return; }
+    if (camCtl.glides?.has(s.i)) { s.status = 'Indo a uma posição salva…'; s.tracker.holdOff(1.5); return; }
     const dt = Math.min(0.5, s.lastAt ? (now - s.lastAt) / 1000 : 0.1); s.lastAt = now;
     let dets;
     try { s.status = s.status || 'Carregando o reconhecimento…'; dets = await detect(s); s.error = ''; } catch (e) { s.error = 'Não foi possível iniciar o reconhecimento: ' + (e?.message || e); s.status = s.error; s.on = false; paint(); log('Tracking: ' + s.error); return; }
@@ -131,7 +131,7 @@
     for (const s of slots.values()) {
       if (!s.on) continue; const c = caps(s.i);
       if (!camCtl.enabled || !c) continue;
-      if (camCtl.glide && camCtl.slot === s.i) { s.tracker.holdOff(1.5); continue; }
+      if (camCtl.glides?.has(s.i)) { s.tracker.holdOff(1.5); continue; }
       const out = s.tracker.tick(viewOf(c), now);
       if (out.pan || out.zoom) {
         const msg = { type: 'control', slot: s.i, ease: out.ease }; if (out.pan) { msg.pan = out.pan; if (out.pv) msg.pv = out.pv; c.pan = out.pan; } if (out.zoom) { msg.zoom = out.zoom; c.zoom.value = out.zoom; }

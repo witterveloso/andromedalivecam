@@ -41,19 +41,19 @@ for (let i = 0; i < 10; i++) ccq('#camCtlSlot').add(new Option('CAM ' + (i + 1),
 const DEFAULT_EXP = { mode: 'auto', ev: 0, min: -2, max: 2, step: 0.1, native: false }, DEFAULT_WB = { mode: 'auto', kelvin: 5600, min: 2500, max: 9000, step: 50, native: false };
 
 // Junta mudanças rápidas (arrastar) num envio a cada 60 ms. Desligado, nada sai.
-function camCtlSend(change) {
+function camCtlSend(change, slot = camCtl.slot) {
   if (!camCtl.enabled) return;
-  const p = camCtl.pending || {};
-  camCtl.pending = { ...p, ...change, ...(change.exp ? { exp: { ...p.exp, ...change.exp } } : {}), ...(change.wb ? { wb: { ...p.wb, ...change.wb } } : {}) };
+  const queue = camCtl.queue || (camCtl.queue = new Map()), p = queue.get(slot) || {};
+  queue.set(slot, { ...p, ...change, ...(change.exp ? { exp: { ...p.exp, ...change.exp } } : {}), ...(change.wb ? { wb: { ...p.wb, ...change.wb } } : {}) });
   if (camCtl.sendTimer) return;
-  camCtl.sendTimer = setTimeout(() => { camCtl.sendTimer = null; const m = camCtl.pending; camCtl.pending = null; if (m) camSend({ type: 'control', slot: camCtl.slot, ...m }); }, 60);
+  camCtl.sendTimer = setTimeout(() => { camCtl.sendTimer = null; const all = [...queue]; queue.clear(); for (const [s, m] of all) camSend({ type: 'control', slot: s, ...m }); }, 60);
 }
 const camCaps = () => camCtl.caps.get(camCtl.slot);
 
 /* ---------- ligar / desligar e o preview ao lado ---------- */
 function camCtlSetEnabled(on) {
   camCtl.enabled = !!on; camCtlStore.set('andromeda.camctl.on.v1', camCtl.enabled);
-  if (!camCtl.enabled) { cancelGlide(); camCtl.pending = null; }
+  if (!camCtl.enabled) { cancelGlide('all'); camCtl.queue?.clear(); }
   camCtlPaint(); camCtlDraw();
   try { log(camCtl.enabled ? 'Controle de câmera ATIVO: comandos vão ao celular da ' + (sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)) : 'Controle de câmera desligado'); } catch { /* antes da mesa pronta */ }
 }
@@ -129,8 +129,12 @@ window.andromedaCamCtl = {
   },
   drop(slot) { camCtl.caps.delete(slot); camCtlPaint(); },
   state: () => camCtl, presets: () => camPresets, recall: (n, seconds) => recallPreset(n, seconds), save: n => savePreset(n), clear: n => clearPreset(n), setEnabled: camCtlSetEnabled,
+  // Rodapé das câmeras: chamar a posição n (0 a 5) de uma câmera qualquer, e abrir o painel nessa câmera pronto para gravar.
+  presetOf: (slot, n) => camPresets[slot]?.[n] || null, lastOf: slot => lastOf(slot), connected: slot => camCtl.caps.has(slot),
+  recallFor: (slot, n) => recallPreset(n, camCtl.glideSeconds, slot),
+  editFor: (slot, n) => { camCtl.follow = false; ccq('#camCtlFollow').checked = false; ccq('#camCtlSlot').value = String(slot); camCtlGoTo(slot); camCtl.presetMode = 'save'; camCtl.saveTarget = n; camCtl.saveHint = 'GRAVAR: ajuste o enquadramento de ' + (sources[slot] || 'CAM ' + (slot + 1)) + ' e toque na Posição ' + (n + 1) + ' para guardar.'; camCtlPaint(); },
 };
-const camCtlGoTo = slot => { if (slot === camCtl.slot) return; cancelGlide(); camCtl.slot = slot; camCtlPaint(); };
+const camCtlGoTo = slot => { if (slot === camCtl.slot) return; camCtl.slot = slot; camCtlPaint(); };
 ccq('#camCtlSlot').onchange = e => { camCtlGoTo(+e.target.value); camCtl.follow = false; ccq('#camCtlFollow').checked = false; };
 ccq('#camCtlFollow').onchange = e => { camCtl.follow = e.target.checked; if (camCtl.follow && state.prv < 10) camCtlGoTo(state.prv); camCtlPaint(); };
 ccq('#camCtlGrid').onchange = e => { camCtl.grid = e.target.checked; camCtlStore.set('andromeda.camctl.grid.v1', camCtl.grid); };
@@ -160,7 +164,8 @@ pad.addEventListener('keydown', e => {
 });
 
 /* ---------- banco de 6 posições de enquadramento ---------- */
-const slotList = () => (camPresets[camCtl.slot] ||= Array(6).fill(null));
+const slotList = (slot = camCtl.slot) => (camPresets[slot] ||= Array(6).fill(null));
+const lastOf = (slot = camCtl.slot) => (camCtl.lastBy ||= {})[slot];
 const PM_HINT = { call: 'Toque numa posição para levar a câmera até ela.', save: 'GRAVAR: toque na posição onde guardar o enquadramento atual (zoom, recorte, exposição e cor).', clear: 'APAGAR: toque na posição que deve ficar vazia.' };
 const presetBox = ccq('#camCtlPresets');
 for (let i = 0; i < 6; i++) {
@@ -170,9 +175,9 @@ for (let i = 0; i < 6; i++) {
 function paintBank() {
   const list = slotList(), c = camCaps();
   for (const btn of ccq('#camCtlPresetMode').children) btn.setAttribute('aria-checked', String(btn.dataset.pm === camCtl.presetMode));
-  ccq('#camCtlBank').dataset.mode = camCtl.presetMode; ccq('#camCtlPNote').textContent = PM_HINT[camCtl.presetMode];
+  ccq('#camCtlBank').dataset.mode = camCtl.presetMode; ccq('#camCtlPNote').textContent = (camCtl.presetMode === 'save' && camCtl.saveHint) || PM_HINT[camCtl.presetMode];
   presetBox.querySelectorAll('.camctl-preset').forEach((btn, i) => {
-    const p = list[i]; btn.dataset.filled = String(!!p); btn.setAttribute('aria-pressed', String(camCtl.last === i && !!p));
+    const p = list[i]; btn.dataset.filled = String(!!p); btn.setAttribute('aria-pressed', String(lastOf() === i && !!p)); btn.classList.toggle('camctl-target', camCtl.presetMode === 'save' && camCtl.saveTarget === i);
     btn.querySelector('small').textContent = p ? fmtX(p.zoom) + (p.exp?.mode === 'manual' ? ' · ' + fmtEv(p.exp.ev) : '') : 'vazio';
     btn.disabled = !c && camCtl.presetMode !== 'clear';
     btn.title = p ? 'Posição ' + (i + 1) + ': zoom ' + fmtX(p.zoom) + ' · recorte ' + Math.round(p.pan.x * 100) + '% / ' + Math.round(p.pan.y * 100) + '%' : 'Posição ' + (i + 1) + ' vazia';
@@ -181,17 +186,22 @@ function paintBank() {
 function savePreset(i) {
   const c = camCaps(); if (!c) return false;
   slotList()[i] = { zoom: Math.round(c.zoom.value * 100) / 100, pan: { x: Math.round(c.pan.x * 1000) / 1000, y: Math.round(c.pan.y * 1000) / 1000 }, exp: { mode: c.exp.mode, ev: c.exp.ev }, wb: { mode: c.wb.mode, kelvin: c.wb.kelvin } };
-  camCtlStore.set(CAM_PRESETS_KEY, camPresets); camCtl.last = i;
+  camCtlStore.set(CAM_PRESETS_KEY, camPresets); (camCtl.lastBy ||= {})[camCtl.slot] = i;
   try { log('Posição ' + (i + 1) + ' gravada para ' + (sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)) + ': zoom ' + fmtX(c.zoom.value)); } catch { /* antes da mesa pronta */ }
   return true;
 }
-function clearPreset(i) { slotList()[i] = null; camCtlStore.set(CAM_PRESETS_KEY, camPresets); if (camCtl.last === i) camCtl.last = null; try { log('Posição ' + (i + 1) + ' apagada'); } catch { /* antes da mesa pronta */ } }
-function cancelGlide() { if (camCtl.glide) { clearInterval(camCtl.glide); camCtl.glide = null; } }
+function clearPreset(i) { slotList()[i] = null; camCtlStore.set(CAM_PRESETS_KEY, camPresets); if (lastOf() === i) camCtl.lastBy[camCtl.slot] = null; try { log('Posição ' + (i + 1) + ' apagada'); } catch { /* antes da mesa pronta */ } }
+// Um movimento suave por câmera: várias câmeras podem ir às suas posições ao mesmo tempo.
+function cancelGlide(slot = camCtl.slot) {
+  const g = camCtl.glides || (camCtl.glides = new Map());
+  for (const [s, t] of [...g]) if (slot === 'all' || s === slot) { clearInterval(t); g.delete(s); }
+  camCtl.glide = g.has(camCtl.slot) ? g.get(camCtl.slot) : null;
+}
 const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 // Leva a câmera até a posição: na hora ou com um movimento suave (zoom, recorte, brilho e cor andam juntos).
-function recallPreset(i, seconds = camCtl.glideSeconds) {
-  const p = slotList()[i], c = camCaps(); if (!p || !c || !camCtl.enabled) return false;
-  cancelGlide(); camCtl.last = i;
+function recallPreset(i, seconds = camCtl.glideSeconds, slot = camCtl.slot) {
+  const p = slotList(slot)[i], c = camCtl.caps.get(slot); if (!p || !c || !camCtl.enabled) return false;
+  cancelGlide(slot); (camCtl.lastBy ||= {})[slot] = i;
   const modes = {}; if (p.exp?.mode) modes.exp = { mode: p.exp.mode }; if (p.wb?.mode) modes.wb = { mode: p.wb.mode };
   const from = { zoom: c.zoom.value, px: c.pan.x, py: c.pan.y, ev: c.exp.ev, k: c.wb.kelvin };
   const at = k => {
@@ -202,22 +212,23 @@ function recallPreset(i, seconds = camCtl.glideSeconds) {
     return out;
   };
   if (modes.exp) c.exp.mode = modes.exp.mode; if (modes.wb) c.wb.mode = modes.wb.mode;
-  camCtlSend(modes);
-  if (!(seconds > 0)) { camCtlSend(at(1)); camCtlPaint(); return true; }
-  const start = performance.now();
-  camCtl.glide = setInterval(() => {
-    const k = Math.min(1, (performance.now() - start) / (seconds * 1000)); camCtlSend(at(ease(k))); camCtlPaint();
-    if (k >= 1) cancelGlide();
-  }, 70);
+  camCtlSend(modes, slot);
+  if (!(seconds > 0)) { camCtlSend(at(1), slot); camCtlPaint(); return true; }
+  const start = performance.now(), glides = camCtl.glides || (camCtl.glides = new Map());
+  glides.set(slot, setInterval(() => {
+    const k = Math.min(1, (performance.now() - start) / (seconds * 1000)); camCtlSend(at(ease(k)), slot); camCtlPaint();
+    if (k >= 1) cancelGlide(slot);
+  }, 70));
+  camCtl.glide = glides.has(camCtl.slot) ? glides.get(camCtl.slot) : null;
   camCtlPaint(); return true;
 }
 function presetClick(i) {
-  if (camCtl.presetMode === 'save') { if (savePreset(i)) camCtl.presetMode = 'call'; }
+  if (camCtl.presetMode === 'save') { if (savePreset(i)) { camCtl.presetMode = 'call'; camCtl.saveHint = camCtl.saveTarget = null; } }
   else if (camCtl.presetMode === 'clear') { clearPreset(i); camCtl.presetMode = 'call'; }
   else { if (!slotList()[i]) { ccq('#camCtlPNote').textContent = 'Posição ' + (i + 1) + ' vazia: use GRAVAR para guardar o enquadramento atual.'; return; } recallPreset(i); }
   paintBank();
 }
-for (const btn of ccq('#camCtlPresetMode').children) btn.onclick = () => { camCtl.presetMode = btn.dataset.pm; paintBank(); };
+for (const btn of ccq('#camCtlPresetMode').children) btn.onclick = () => { camCtl.presetMode = btn.dataset.pm; camCtl.saveHint = camCtl.saveTarget = null; paintBank(); };
 ccq('#camCtlGlide').onchange = e => { camCtl.glideSeconds = Number(e.target.value) || 0; camCtlStore.set('andromeda.camctl.glide.v1', camCtl.glideSeconds); };
 
 // Segue o PREVIEW: o diretor enquadra a próxima câmera antes de levar ao AR.
