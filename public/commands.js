@@ -74,6 +74,8 @@
     { id: 'trilhanext', name: () => 'PRÓXIMA FAIXA', icon: () => 'next', sub: () => { const t = R.trilha.info(); return t.total > 1 ? 'troca suave' : 'sem outra faixa'; }, run: () => R.trilha.next(), on: () => false, prv: () => false, settings: () => R.trilha.openPanel() },
     // TRACKING: liga e desliga o seguimento automático da câmera selecionada no Controle de câmera (a que segue o PREVIEW).
     { id: 'tracking', name: () => 'TRACKING', icon: () => 'target', sub: () => { const T = window.andromedaTracking; if (!T) return ''; const cam = String(sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)).split('—')[0].trim(); return T.info().on ? cam + ' · seguindo' : camCtl.enabled && camCtl.caps.has(camCtl.slot) ? cam + ' · desligado' : 'ative o controle de câmera'; }, run: () => window.andromedaTracking?.toggle(), on: () => false, prv: () => !!window.andromedaTracking?.info().on, settings: () => openCamCtl() },
+    // MARCAÇÕES: abre sobre o PREVIEW as 4 posições salvas da câmera que está nele (com miniatura); escolher leva a câmera à posição antes do AR.
+    { id: 'marks', name: () => 'MARCAÇÕES', icon: () => 'marks', sub: () => window.andromedaMarks?.label() || '', run: () => window.andromedaMarks?.toggle(), on: () => false, prv: () => !!window.andromedaMarks?.isOpen(), settings: () => openCamCtl() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
@@ -92,7 +94,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['trilha', 'mosaic'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['trilha', 'mosaic'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext'], ['marks', 'tracking']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -386,6 +388,7 @@
     { id: 'vtstop', label: 'VT PARAR (tira do ar)', key: 'Shift+F8', run: () => R.vtStop() },
     { id: 'vinheta', label: 'VINHETA no PREVIEW', key: 'F10', run: () => R.vinhetaToPreview() },
     { id: 'tracking', label: 'TRACKING da câmera selecionada (liga/desliga)', key: '', run: () => window.andromedaTracking?.toggle() },
+    { id: 'marks', label: 'MARCAÇÕES da câmera no PREVIEW (abre / fecha; com o painel aberto, 1 a 4 escolhem)', key: 'P', run: () => window.andromedaMarks?.toggle() },
     { id: 'trilha', label: 'TRILHA (liga com fade in / desliga com fade out)', key: 'T', run: () => R.trilha.toggle() },
     { id: 'trilhanext', label: 'TRILHA · próxima faixa', key: 'N', run: () => R.trilha.next() },
     { id: 'fade', label: 'FADE OUT / FADE IN do master', key: '', run: () => runFade() },
@@ -425,44 +428,6 @@
     });
     function paintModes() { for (const [group, sel] of groups) for (const btn of group.children) { const on = btn.dataset.mode === sel.value; if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on)); } }
     paintModes(); setInterval(paintModes, 150); }
-  // Posições salvas no rodapé de cada câmera: 1 a 4. Um clique leva a câmera à posição; dois cliques abrem o Controle de câmera
-  // nessa câmera, em modo GRAVAR, para marcar a posição. O clique simples espera um instante para não confundir com o duplo.
-  { const P = window.andromedaCamCtl, rows = [];
-    $$('.mv-cell').forEach((cell, slot) => {
-      if (slot >= 10 || !P) return;
-      const row = make('div', 'cell-presets'); row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Posições salvas de ' + (sources[slot] || 'CAM ' + (slot + 1)));
-      for (let n = 0; n < 4; n++) {
-        const btn = make('button', 'cell-preset', String(n + 1)); btn.type = 'button'; btn.dataset.n = String(n);
-        let timer = null;
-        for (const type of ['pointerdown', 'keydown']) btn.addEventListener(type, e => e.stopPropagation());
-        btn.addEventListener('click', e => {
-          e.stopPropagation(); e.preventDefault(); if (editingIn(cell)) return;
-          clearTimeout(timer); timer = setTimeout(() => { timer = null; callPreset(slot, n); }, 260);
-        });
-        btn.addEventListener('dblclick', e => { e.stopPropagation(); e.preventDefault(); clearTimeout(timer); timer = null; if (editingIn(cell)) return; P.editFor(slot, n); openCamCtl(); log('Controle de câmera: marque a Posição ' + (n + 1) + ' de ' + (sources[slot] || 'CAM ' + (slot + 1)) + '.'); });
-        row.append(btn);
-      }
-      const anchor = cell.querySelector('.cell-mode'); if (anchor) anchor.after(row); else cell.append(row);
-      rows.push([row, slot]);
-    });
-    function callPreset(slot, n) {
-      const name = sources[slot] || 'CAM ' + (slot + 1);
-      if (!P.presetOf(slot, n)) { log(name + ': a Posição ' + (n + 1) + ' está vazia. Dê dois cliques no botão ' + (n + 1) + ' para marcá-la.'); return; }
-      if (!P.state().enabled) { log('Ative o Controle de câmera para levar ' + name + ' à Posição ' + (n + 1) + '.'); openCamCtl(); return; }
-      if (!P.connected(slot)) { log(name + ': sem celular conectado para ir à Posição ' + (n + 1) + '.'); return; }
-      if (P.recallFor(slot, n)) log(name + ' → Posição ' + (n + 1));
-    }
-    function paintPresets() {
-      const on = !!P?.state().enabled;
-      for (const [row, slot] of rows) for (const btn of row.children) {
-        const n = +btn.dataset.n, filled = !!P.presetOf(slot, n), active = filled && P.lastOf(slot) === n;
-        if (btn.dataset.filled !== String(filled)) btn.dataset.filled = String(filled);
-        if (btn.getAttribute('aria-pressed') !== String(active)) btn.setAttribute('aria-pressed', String(active));
-        const tip = (filled ? 'Posição ' + (n + 1) + ': clique leva a câmera até ela' + (on ? '' : ' (ative o Controle de câmera)') : 'Posição ' + (n + 1) + ' vazia') + ' · dois cliques: marcar no Controle de câmera';
-        if (btn.title !== tip) btn.title = tip;
-      }
-    }
-    paintPresets(); setInterval(paintPresets, 400); }
   // O número de atalho aparece em cada câmera do multiview; clicar nele faz o mesmo que a tecla: a câmera corta direto para o AR.
   // O resto do quadro continua como antes (um clique escolhe o PREVIEW, duplo clique abre as fontes).
   { const chips = [];

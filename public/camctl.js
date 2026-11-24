@@ -129,10 +129,10 @@ window.andromedaCamCtl = {
   },
   drop(slot) { camCtl.caps.delete(slot); camCtlPaint(); },
   state: () => camCtl, presets: () => camPresets, recall: (n, seconds) => recallPreset(n, seconds), save: n => savePreset(n), clear: n => clearPreset(n), setEnabled: camCtlSetEnabled,
-  // Rodapé das câmeras: chamar a posição n (0 a 5) de uma câmera qualquer, e abrir o painel nessa câmera pronto para gravar.
+  // MARCAÇÕES (atalho sobre o PREVIEW): chamar e gravar a posição n (0 a 5) de uma câmera qualquer, sem trocar a câmera do painel.
   presetOf: (slot, n) => camPresets[slot]?.[n] || null, lastOf: slot => lastOf(slot), connected: slot => camCtl.caps.has(slot),
   recallFor: (slot, n) => recallPreset(n, camCtl.glideSeconds, slot),
-  editFor: (slot, n) => { camCtl.follow = false; ccq('#camCtlFollow').checked = false; ccq('#camCtlSlot').value = String(slot); camCtlGoTo(slot); camCtl.presetMode = 'save'; camCtl.saveTarget = n; camCtl.saveHint = 'GRAVAR: ajuste o enquadramento de ' + (sources[slot] || 'CAM ' + (slot + 1)) + ' e toque na Posição ' + (n + 1) + ' para guardar.'; camCtlPaint(); },
+  saveFor: (slot, n) => savePreset(n, slot),
 };
 const camCtlGoTo = slot => { if (slot === camCtl.slot) return; camCtl.slot = slot; camCtlPaint(); };
 ccq('#camCtlSlot').onchange = e => { camCtlGoTo(+e.target.value); camCtl.follow = false; ccq('#camCtlFollow').checked = false; };
@@ -175,22 +175,28 @@ for (let i = 0; i < 6; i++) {
 function paintBank() {
   const list = slotList(), c = camCaps();
   for (const btn of ccq('#camCtlPresetMode').children) btn.setAttribute('aria-checked', String(btn.dataset.pm === camCtl.presetMode));
-  ccq('#camCtlBank').dataset.mode = camCtl.presetMode; ccq('#camCtlPNote').textContent = (camCtl.presetMode === 'save' && camCtl.saveHint) || PM_HINT[camCtl.presetMode];
+  ccq('#camCtlBank').dataset.mode = camCtl.presetMode; ccq('#camCtlPNote').textContent = PM_HINT[camCtl.presetMode];
   presetBox.querySelectorAll('.camctl-preset').forEach((btn, i) => {
-    const p = list[i]; btn.dataset.filled = String(!!p); btn.setAttribute('aria-pressed', String(lastOf() === i && !!p)); btn.classList.toggle('camctl-target', camCtl.presetMode === 'save' && camCtl.saveTarget === i);
+    const p = list[i]; btn.dataset.filled = String(!!p); btn.setAttribute('aria-pressed', String(lastOf() === i && !!p));
     btn.querySelector('small').textContent = p ? fmtX(p.zoom) + (p.exp?.mode === 'manual' ? ' · ' + fmtEv(p.exp.ev) : '') : 'vazio';
     btn.disabled = !c && camCtl.presetMode !== 'clear';
     btn.title = p ? 'Posição ' + (i + 1) + ': zoom ' + fmtX(p.zoom) + ' · recorte ' + Math.round(p.pan.x * 100) + '% / ' + Math.round(p.pan.y * 100) + '%' : 'Posição ' + (i + 1) + ' vazia';
   });
 }
-function savePreset(i) {
-  const c = camCaps(); if (!c) return false;
-  slotList()[i] = { zoom: Math.round(c.zoom.value * 100) / 100, pan: { x: Math.round(c.pan.x * 1000) / 1000, y: Math.round(c.pan.y * 1000) / 1000 }, exp: { mode: c.exp.mode, ev: c.exp.ev }, wb: { mode: c.wb.mode, kelvin: c.wb.kelvin } };
-  camCtlStore.set(CAM_PRESETS_KEY, camPresets); (camCtl.lastBy ||= {})[camCtl.slot] = i;
-  try { log('Posição ' + (i + 1) + ' gravada para ' + (sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)) + ': zoom ' + fmtX(c.zoom.value)); } catch { /* antes da mesa pronta */ }
+function savePreset(i, slot = camCtl.slot) {
+  const c = camCtl.caps.get(slot); if (!c) return false;
+  slotList(slot)[i] = { zoom: Math.round(c.zoom.value * 100) / 100, pan: { x: Math.round(c.pan.x * 1000) / 1000, y: Math.round(c.pan.y * 1000) / 1000 }, exp: { mode: c.exp.mode, ev: c.exp.ev }, wb: { mode: c.wb.mode, kelvin: c.wb.kelvin } };
+  camCtlStore.set(CAM_PRESETS_KEY, camPresets); (camCtl.lastBy ||= {})[slot] = i;
+  try { log('Posição ' + (i + 1) + ' gravada para ' + (sources[slot] || 'CAM ' + (slot + 1)) + ': zoom ' + fmtX(c.zoom.value)); } catch { /* antes da mesa pronta */ }
+  // MARCAÇÕES guarda uma miniatura do enquadramento gravado (venha do painel ou do atalho).
+  dispatchEvent(new CustomEvent('andromeda:preset', { detail: { slot, n: i, saved: true } }));
   return true;
 }
-function clearPreset(i) { slotList()[i] = null; camCtlStore.set(CAM_PRESETS_KEY, camPresets); if (lastOf() === i) camCtl.lastBy[camCtl.slot] = null; try { log('Posição ' + (i + 1) + ' apagada'); } catch { /* antes da mesa pronta */ } }
+function clearPreset(i) {
+  const slot = camCtl.slot; slotList()[i] = null; camCtlStore.set(CAM_PRESETS_KEY, camPresets); if (lastOf() === i) camCtl.lastBy[slot] = null;
+  try { log('Posição ' + (i + 1) + ' apagada'); } catch { /* antes da mesa pronta */ }
+  dispatchEvent(new CustomEvent('andromeda:preset', { detail: { slot, n: i, saved: false } }));
+}
 // Um movimento suave por câmera: várias câmeras podem ir às suas posições ao mesmo tempo.
 function cancelGlide(slot = camCtl.slot) {
   const g = camCtl.glides || (camCtl.glides = new Map());
@@ -223,12 +229,12 @@ function recallPreset(i, seconds = camCtl.glideSeconds, slot = camCtl.slot) {
   camCtlPaint(); return true;
 }
 function presetClick(i) {
-  if (camCtl.presetMode === 'save') { if (savePreset(i)) { camCtl.presetMode = 'call'; camCtl.saveHint = camCtl.saveTarget = null; } }
+  if (camCtl.presetMode === 'save') { if (savePreset(i)) camCtl.presetMode = 'call'; }
   else if (camCtl.presetMode === 'clear') { clearPreset(i); camCtl.presetMode = 'call'; }
   else { if (!slotList()[i]) { ccq('#camCtlPNote').textContent = 'Posição ' + (i + 1) + ' vazia: use GRAVAR para guardar o enquadramento atual.'; return; } recallPreset(i); }
   paintBank();
 }
-for (const btn of ccq('#camCtlPresetMode').children) btn.onclick = () => { camCtl.presetMode = btn.dataset.pm; camCtl.saveHint = camCtl.saveTarget = null; paintBank(); };
+for (const btn of ccq('#camCtlPresetMode').children) btn.onclick = () => { camCtl.presetMode = btn.dataset.pm; paintBank(); };
 ccq('#camCtlGlide').onchange = e => { camCtl.glideSeconds = Number(e.target.value) || 0; camCtlStore.set('andromeda.camctl.glide.v1', camCtl.glideSeconds); };
 
 // Segue o PREVIEW: o diretor enquadra a próxima câmera antes de levar ao AR.
