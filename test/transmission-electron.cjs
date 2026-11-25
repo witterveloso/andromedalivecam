@@ -27,6 +27,8 @@ app.whenReady().then(async()=>{
  win=new BrowserWindow({width:1440,height:1000,show:true,webPreferences:{backgroundThrottling:false,contextIsolation:true,nodeIntegration:false}});
  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)report.errors.push(message);});
  await win.loadURL('http://localhost:3180/');
+ // ANDROMEDA_TEST_CAPTURE=frame: ensaio com a captura por quadro (VideoFrame transferido ao Worker) no lugar do captureStream.
+ if(process.env.ANDROMEDA_TEST_CAPTURE==='frame'){await win.webContents.executeJavaScript("localStorage.setItem('andromeda.tx.capture.v1','frame')",true);await win.loadURL('http://localhost:3180/');report.capture='frame';}
  const run=code=>win.webContents.executeJavaScript(code,true);
  await until(()=>run('typeof startBroadcast === "function" && !!window.andromedaBroadcast'));
  await run(`(async()=>{

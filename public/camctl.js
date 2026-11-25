@@ -59,16 +59,25 @@ function camCtlSetEnabled(on) {
 }
 ccq('#camCtlPower').onclick = () => camCtlSetEnabled(!camCtl.enabled);
 const pvCanvas = ccq('#camCtlPreview'), pvCtx = pvCanvas.getContext('2d');
+// Preview do Controle de câmera pelo vídeo nativo (como o PREVIEW e as miniaturas desde a 0.27.4): a imagem da câmera não é
+// redesenhada na tela principal 15 vezes por segundo; o canvas por cima só leva a grade e o enquadramento do tracking.
+const pvWrap = document.createElement('div'), pvVideo = document.createElement('video');
+pvWrap.className = 'camctl-pv-wrap'; pvVideo.muted = true; pvVideo.playsInline = true; pvVideo.autoplay = true; pvVideo.disablePictureInPicture = true; pvVideo.setAttribute('aria-hidden', 'true');
+pvCanvas.before(pvWrap); pvWrap.append(pvVideo, pvCanvas);
+function pvDetach() { if (pvVideo.srcObject) { pvVideo.pause(); pvVideo.srcObject = null; } pvCanvas.dataset.native = 'false'; }
 function camCtlDraw() {
-  if (!camCtl.enabled) return;
-  const box = ccq('.camctl-preview'); if (!box || !box.offsetParent) return;
+  if (!camCtl.enabled) { pvDetach(); return; }
+  const box = ccq('.camctl-preview'); if (!box || !box.offsetParent) { pvDetach(); return; }
+  const stream = window.andromedaNativeMonitors?.streamOf?.(camCtl.slot) || null;
+  if (pvVideo.srcObject !== stream) { pvVideo.srcObject = stream; if (stream) pvVideo.play().catch(() => {}); }
+  const native = !!stream && pvVideo.readyState >= 2; if (pvCanvas.dataset.native !== String(native)) pvCanvas.dataset.native = String(native);
   const r = pvCanvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1), w = Math.max(2, Math.round(r.width * dpr)), h = Math.max(2, Math.round(r.height * dpr));
   if (pvCanvas.width !== w || pvCanvas.height !== h) { pvCanvas.width = w; pvCanvas.height = h; }
-  pvCtx.fillStyle = '#000'; pvCtx.fillRect(0, 0, w, h);
+  if (native) pvCtx.clearRect(0, 0, w, h); else { pvCtx.fillStyle = '#000'; pvCtx.fillRect(0, 0, w, h); }
   const el = (typeof media !== 'undefined' && media[camCtl.slot]?.element) || null, sw = el ? (el.videoWidth || el.naturalWidth || 0) : 0, sh = el ? (el.videoHeight || el.naturalHeight || 0) : 0;
   if (sw > 0 && sh > 0 && (typeof cams === 'undefined' || cams[camCtl.slot]?.conn !== false)) {
     const k = Math.min(w / sw, h / sh), dw = sw * k, dh = sh * k, dx = (w - dw) / 2, dy = (h - dh) / 2;
-    try { pvCtx.drawImage(el, dx, dy, dw, dh); } catch { /* quadro ainda não disponível */ }
+    if (!native) try { pvCtx.drawImage(el, dx, dy, dw, dh); } catch { /* quadro ainda não disponível */ }
     window.andromedaTracking?.draw(pvCtx, dx, dy, dw, dh, dpr);
     if (camCtl.grid) { pvCtx.strokeStyle = 'rgba(255,255,255,.35)'; pvCtx.lineWidth = Math.max(1, dpr); pvCtx.beginPath(); for (let i = 1; i < 3; i++) { pvCtx.moveTo(dx + dw * i / 3, dy); pvCtx.lineTo(dx + dw * i / 3, dy + dh); pvCtx.moveTo(dx, dy + dh * i / 3); pvCtx.lineTo(dx + dw, dy + dh * i / 3); } pvCtx.stroke(); }
   } else {

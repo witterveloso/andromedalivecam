@@ -97,6 +97,15 @@ test('0.27.7: ARTE no AR com fade de 2 s, guardada no computador; Comandos sem V
   assert.match(h, /<script src="\/effects\.js"><\/script><script src="\/arte\.js"><\/script>/, 'antes da regressiva/BLACK'); assert.match(server, /'\/arte\.js':'arte\.js'/);
 });
 
+test('0.27.7: captura por quadro como segundo método, Controle de câmera pelo vídeo nativo, Diagnóstico só monta a tabela à vista', () => {
+  const e = read('public/engine.js'), b = read('public/broadcast.js'), k = read('public/camctl.js'), n = read('public/native-monitors.js'), d = read('public/diagnostics.js'), r = read('public/rundown.js');
+  assert.match(e, /const capture = options\.capture === 'frame' \? 'frame' : 'stream'/); assert.match(e, /\(inflight\.get\(o\.id\) \|\| 0\) >= 2\) return;/, 'no máximo 2 quadros em trânsito');
+  assert.match(e, /if \(!session\) m\.frame\.close\(\); else \{ try \{ session\.setFrame\(m\.id, m\.frame\); \} catch \(e\) \{ try \{ m\.frame\.close\(\); \} catch \{\} \} \}/, 'todo quadro recebido é entregue ou fechado');
+  assert.match(b, /\(check\.composedFps \|\| 0\) >= 25 && \(check\.receivedFps \|\| 0\) < 28\.5/); assert.match(b, /capture: liveTx\.capture \|\| 'stream'/); assert.match(b, /localStorage\.setItem\('andromeda\.tx\.capture\.v1', other\)/);
+  assert.match(n, /streamOf: i =>/); assert.match(k, /if \(!native\) try \{ pvCtx\.drawImage\(el, dx, dy, dw, dh\); \}/); assert.match(k, /function pvDetach\(\)/);
+  assert.match(d, /if \(data\.events\.length && !page\.hidden\) paint\(\);/); assert.match(r, /el\.videoWidth \* el\.videoHeight > 1920 \* 1080 \* 1\.2/);
+});
+
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);

@@ -71,7 +71,7 @@
   page.innerHTML = '<div class="diag-cards"><article class="diag-card"><h3>Serviço</h3><p id="diagService">Verificando…</p></article><article class="diag-card"><h3>Sessão de auditoria</h3><p id="diagSession">—</p><div class="diag-counts"><span data-level="info" id="diagInfo">0</span><span data-level="warn" id="diagWarn">0</span><span data-level="error" id="diagError">0</span></div></article><article class="diag-card"><h3>Licença</h3><p id="diagLicense">—</p><div id="diagActivate" hidden><textarea id="licenseToken" rows="2" spellcheck="false" placeholder="Cole o token de ativação"></textarea><button id="licenseApply" type="button">Ativar</button></div></article></div><section class="dock-panel diag-log"><div class="dock-handle">Eventos da sessão</div><div class="diag-tools"><button type="button" data-filter="all" aria-pressed="true">Tudo</button><button type="button" data-filter="alerts" aria-pressed="false">Avisos e erros</button><span id="diagFps"></span><a id="diagExport" href="/api/audit/export" download>Exportar auditoria (.jsonl)</a></div><div class="diag-scroll"><table><thead><tr><th>Hora</th><th>Nível</th><th>Origem</th><th>Evento</th></tr></thead><tbody id="diagRows"></tbody></table><p id="diagEmpty">Nenhum evento ainda.</p></div></section>';
   [...document.querySelectorAll('.workspace-page')].at(-1).after(page);
   pages.diagnostics = page;
-  const tab = make('button', '', 'Diagnóstico'); tab.dataset.page = 'diagnostics'; tab.onclick = () => { openWorkspace('diagnostics'); unseen = 0; badge(); };
+  const tab = make('button', '', 'Diagnóstico'); tab.dataset.page = 'diagnostics'; tab.onclick = () => { openWorkspace('diagnostics'); unseen = 0; badge(); paint(); };
   nav.insertBefore(tab, [...nav.children].find(b => !b.dataset.page) || null);
   const badge = () => { tab.dataset.alerts = unseen ? String(Math.min(99, unseen)) : ''; tab.setAttribute('aria-label', unseen ? 'Diagnóstico, ' + unseen + ' aviso(s) novo(s)' : 'Diagnóstico'); };
 
@@ -113,7 +113,7 @@
       $('#diagInfo').textContent = data.summary.counts.info + ' info'; $('#diagWarn').textContent = data.summary.counts.warn + ' avisos'; $('#diagError').textContent = data.summary.counts.error + ' erros';
       $('#diagSession').textContent = data.summary.file ? 'Gravada em ' + data.summary.file : 'Somente em memória nesta sessão.';
       $('#diagFps').textContent = 'Mesa: ' + fps + ' quadros/s';
-      if (data.events.length) paint();
+      if (data.events.length && !page.hidden) paint(); // tabela só é montada com a página à vista (400 linhas a cada 3 s pesavam na live)
       badge();
     } catch { /* serviço fechado */ }
   }

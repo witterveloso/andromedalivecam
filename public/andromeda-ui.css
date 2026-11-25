@@ -1527,3 +1527,8 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .arte-air { flex: 1; padding: 7px 8px; font-weight: 700; font-size: 12px; }
 .arte-air[data-on="true"] { background: #c3263b; border-color: #ff4a5e; color: #fff; }
 .arte-note { margin: 0; font-size: 11px; color: #b9c4dc; line-height: 1.35; }
+/* Controle de câmera: imagem pelo vídeo nativo; o canvas transparente por cima leva grade e tracking. */
+.camctl-pv-wrap { position: relative; min-width: 0; }
+.camctl-pv-wrap > video { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); object-fit: contain; border-radius: 7px; background: #000; pointer-events: none; }
+.camctl-pv-wrap > canvas { position: relative; }
+.camctl-preview canvas[data-native="true"] { background: transparent; }
