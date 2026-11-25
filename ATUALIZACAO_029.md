@@ -1,5 +1,14 @@
 # Andrômeda Live 0.29 — Rede Andrômeda: câmeras no 4G/5G como no Wi-Fi, com tecnologia própria
 
+## 0.29.2 — Comandos sem batimento
+- **Causa.** Os botões dos Comandos reescreviam nome, subtítulo e tecla cinco vezes por segundo, mesmo sem nada mudar. O navegador redesenhava todos os botões a cada vez, e na tela isso aparecia como um batimento na área dos Comandos.
+  - Os rótulos das câmeras e as faixas de informação dos monitores tinham o mesmo defeito.
+- **Correção.** Escrever num elemento o mesmo texto, valor ou estado que ele já tem não mexe mais em nada. A proteção vale para a mesa inteira; texto e valores novos continuam aparecendo na hora.
+- **Prova.** O modo "mostrar áreas redesenhadas" do Chromium:
+  - antes, todos os botões dos Comandos piscavam em verde o tempo todo;
+  - depois, nenhum, com três câmeras rodando.
+  - O teste da mesa confere que o mesmo texto não troca o conteúdo do botão.
+
 ## 0.29.1 — convite pela internet: a mesa e o celular dizem por que a imagem não chega
 - **Causa encontrada.** Montamos uma internet simulada, com a mesa atrás de um roteador doméstico e o celular atrás de um CGNAT de operadora, como no 5G. Nela, o convite abre, o celular e a mesa se encontram, mas a imagem só chega por um destes caminhos:
   - o celular no **mesmo Wi-Fi** da mesa;

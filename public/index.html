@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#090b10">
 <title>Andrômeda Live — Mesa de Controle</title>
+<script>
+/* Mesa sem batimento: muitos painéis reescrevem o mesmo texto várias vezes por segundo (Comandos a cada 200 ms, rótulos das
+   câmeras, faixas dos monitores). Trocar o texto pelo mesmo valor ainda refaz o desenho do elemento, e na tela isso aparece
+   como batimento. Aqui, escrever num elemento o texto que ele já mostra não mexe em nada. */
+(()=>{const d=Object.getOwnPropertyDescriptor(Node.prototype,'textContent');if(!d||!d.set)return;
+ Object.defineProperty(Node.prototype,'textContent',{configurable:true,enumerable:d.enumerable,get:d.get,set(v){
+  if(this.nodeType===1){const s=v==null?'':String(v),c=this.firstChild;if(c?(c===this.lastChild&&c.nodeType===3&&c.data===s):s==='')return}
+  d.set.call(this,v)}});
+ // O mesmo para o valor e o "desativado" de campos e botões: reescrever o mesmo valor redesenha o campo à toa.
+ const same=(proto,prop,norm)=>{const q=Object.getOwnPropertyDescriptor(proto,prop);if(!q||!q.set)return;Object.defineProperty(proto,prop,{configurable:true,enumerable:q.enumerable,get:q.get,set(v){if(q.get.call(this)===norm(v))return;q.set.call(this,v)}})};
+ for(const P of [HTMLInputElement,HTMLTextAreaElement,HTMLSelectElement,HTMLButtonElement])same(P.prototype,'disabled',Boolean);
+ for(const P of [HTMLTextAreaElement,HTMLSelectElement])same(P.prototype,'value',v=>v==null?'':String(v));
+ {const q=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');Object.defineProperty(HTMLInputElement.prototype,'value',{configurable:true,enumerable:q.enumerable,get:q.get,set(v){if(this.type!=='file'&&q.get.call(this)===(v==null?'':String(v)))return;q.set.call(this,v)}})}
+})();
+</script>
 <link rel="icon" href="/brand/andromeda-icon-live.png" type="image/png">
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>

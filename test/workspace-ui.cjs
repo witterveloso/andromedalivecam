@@ -66,6 +66,11 @@ cmd.setSize(150);assert.equal(grid.style.getPropertyValue('--cmd-scale'),'1.5');
 cmd.setCols(3);assert.equal(grid.style.getPropertyValue('--cmd-cols'),'3');cmd.setWide('black',true);assert.equal(q('.cmd-btn[data-cmd=black]').dataset.wide,'true');
 assert.equal(JSON.parse(w.localStorage.getItem('andromeda.commands.v1')).size,200,'the look is saved');
 cmd.resetLook();assert.deepEqual([...grid.children].map(b=>b.dataset.cmd),cmds,'Restaurar brings back the standard order');assert.equal(cmd.layout().size,100);assert.equal(q('.cmd-btn[data-cmd=black]').dataset.wide,'false');}
+// Sem batimento: reescrever o mesmo texto (Comandos a cada 200 ms) não troca o nó de texto; texto novo continua aplicando.
+{const name=q('.cmd-btn[data-cmd=black] .cmd-name'),node=name.firstChild;name.textContent=name.textContent;assert.equal(name.firstChild,node,'same text keeps the text node (no repaint)');
+ name.textContent='TESTE';assert.equal(name.textContent,'TESTE','new text still applies');name.textContent='BLACK';
+ const inp=w.document.createElement('input');inp.value='3';inp.value='3';assert.equal(inp.value,'3');inp.value='4';assert.equal(inp.value,'4','new value still applies');
+ const b=w.document.createElement('button');b.disabled=true;b.disabled=true;assert.equal(b.disabled,true);b.disabled=false;assert.equal(b.disabled,false);}
 assert(q('.cmd-btn[data-cmd=pip]'),'the PiP command is on the desk');assert(!q('[data-tool=bus] .key-panel'),'the KEY 1 (PiP) monitor window is not on the desk any more');assert(q('.key-panel').hidden,'and the panel stays hidden wherever else it was attached');
 // Regressiva direto no AR; tempo no ajuste (duplo clique).
 rd.cdRow.querySelector('#cdTime').value='2:30';rd.cdRow.querySelector('#cdTime').dispatchEvent(new w.Event('change'));assert.equal(rd.countdown.seconds,150);rd.cdRow.querySelector('#cdPlus').click();assert.equal(rd.countdown.seconds,180);
