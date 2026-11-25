@@ -57,6 +57,8 @@
     enabled: true,
     covers(canvas) { for (const s of slots) if (s.canvas === canvas) return s.shown !== null && s.shown === s.index() && !s.video.hidden && s.video.readyState >= 2; return false; },
     refresh: update,
+    // Fluxo ao vivo da câmera i (sem nova decodificação), para outros monitores da mesa (Controle de câmera).
+    streamOf: i => (window.andromedaNativeMonitors?.enabled !== false ? streamOf(i) : null),
     state: () => slots.map(s => ({ preview: !!s.preview, index: s.index(), shown: s.shown })),
   };
 })();

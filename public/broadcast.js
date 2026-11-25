@@ -328,15 +328,26 @@
       } else if (!fixed && engine === 'native') { const b = readBench(outRes); const hit = b && [[1920, 1080, '1080p'], [1280, 720, '720p'], [960, 540, '540p']].find(x => x[2] === b.res); if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
       if (fixed) {
         txStatus('Verificando PGM e codificador em '+outRes+'30 antes de abrir o envio…');
-        const testOutput = () => {
+        // Captura lembrada: se a captura por quadro já foi a que sustentou 30 fps neste computador, o teste começa por ela.
+        liveTx.capture = (() => { try { return localStorage.getItem('andromeda.tx.capture.v1') === 'frame' ? 'frame' : 'stream'; } catch { return 'stream'; } })();
+        const testOutput = (capture = liveTx.capture) => {
           const outputs = [];
           if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:outBitrate * 1e6 });
           if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:(window.andromedaVertical.settings.bitrate || 4) * 1e6 }); }
-          return AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), cancelled:()=>epoch !== liveTx.epoch });
+          return AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), capture, cancelled:()=>epoch !== liveTx.epoch });
         };
         let check = await testOutput();
         if (epoch !== liveTx.epoch || check.cancelled) return;
         window.andromedaAudit?.(check.ok ? 'info' : 'warn', 'teste-saida-dedicada', check.reason || 'Teste interrompido', { fps:check.fps, fpsPGM:check.freshFps });
+        // A mesa desenhou bem, mas a captura do canvas ficou para trás: antes de baixar a resolução, tenta a captura por quadro na mesma resolução.
+        if (!check.ok && !check.cancelled && (check.composedFps || 0) >= 25 && (check.receivedFps || 0) < 28.5 && window.VideoFrame) {
+          const other = liveTx.capture === 'frame' ? 'stream' : 'frame';
+          txStatus('Captura em ' + outRes + ' abaixo de 30 fps. Testando o outro método de captura…');
+          const alt = await testOutput(other);
+          if (epoch !== liveTx.epoch || alt.cancelled) return;
+          window.andromedaAudit?.(alt.ok ? 'info' : 'warn', 'teste-saida-dedicada', alt.reason || 'Teste interrompido', { fps:alt.fps, fpsPGM:alt.freshFps, captura:other });
+          if (alt.ok) { check = alt; liveTx.capture = other; try { localStorage.setItem('andromeda.tx.capture.v1', other); } catch { /* sem armazenamento */ } log('Saída em ' + outRes + '30 com captura ' + (other === 'frame' ? 'por quadro' : 'por fluxo') + ' (o outro método não sustentou 30 fps neste computador).'); }
+        }
         if (!check.ok && ['2160p','1080p'].includes(outRes) && needH && !needV) {
           const ladder=[[1920,1080,'1080p'],[1280,720,'720p'],[960,540,'540p']].filter(([w])=>w<width);
           for (const [w,h,label] of ladder) {
@@ -437,7 +448,7 @@
         if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: outBitrate * 1e6, onChunk: sendNative(0) });
         if (needV && groups.includes('v')) { const c = window.andromedaVertical.canvas; outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: (window.andromedaVertical.settings.bitrate || 4) * 1e6, onChunk: sendNative(1) }); }
         nativeSession = (fixed ? AndromedaEngine.createDedicated : AndromedaEngine.create)({
-          audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'),
+          audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'), capture: liveTx.capture || 'stream',
           onError: e => fallbackToStandard(e.message),
           onStats: s => { liveTx.nativeStats = s;
             if (Date.now() - (liveTx.workerAuditAt || 0) > 15000) {

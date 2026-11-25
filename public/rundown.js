@@ -166,7 +166,12 @@ function loadClip(file, onReady) {
   if (!/^video\//.test(file.type) && !/\.(mp4|m4v|mov|webm|mkv)$/i.test(file.name)) return null;
   const el = document.createElement('video'); el.preload = 'auto'; el.playsInline = true; el.crossOrigin = 'anonymous';
   const item = { id: Math.random().toString(36).slice(2, 9), name: file.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(file), el, duration: 0, error: '', played: false, node: null };
-  el.addEventListener('loadedmetadata', () => { item.duration = el.duration; onReady?.(); });
+  el.addEventListener('loadedmetadata', () => {
+    item.duration = el.duration;
+    // Vídeo acima de Full HD (ex.: 4K) custa várias vezes mais para desenhar no AR a cada quadro e derruba os 30 q/s em computador comum.
+    if (el.videoWidth * el.videoHeight > 1920 * 1080 * 1.2) { item.heavy = true; try { log('Atenção: "' + item.name + '" é ' + el.videoWidth + '×' + el.videoHeight + '. Vídeo acima de Full HD pesa no AR; para uma live estável, exporte em 1920×1080.'); } catch { /* aviso */ } }
+    onReady?.();
+  });
   el.addEventListener('error', () => { item.error = 'formato não suportado'; onReady?.(); });
   el.src = item.url;
   return item;

@@ -237,6 +237,11 @@
     const received = new Map(outputs.map(o => [o.id, o]));
     const videoTracks = [];
     const frameSinks = new Set();
+    // Dois jeitos de levar o PGM ao codificador:
+    //  'stream' (padrão): captureStream do canvas + MediaStreamTrackProcessor, lido no Worker.
+    //  'frame': a mesa tira um VideoFrame do canvas a cada desenho e o transfere ao Worker (no máximo 2 em trânsito por saída).
+    //  Em vídeo integrado (Intel) a captura por fluxo pode ficar abaixo do desenho em 1080p; o teste antes da live experimenta os dois.
+    const capture = options.capture === 'frame' ? 'frame' : 'stream', inflight = new Map();
     const script = `
       importScripts(${JSON.stringify(location.origin + '/mkvmux.js')}, ${JSON.stringify(location.origin + '/engine.js')});
       let session, outstanding = 0, readers = [], reading = [];
@@ -274,6 +279,11 @@
             for (const input of m.videos) reading.push(readVideo(input.id, input.readable));
             postMessage({type:'ready'});
           } else if (m.type === 'ack') outstanding = Math.max(0, outstanding - m.bytes);
+          else if (m.type === 'frame') {
+            // Captura por quadro: o VideoFrame chega pronto da mesa. Fecha se não for entregue e avisa que recebeu.
+            if (!session) m.frame.close(); else { try { session.setFrame(m.id, m.frame); } catch (e) { try { m.frame.close(); } catch {} } }
+            postMessage({type:'fack',id:m.id});
+          }
           else if (m.type === 'restart') session.restart(m.id);
           else if (m.type === 'key') session.requestKeyframe(m.id);
           else if (m.type === 'stop') { await session.stop(); await settle(); postMessage({type:'stopped'}); }
@@ -308,6 +318,7 @@
         worker.onmessage = ({data:m}) => {
           if (m.type === 'aborted') { clearTimeout(abortTimer); worker.terminate(); return; }
           if (closed) return;
+          if (m.type === 'fack') { inflight.set(m.id, Math.max(0, (inflight.get(m.id) || 0) - 1)); return; }
           if (m.type === 'ready') { ready = true; resolveStart(); }
           else if (m.type === 'chunk') {
             try { received.get(m.id).onChunk(m.bytes); worker.postMessage({type:'ack',bytes:m.bytes.byteLength}); }
@@ -324,6 +335,22 @@
         const audio = new MediaStreamTrackProcessor({track:options.audioTrack}).readable;
         // The browser captures finished canvas frames. The transferable streams let
         // the Worker read them without a full-size VideoFrame copy on the UI thread.
+        if (capture === 'frame') {
+          worker.postMessage({type:'init',audio,videos:[],outputs:outputs.map(({id,width,height,bitrate})=>({id,width,height,bitrate})),avSyncMs:options.avSyncMs || 0},[audio]);
+          for (const o of outputs) {
+            inflight.set(o.id, 0);
+            const sink = () => {
+              if (closed || (inflight.get(o.id) || 0) >= 2) return; // o processo de vídeo ainda está com 2 quadros: este é pulado (sem acumular atraso)
+              let frame; try { frame = new VideoFrame(o.canvas, { timestamp: Math.round(performance.now() * 1000) }); } catch { return; }
+              inflight.set(o.id, (inflight.get(o.id) || 0) + 1);
+              try { worker.postMessage({type:'frame',id:o.id,frame}, [frame]); } catch { try { frame.close(); } catch {} inflight.set(o.id, Math.max(0, inflight.get(o.id) - 1)); }
+            };
+            frameSinks.add(sink); (window.andromedaFrameSinks ||= new Set()).add(sink);
+          }
+          const timeout = setTimeout(() => fail(Error('Inicialização da saída excedeu 8 segundos')),8000);
+          try { await started; } finally { clearTimeout(timeout); }
+          return;
+        }
         const videos = outputs.map(o => {
           const track = o.canvas.captureStream(0).getVideoTracks()[0];
           if (!track) throw Error('Captura do PGM indisponível para '+o.id);
@@ -359,11 +386,11 @@
 
   // Exercise the same dedicated path before opening the live network/disk sinks.
   // This measures current PGM production, not just encoder configuration support.
-  async function qualify({ audioTrack, outputs, avSyncMs = 0, cancelled = () => false, ms = 4200 }) {
+  async function qualify({ audioTrack, outputs, avSyncMs = 0, cancelled = () => false, ms = 4200, capture = 'stream' }) {
     const samples = []; let failure = null, session, track;
     try {
       track = audioTrack.clone();
-      session = createDedicated({ audioTrack: track, outputs: outputs.map(o => ({ ...o, onChunk() {} })), avSyncMs,
+      session = createDedicated({ audioTrack: track, outputs: outputs.map(o => ({ ...o, onChunk() {} })), avSyncMs, capture,
         onError: e => { failure = e; }, onStats: s => samples.push(s) });
       await session.start();
       const end = performance.now() + ms;
@@ -374,7 +401,7 @@
       const fps = average('fps'), freshFps = average('freshFps'), composedFps = average('composedFps');
       const receivedFps = average('receivedFps'), submittedFps = average('submittedFps');
       return { ok: steady.length === 3 && fps >= 28.5 && freshFps >= 28.5, fps, freshFps, composedFps, receivedFps, submittedFps, samples,
-        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : outputs[0]?.width === 1920 ? '1080p30' : outputs[0]?.width === 1280 ? '720p30' : '540p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps.' };
+        reason: 'Teste ' + (outputs[0]?.width === 3840 ? '4K30' : outputs[0]?.width === 1920 ? '1080p30' : outputs[0]?.width === 1280 ? '720p30' : '540p30') + ': composição ' + composedFps.toFixed(1) + ' fps; captura ' + receivedFps.toFixed(1) + ' fps; enviados ao codificador ' + submittedFps.toFixed(1) + ' fps; codificados ' + fps.toFixed(1) + ' fps; PGM novo ' + freshFps.toFixed(1) + ' fps' + (capture === 'frame' ? ' (captura por quadro)' : '') + '.', capture };
     } catch (e) { return { ok: false, reason: e.message, samples }; }
     finally { session?.abort(); track?.stop(); }
   }

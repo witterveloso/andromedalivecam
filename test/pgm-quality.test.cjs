@@ -88,6 +88,24 @@ test('0.27.6: cadência registra a carga de cada etapa do desenho, tarefas longa
   assert.match(r, /largura: item\.el\?\.videoWidth \|\| 0, altura: item\.el\?\.videoHeight \|\| 0/);
 });
 
+test('0.27.7: ARTE no AR com fade de 2 s, guardada no computador; Comandos sem VT pausar/próximo/parar e próxima faixa', () => {
+  const a = read('public/arte.js'), c = read('public/commands.js'), h = read('public/index.html'), server = read('server.cjs');
+  assert.match(a, /indexedDB\.open\(DB, 1\)/); assert.match(a, /F\.apply\(ctx, 'arte', want/); assert.match(a, /window\.andromedaFade\?\.apply\(null, 'arte', false/, 'primeira entrada já com fade');
+  assert.match(a, /if \(st\.pending && \(F\?\.level\('arte'\) \?\? 0\) <= 0\)/, 'troca com fade'); assert.match(a, /MAX_BYTES = 25 \* 1024 \* 1024/);
+  assert.match(c, /\{ id: 'arte', name: \(\) => 'ARTE'/); assert.match(c, /\{ id: 'arte', label: [^}]*key: 'A'/);
+  for (const gone of ['vtnext', 'vtpause', 'vtstop', 'trilhanext']) assert.doesNotMatch(c, new RegExp("\\{ id: '" + gone + "', name:"));
+  assert.match(h, /<script src="\/effects\.js"><\/script><script src="\/arte\.js"><\/script>/, 'antes da regressiva/BLACK'); assert.match(server, /'\/arte\.js':'arte\.js'/);
+});
+
+test('0.27.7: captura por quadro como segundo método, Controle de câmera pelo vídeo nativo, Diagnóstico só monta a tabela à vista', () => {
+  const e = read('public/engine.js'), b = read('public/broadcast.js'), k = read('public/camctl.js'), n = read('public/native-monitors.js'), d = read('public/diagnostics.js'), r = read('public/rundown.js');
+  assert.match(e, /const capture = options\.capture === 'frame' \? 'frame' : 'stream'/); assert.match(e, /\(inflight\.get\(o\.id\) \|\| 0\) >= 2\) return;/, 'no máximo 2 quadros em trânsito');
+  assert.match(e, /if \(!session\) m\.frame\.close\(\); else \{ try \{ session\.setFrame\(m\.id, m\.frame\); \} catch \(e\) \{ try \{ m\.frame\.close\(\); \} catch \{\} \} \}/, 'todo quadro recebido é entregue ou fechado');
+  assert.match(b, /\(check\.composedFps \|\| 0\) >= 25 && \(check\.receivedFps \|\| 0\) < 28\.5/); assert.match(b, /capture: liveTx\.capture \|\| 'stream'/); assert.match(b, /localStorage\.setItem\('andromeda\.tx\.capture\.v1', other\)/);
+  assert.match(n, /streamOf: i =>/); assert.match(k, /if \(!native\) try \{ pvCtx\.drawImage\(el, dx, dy, dw, dh\); \}/); assert.match(k, /function pvDetach\(\)/);
+  assert.match(d, /if \(data\.events\.length && !page\.hidden\) paint\(\);/); assert.match(r, /el\.videoWidth \* el\.videoHeight > 1920 \* 1080 \* 1\.2/);
+});
+
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);

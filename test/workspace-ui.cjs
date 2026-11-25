@@ -57,7 +57,7 @@ console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','logo','countdown','pip','vinheta','black','vt','vtnext','vtpause','vtstop','mosaic','trilha','trilhanext','tracking','marks','intercom','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','logo','arte','countdown','pip','vinheta','black','vt','mosaic','trilha','tracking','marks','intercom','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
 // Botões personalizáveis: ordem, tamanho, por linha e largo; a barra de ajuste só aparece no Personalizar.
 {const grid=q('[data-tool=bus] .cmd-grid'),tools=q('[data-tool=bus] .cmd-tools');assert(tools&&tools.querySelector('input[type=range]')&&tools.querySelector('select'),'size bar and buttons-per-row in the commands panel');
@@ -100,12 +100,12 @@ rd.vtPlayer.running=true; /* o relógio dos reprodutores (setInterval) está des
 assert.equal(vm.runInContext('state.pgm',ctx),rd.VT_SOURCE);assert.match(rd.vtNextLabel(),/2\/2 · Encerramento/,'the button names the next VT and its place in the playlist');
 assert.equal(rd.vtNext(),true,'VT NEXT on air jumps to the next VT');assert.equal(rd.vtPlayer.item.name,'Encerramento');assert.equal(rd.vt.cue,1);assert(rd.vtPlayer.running);
 assert.equal(rd.vtNext(),false,'last VT: nothing more to fire');assert.equal(rd.vtNextLabel(),'último VT');
-assert.equal(q('.cmd-btn[data-cmd=vtnext] .cmd-key').textContent,'⇧F9','VT NEXT has its own shortcut');
+assert(!q('.cmd-btn[data-cmd=vtnext]'),'PRÓXIMO VT left the Comandos (the shortcut and the VT panel still work)');
 // PAUSAR / CONTINUAR e PARAR do VT.
 {let elPaused=false;const el=rd.vtPlayer.item.el;el.pause=()=>{elPaused=true};el.play=()=>{elPaused=false;return Promise.resolve()};
-assert.equal(rd.vtPause(),true);assert(rd.vtPlayer.paused&&elPaused,'PAUSAR freezes the VT on air');cmd.paint();assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-name').textContent,'CONTINUAR VT');assert.equal(q('.cmd-btn[data-cmd=vtpause]').getAttribute('aria-pressed'),'true');assert.equal(q('.cmd-btn[data-cmd=vtpause] .cmd-key').textContent,'⇧F7');
+assert.equal(rd.vtPause(),true);assert(rd.vtPlayer.paused&&elPaused,'PAUSAR freezes the VT on air');cmd.paint();assert(!q('.cmd-btn[data-cmd=vtpause]'),'PAUSAR VT left the Comandos');
 assert.equal(rd.vtPause(),true);assert(!rd.vtPlayer.paused&&!elPaused,'CONTINUAR resumes the VT');
-const held=rd.vtPlayer.item;assert.equal(rd.vtStop(),true,'PARAR takes the VT off air');assert.equal(q('.cmd-btn[data-cmd=vtstop] .cmd-key').textContent,'⇧F8');}
+const held=rd.vtPlayer.item;assert.equal(rd.vtStop(),true,'PARAR takes the VT off air');assert(!q('.cmd-btn[data-cmd=vtstop]'),'PARAR VT left the Comandos');}
 vm.runInContext('cut()',ctx);
 // Fim natural arma o próximo; VT interrompido não avança sozinho; PRÓXIMO VT sem VT no AR arma o seguinte (quem leva ao PREVIEW é o VT).
 rd.vtPlayer.running=false; /* o VT saiu do AR (o relógio dos reprodutores está desligado neste teste) */
@@ -142,7 +142,7 @@ assert(q('[data-tool=layers] #masterFader')&&q('[data-tool=layers] #masterFade')
 assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera and mosaic tools in the Câmeras bar');
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
-cmd.nudge('logo',-1);assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'logo','buttons can be reordered');cmd.setVisible('logo',false);assert.equal(q('[data-tool=bus] .cmd-grid').children.length,16,'and hidden');
+cmd.nudge('logo',-1);assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'logo','buttons can be reordered');cmd.setVisible('logo',false);assert.equal(q('[data-tool=bus] .cmd-grid').children.length,13,'and hidden');
 console.log('PASS: commands panel (button styles, audio switches in MASTER, VT timeline seek, custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');
