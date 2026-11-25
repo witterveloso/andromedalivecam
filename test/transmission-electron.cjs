@@ -70,7 +70,21 @@ app.whenReady().then(async()=>{
      const audio=spawnSync(ffmpeg,['-v','error','-i',file,'-map','0:a:0','-f','null','-'],{encoding:'utf8',timeout:20000});assert.equal(audio.status,0,audio.stderr);
      return {frames:rows.length,uniqueFrames:new Set(rows.map(r=>r[5])).size,firstPTS:pts[0],lastPTS:pts.at(-1),timebase:decoded.stdout.match(/#tb 0: (.*)/)?.[1],dimensions,audioDecoded:true};
    };
-   const r={attempt:attempt+1,samples,received:analyze(received),recorded:analyze(record),receiverLog};report.runs.push(r);fs.writeFileSync(reportPath,JSON.stringify(report,null,2));
+   // Conformidade com as diretrizes publicadas (YouTube, Meta/Facebook, Twitch): H.264 High, 30 fps constantes, quadro-chave a cada 2 s
+   // (no máximo 4 s), áudio AAC-LC 48 kHz estéreo. Medido no que a "plataforma" recebeu, não na configuração.
+   const compliance=file=>{
+     const info=spawnSync(ffmpeg,['-hide_banner','-i',file],{encoding:'utf8',timeout:20000}).stderr||'';
+     const v=info.match(/Video: (\w+)(?: \(([^)]+)\))?[^\n]*?(\d{3,4})x(\d{3,4})[^\n]*?(\d+(?:\.\d+)?) fps/),a=info.match(/Audio: (\w+)(?: \(([^)]+)\))?[^\n]*?(\d+) Hz, (\w+)/);
+     const keys=spawnSync(ffmpeg,['-v','info','-skip_frame','nokey','-i',file,'-map','0:v:0','-vf','showinfo','-f','null','-'],{encoding:'utf8',timeout:60000}).stderr||'';
+     const kt=[...keys.matchAll(/pts_time:([0-9.]+)/g)].map(m=>Number(m[1])),gaps=kt.slice(1).map((t,i)=>t-kt[i]);
+     return {video:v&&{codec:v[1],profile:v[2]||'',size:v[3]+'x'+v[4],fps:Number(v[5])},audio:a&&{codec:a[1],profile:a[2]||'',hz:Number(a[3]),layout:a[4]},keyframes:kt.length,keyframeGapMaxS:gaps.length?Math.max(...gaps):null};
+   };
+   const r={attempt:attempt+1,samples,received:analyze(received),recorded:analyze(record),receiverLog,conformidade:compliance(received)};report.runs.push(r);fs.writeFileSync(reportPath,JSON.stringify(report,null,2));
+   {const c=r.conformidade;assert.equal(c.video?.codec,'h264','H.264');assert.match(c.video?.profile||'',/High/,'perfil High');assert.equal(c.video?.size,dimensions,'resolução');assert(Math.abs((c.video?.fps||0)-30)<0.01,'30 fps');
+    assert.equal(c.audio?.codec,'aac','áudio AAC');assert.match(c.audio?.profile||'',/LC/,'AAC-LC');assert.equal(c.audio?.hz,48000,'48 kHz');assert.equal(c.audio?.layout,'stereo','estéreo');
+    assert(c.keyframes>=Math.floor(seconds/2)-1&&c.keyframeGapMaxS!==null&&c.keyframeGapMaxS<=2.1,'quadro-chave a cada 2 s (máx. medido '+c.keyframeGapMaxS+' s)');}
+   // Qualquer erro de JavaScript na mesa durante o envio reprova o ensaio (um erro no regulador passaria despercebido).
+   assert(!report.errors.some(e=>/Uncaught|ReferenceError|TypeError/.test(e)),'mesa sem erros de JavaScript: '+report.errors.filter(e=>/Uncaught|ReferenceError|TypeError/.test(e)).slice(0,2).join(' | '));
    assert(samples.every(s=>s.phase==='sending'&&s.engine==='native'),'native engine remains active');
    const steady=samples.slice(3),average=name=>steady.reduce((n,s)=>n+(s.stats?.[name]||0),0)/steady.length;
    r.encodedFps=average('fps');r.freshFps=average('freshFps');

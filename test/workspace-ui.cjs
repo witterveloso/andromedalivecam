@@ -46,7 +46,7 @@ const choose=[...w.document.querySelectorAll('.stream-panel select')].find(x=>[.
 for(const pf of ['instagram','tiktok','facebook']){choose.value=pf;choose.dispatchEvent(new w.Event('change'));[...w.document.querySelectorAll('.stream-panel button')].find(b=>b.textContent==='Adicionar destino').click()}
 const aspects=[...w.document.querySelectorAll('.dest')].map(c=>c.dataset.platform+' '+c.dataset.aspect);
 assert(aspects.includes('youtube 16:9')&&aspects.includes('instagram 9:16')&&aspects.includes('tiktok 9:16')&&aspects.includes('facebook 16:9'),aspects.join(','));
-assert(q('.vertical-panel')&&q('#programVertical'),'vertical output card');assert.equal(vm.runInContext('andromedaVertical.size().join("x")',ctx),'720x1280','Instagram live default 720x1280');
+assert(q('.vertical-panel')&&q('#programVertical'),'vertical output card');assert.equal(vm.runInContext('andromedaVertical.size().join("x")',ctx),'1080x1920','regra 1080p30: vertical em 1080x1920');
 assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.vertical-uses').textContent,/TikTok/);
 [...q('.vertical-modes').children][1].click();assert.equal(vm.runInContext('andromedaVertical.settings.mode',ctx),'blur');
 assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['both','16:9','9:16']);assert.equal(q('#recFormats').value,'16:9','new configurations record only the horizontal output to avoid an unused second encoder');

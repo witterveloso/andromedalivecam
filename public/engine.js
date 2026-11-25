@@ -23,7 +23,8 @@
   const hasApi = () => typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined' && typeof VideoFrame !== 'undefined' && typeof AudioData !== 'undefined' && typeof MediaStreamTrackProcessor !== 'undefined';
 
   // Perfis em ordem de preferência. O nível acompanha a resolução (3.1 até 720p, 4.0 em 1080p).
-  const profiles = (width, height) => { const blocks = Math.ceil(width / 16) * Math.ceil(height / 16); const level = blocks > 8192 ? '33' : blocks > 3600 ? '28' : '1f'; return ['64', '4d', '42'].map(p => 'avc1.' + p + '00' + level); };
+  // 1080p30: High@4.1 (pedido pela Meta/Facebook), com 4.0 de reserva para codificadores que não aceitam 4.1. 4K: 5.1.
+  const profiles = (width, height) => { const blocks = Math.ceil(width / 16) * Math.ceil(height / 16); const levels = blocks > 8192 ? ['33'] : blocks > 3600 ? ['29', '28'] : ['1f']; return ['64', '4d', '42'].flatMap(p => levels.map(level => 'avc1.' + p + '00' + level)); };
   const videoConfig = (o, codec, hardwareAcceleration) => ({ codec, width: o.width, height: o.height, bitrate: Math.round(o.bitrate), framerate: FPS, bitrateMode: 'constant', latencyMode: 'realtime', hardwareAcceleration, avc: { format: 'avc' } });
 
   // Descobre, neste computador, o que dá para usar. Nunca lança: devolve { ok:false, reason } para o plano B.

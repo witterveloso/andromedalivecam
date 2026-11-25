@@ -25,7 +25,7 @@ test('dedicated output resumes on the current timestamp after a scheduler stall'
  const h=harness();await h.session.start();h.session.setFrame('h',h.frame());h.tick();h.at(1000.1);h.tick();h.tick();assert.deepEqual(h.failures,[]);assert.deepEqual(h.encoded,[0,1000000]);h.session.abort();
 });
 test('H264 level is based on both dimensions, including portrait HD and 4K',async()=>{
- const h=harness();assert.equal((await h.api.probe({width:1280,height:720})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:720,height:1280})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:1080,height:1920})).codec,'avc1.640028');assert.equal((await h.api.probe({width:3840,height:2160})).codec,'avc1.640033');
+ const h=harness();assert.equal((await h.api.probe({width:1280,height:720})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:720,height:1280})).codec,'avc1.64001f');assert.equal((await h.api.probe({width:1080,height:1920})).codec,'avc1.640029','1080p30 em High@4.1');assert.equal((await h.api.probe({width:3840,height:2160})).codec,'avc1.640033');
 });
 test('two captures arriving before the next tick are both encoded in order',async()=>{
  const h=harness();await h.session.start();h.session.setFrame('h',h.frame());h.session.setFrame('h',h.frame());h.tick();h.at(34);h.tick();h.at(67);h.tick();h.at(100);const s=h.session.stats();

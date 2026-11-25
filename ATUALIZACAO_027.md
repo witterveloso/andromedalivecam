@@ -1,8 +1,5 @@
 # Andrômeda Live 0.27 — Tracking fluido em tempo real e PGM em alta definição
 
-## 0.27.8 — LOOP na Trilha
-- **Botão ↻ LOOP no painel da Trilha.** Ligado, a música que está tocando **repete sem parar** (sem troca nem fade entre as voltas), até você trocar de faixa, desligar o LOOP ou desligar a trilha. Vale na hora, com a trilha no ar, e fica salvo. Desligado, a trilha volta a seguir a **Ordem** da playlist (em sequência repetindo, aleatória ou uma vez só). O botão TRILHA nos Comandos mostra **↻** quando o LOOP está ligado.
-
 ## 0.27.7 — ARTE, Comandos enxutos e auditoria da transmissão
 - **Novo comando ARTE (tecla A).** Para inserir artes durante a live: cartaz, aviso, patrocinador, QR code, tela de intervalo. **Dois cliques** no botão abrem a biblioteca: **+ Carregar artes** (PNG, JPEG ou WebP até 25 MB, ou arraste os arquivos para a janela), toque numa arte para escolhê-la, **Inteira** / **Preencher** para o ajuste na tela e **✕** para apagar. **Um clique** (ou a tecla **A**) coloca a arte escolhida no AR e retira, sempre com **fade de 2 s**. Com a arte no AR, escolher outra faz a troca com fade (sai uma, entra a outra). PNG com fundo transparente fica por cima da imagem; arte opaca cobre a tela. **As artes ficam guardadas no computador** e voltam quando a mesa é reaberta. A REGRESSIVA, as BARRAS e o BLACK continuam por cima da arte. Vai também para a saída vertical (9:16).
 - **Comandos mais enxutos.** Saíram dos Comandos os botões **PAUSAR VT**, **PRÓXIMO VT**, **PARAR VT** e **PRÓXIMA FAIXA**. O painel do VT e o da Trilha continuam com esses controles, e os atalhos de teclado (⇧F7, ⇧F9, ⇧F8 e N) continuam funcionando.

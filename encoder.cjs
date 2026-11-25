@@ -51,13 +51,16 @@ function validateBroadcast(input) {
   const destinations = list.map(validateDestination);
   if (new Set(destinations.map(d => d.target)).size !== destinations.length) fail('Há dois destinos com o mesmo servidor e a mesma chave.');
   const record = input.record ? validateRecording(input.record) : null;
-  // Saída vertical (9:16): 720×1280 é o padrão do Instagram ao vivo; 1080×1920 quando a plataforma aceita.
-  const v = input.vertical || {}, vres = ['720p', '1080p'].includes(v.resolution) ? v.resolution : '720p';
+  // Regra do produto: toda transmissão sai em 1080p (ou 4K) a 30 fps. A vertical (9:16) sai em 1080×1920.
+  // Só a gravação sem destinos (ex.: calibração do sincronismo) pode usar um tamanho menor.
+  const live = destinations.length > 0;
+  const v = input.vertical || {}, vres = live ? '1080p' : ['720p', '1080p'].includes(v.resolution) ? v.resolution : '720p';
   const vbit = Number(v.bitrate ?? (vres === '1080p' ? 6 : 4));
   if (!Number.isFinite(vbit) || vbit < 2 || vbit > 12) fail('Bitrate da saída vertical deve ficar entre 2 e 12 Mbps.');
   if (!destinations.length && !record) fail('Ative pelo menos um destino ou a gravação.');
-  const resolution = input.resolution; if (!['540p', '720p', '1080p', '2160p'].includes(resolution)) fail('Escolha 540p, 720p, 1080p ou 2160p (4K).');
-  const bitrate = Number(input.bitrate); if (!Number.isFinite(bitrate) || bitrate < (resolution === '2160p' ? 30 : 3) || bitrate > (resolution === '2160p' ? 60 : 20)) fail('Bitrate fora do limite da resolução escolhida.');
+  let resolution = input.resolution; if (!['540p', '720p', '1080p', '2160p'].includes(resolution)) fail('Escolha 540p, 720p, 1080p ou 2160p (4K).');
+  if (live && resolution !== '2160p') resolution = '1080p';
+  let bitrate = Number(input.bitrate); if (live && resolution === '1080p' && Number.isFinite(bitrate)) bitrate = Math.max(6, bitrate); if (!Number.isFinite(bitrate) || bitrate < (resolution === '2160p' ? 30 : 3) || bitrate > (resolution === '2160p' ? 60 : 20)) fail('Bitrate fora do limite da resolução escolhida.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
   // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
   return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
@@ -123,7 +126,10 @@ function detectEncoders(ffmpeg) {
 
 // No tee, | separa saídas e [ ] delimita opções: escapamos o que puder aparecer num caminho de arquivo.
 const teeEscape = value => value.replace(/\\/g, '/').replace(/(['\[\]])/g, '\\$1');
-const FIFO = 'f=fifo:fifo_format=flv:format_opts=flush_packets=1:queue_size=80:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore';
+// Cada destino se identifica com marca e versão (flashVer do RTMP, como pede o programa YouTube Live Verified):
+// format_opts vai entre aspas e com ':' escapado, senão o tee separa as opções antes de chegarem à conexão RTMP.
+const FLASHVER = 'AndromedaLive/' + String(require('./package.json').version).replace(/[^0-9A-Za-z.\-]/g, '');
+const FIFO = "f=fifo:fifo_format=flv:format_opts='flush_packets=1\\:rtmp_flashver=" + FLASHVER + "':queue_size=80:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore";
 
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
