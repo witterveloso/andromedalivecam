@@ -74,7 +74,7 @@
           const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); const key = chunk.type === 'key', ms = chunk.timestamp / 1000 + videoShift;
           if (meta?.decoderConfig?.description) o.desc = new Uint8Array(meta.decoderConfig.description instanceof ArrayBuffer ? meta.decoderConfig.description : meta.decoderConfig.description.buffer.slice(meta.decoderConfig.description.byteOffset, meta.decoderConfig.description.byteOffset + meta.decoderConfig.description.byteLength));
           const t = o.sent.get(chunk.timestamp); if (t !== undefined) { o.sent.delete(chunk.timestamp); o.lat.push(now() - t); if (o.lat.length > 60) o.lat.shift(); }
-          o.emitted++; o.lastOut = now(); if (key) o.keys++;
+          o.emitted++; o.lastOut = now(); if (key) { o.keys++; o.lastKeyOutTs = chunk.timestamp; }
           if (!ensureMux(o)) { o.held.push({ data, ms, key }); if (o.held.length > 120) fail('vídeo', 'o áudio não chegou a tempo'); return; }
           pushVideo(o, data, ms, key);
         },
@@ -135,7 +135,10 @@
         if (o.encoder.encodeQueueSize > 3) { o.dropped++; o.forceKey = true; continue; }
         const ts = Math.round(slot * frameMs * 1000);
         let frame; try { frame = new VideoFrame(o.canvas, { timestamp: ts, duration: Math.round(1000000 / FPS) }); } catch (e) { fail('captura de vídeo (' + o.id + ')', e); return; }
-        const key = o.forceKey || slot - o.lastKeySlot >= keySlots;
+        // Quadro-chave a cada 2 s (diretriz das plataformas: nunca acima de 4 s). Além de pedir, confere o que SAIU do codificador:
+        // se passaram 2,2 s sem um quadro-chave emitido (pedido ignorado, reinício), pede de novo neste quadro.
+        const keyOverdue = o.lastKeyOutTs != null && ts - o.lastKeyOutTs >= (KEY_MS + 200) * 1000 && slot - o.lastKeySlot > 3;
+        const key = o.forceKey || slot - o.lastKeySlot >= keySlots || keyOverdue; if (keyOverdue) o.keyRetries = (o.keyRetries || 0) + 1;
         if (key) { o.lastKeySlot = slot; o.forceKey = false; }
         o.sent.set(ts, now()); if (o.sent.size > 120) o.sent.delete(o.sent.keys().next().value);
         try { o.encoder.encode(frame, { keyFrame: key }); o.frames++; if(dedicated && o.encodedGeneration === o.generation)o.repeated++; o.encodedGeneration=o.generation; } catch (e) { fail('codificador de vídeo (' + o.id + ')', e); } finally { frame.close(); }
@@ -179,10 +182,12 @@
       setFrame(id, frame) {
         const o = outs.find(o => o.id === id);
         if (!o || !running) { frame.close(); return; }
-        // Two captures absorb scheduling jitter between the UI and encoder clocks (<=67 ms).
-        // Discard only the oldest pending frame when capture genuinely outruns output.
+        // Fila de 4 capturas (até ~133 ms): absorve as rajadas em que a captura entrega 2 ou 3 quadros juntos e depois fica um vão.
+        // Com fila de 2, a live de 7,8 h de 25/11 compunha 29,1 q/s mas só 26 chegavam novos ao codificador (9% descartados na fila);
+        // em simulação com rajadas de 3, a fila de 2 entrega 19,6 q/s novos e a de 4 entrega 28,6 (todos). Só descarta quando a captura
+        // passa mesmo da saída (o mais antigo sai primeiro).
         o.queue.push({ frame, generation: ++o.nextGeneration });
-        while (o.queue.length > 2) { o.queue.shift().frame.close(); o.queueDropped++; }
+        while (o.queue.length > 4) { o.queue.shift().frame.close(); o.queueDropped++; }
       },
       // O FFmpeg do serviço foi reiniciado: cabeçalho novo e um quadro-chave logo, para a imagem voltar sem esperar 2 s.
       restart(id) { const o = outs.find(x => x.id === id); if (!o || !o.mux) return; emit(o, o.mux.restart()); o.forceKey = true; },
