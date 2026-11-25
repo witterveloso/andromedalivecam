@@ -21,6 +21,18 @@
   }
   function audit(level, code, message, data) { if (queue.length < 200) queue.push({ level, code, message: String(message).slice(0, 500), data }); flush(); }
   window.andromedaAudit = audit;
+  // O que pesa na mesa: tempo médio e pior caso de cada etapa do desenho, tarefas longas da tela principal (> 50 ms),
+  // página aberta, janela visível e memória. Vai junto com a cadência, para cada queda de quadros ter uma causa no registro.
+  let longTasks = 0, longMs = 0;
+  try { new PerformanceObserver(list => { for (const e of list.getEntries()) { longTasks++; longMs += e.duration; } }).observe({ type: 'longtask', buffered: false }); } catch { /* navegador sem longtask */ }
+  function loadSnapshot(seconds) {
+    const stages = {};
+    for (const [name, st] of window.andromedaStageMs || []) { if (st.n) stages[name] = { mediaMs: +(st.ms / st.n).toFixed(1), piorMs: Math.round(st.max), porSeg: +(st.ms / Math.max(1, seconds) / 10).toFixed(1) + '%' }; }
+    (window.andromedaStageMs || new Map()).clear();
+    const out = { etapas: stages, tarefasLongas: longTasks, tarefasLongasMs: Math.round(longMs), pagina: document.querySelector('.workspace-page:not([hidden])')?.className.replace('workspace-page', '').trim() || 'operacao', visivel: !document.hidden, foco: document.hasFocus() };
+    if (performance.memory) out.memoriaMB = Math.round(performance.memory.usedJSHeapSize / 1048576);
+    longTasks = 0; longMs = 0; return out;
+  }
   let sampleAt = performance.now(), sampleFrames = window.andromedaProgramFrames || 0, samplePhase = liveTx.phase;
   setInterval(() => {
     const now = performance.now(), frames = window.andromedaProgramFrames || 0;
@@ -28,7 +40,7 @@
     if (liveTx.phase === samplePhase) {
       const pgm = Number(((frames - sampleFrames) * 1000 / (now - sampleAt)).toFixed(1));
       audit('info', 'cadencia-pgm', 'PGM desenhado a ' + pgm + ' q/s · ' + samplePhase,
-        { fase: samplePhase, fpsPGM: pgm, fpsCodificado: liveTx.nativeStats?.fps ?? null, fpsPGMNovo: liveTx.nativeStats?.freshFps ?? null, quadrosRepetidos: liveTx.nativeStats?.repeatedTotal ?? null, atrasoCodificadorMs: liveTx.nativeStats?.latencyMs ?? null, motor: liveTx.engine, largura: programOutput.width, altura: programOutput.height });
+        { fase: samplePhase, fpsPGM: pgm, fpsCodificado: liveTx.nativeStats?.fps ?? null, fpsPGMNovo: liveTx.nativeStats?.freshFps ?? null, quadrosRepetidos: liveTx.nativeStats?.repeatedTotal ?? null, atrasoCodificadorMs: liveTx.nativeStats?.latencyMs ?? null, motor: liveTx.engine, largura: programOutput.width, altura: programOutput.height , carga: loadSnapshot((now - sampleAt) / 1000) });
     }
     sampleAt = now; sampleFrames = frames; samplePhase = liveTx.phase;
   }, 1000);
