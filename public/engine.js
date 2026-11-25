@@ -179,10 +179,12 @@
       setFrame(id, frame) {
         const o = outs.find(o => o.id === id);
         if (!o || !running) { frame.close(); return; }
-        // Two captures absorb scheduling jitter between the UI and encoder clocks (<=67 ms).
-        // Discard only the oldest pending frame when capture genuinely outruns output.
+        // Fila de 4 capturas (até ~133 ms): absorve as rajadas em que a captura entrega 2 ou 3 quadros juntos e depois fica um vão.
+        // Com fila de 2, a live de 7,8 h de 25/11 compunha 29,1 q/s mas só 26 chegavam novos ao codificador (9% descartados na fila);
+        // em simulação com rajadas de 3, a fila de 2 entrega 19,6 q/s novos e a de 4 entrega 28,6 (todos). Só descarta quando a captura
+        // passa mesmo da saída (o mais antigo sai primeiro).
         o.queue.push({ frame, generation: ++o.nextGeneration });
-        while (o.queue.length > 2) { o.queue.shift().frame.close(); o.queueDropped++; }
+        while (o.queue.length > 4) { o.queue.shift().frame.close(); o.queueDropped++; }
       },
       // O FFmpeg do serviço foi reiniciado: cabeçalho novo e um quadro-chave logo, para a imagem voltar sem esperar 2 s.
       restart(id) { const o = outs.find(x => x.id === id); if (!o || !o.mux) return; emit(o, o.mux.restart()); o.forceKey = true; },

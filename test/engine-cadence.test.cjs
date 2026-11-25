@@ -31,9 +31,9 @@ test('two captures arriving before the next tick are both encoded in order',asyn
  const h=harness();await h.session.start();h.session.setFrame('h',h.frame());h.session.setFrame('h',h.frame());h.tick();h.at(34);h.tick();h.at(67);h.tick();h.at(100);const s=h.session.stats();
  assert.equal(s.outputs[0].frames,3);assert.equal(s.outputs[0].repeated,1);assert.equal(s.outputs[0].queueDropped,0);h.session.abort();
 });
-test('capture overload keeps at most two pending frames and closes discarded resources',async()=>{
+test('capture overload keeps at most four pending frames (absorbs bursts) and closes discarded resources',async()=>{
  const h=harness();await h.session.start();for(let i=0;i<10;i++)h.session.setFrame('h',h.frame());
- assert.equal(h.closedFrames.length,8);h.tick();assert.equal(h.session.stats().outputs[0].queueDropped,8);h.session.abort();assert.equal(h.closedFrames.length,11);
+ assert.equal(h.closedFrames.length,6);h.tick();assert.equal(h.session.stats().outputs[0].queueDropped,6);h.session.abort();assert.equal(h.closedFrames.length,11);
 });
 test('dedicated PGM uses a transferable capture stream and releases it on abort',async()=>{
  const workers=[],tracks=[];
@@ -52,3 +52,9 @@ test('dedicated PGM uses a transferable capture stream and releases it on abort'
  session.abort();await Promise.resolve();assert(tracks[0].stopped);assert(worker.terminated);assert.equal(ctx.window.andromedaFrameSinks.size,0);
 });
 
+test('0.28.1: capturas em rajadas de 3 (comum na captura do canvas) chegam todas novas ao codificador',async()=>{
+ const h=harness();await h.session.start();
+ // 30 quadros em 1 s, entregues em grupos de 3 a cada 100 ms; o codificador pede um quadro a cada 33,3 ms.
+ for(let slot=0;slot<30;slot++){h.at(slot*1000/30+.1);if(slot%3===0)for(let k=0;k<3;k++)h.session.setFrame('h',h.frame());h.tick();}
+ h.at(1000);const s=h.session.stats();assert.equal(s.outputs[0].queueDropped,0,'nenhuma captura descartada');assert.equal(s.repeated,0,'nenhum quadro repetido');assert.equal(s.freshFps,30);h.session.abort();
+});
