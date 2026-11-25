@@ -88,6 +88,15 @@ test('0.27.6: cadência registra a carga de cada etapa do desenho, tarefas longa
   assert.match(r, /largura: item\.el\?\.videoWidth \|\| 0, altura: item\.el\?\.videoHeight \|\| 0/);
 });
 
+test('0.27.7: ARTE no AR com fade de 2 s, guardada no computador; Comandos sem VT pausar/próximo/parar e próxima faixa', () => {
+  const a = read('public/arte.js'), c = read('public/commands.js'), h = read('public/index.html'), server = read('server.cjs');
+  assert.match(a, /indexedDB\.open\(DB, 1\)/); assert.match(a, /F\.apply\(ctx, 'arte', want/); assert.match(a, /window\.andromedaFade\?\.apply\(null, 'arte', false/, 'primeira entrada já com fade');
+  assert.match(a, /if \(st\.pending && \(F\?\.level\('arte'\) \?\? 0\) <= 0\)/, 'troca com fade'); assert.match(a, /MAX_BYTES = 25 \* 1024 \* 1024/);
+  assert.match(c, /\{ id: 'arte', name: \(\) => 'ARTE'/); assert.match(c, /\{ id: 'arte', label: [^}]*key: 'A'/);
+  for (const gone of ['vtnext', 'vtpause', 'vtstop', 'trilhanext']) assert.doesNotMatch(c, new RegExp("\\{ id: '" + gone + "', name:"));
+  assert.match(h, /<script src="\/effects\.js"><\/script><script src="\/arte\.js"><\/script>/, 'antes da regressiva/BLACK'); assert.match(server, /'\/arte\.js':'arte\.js'/);
+});
+
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);

@@ -64,7 +64,7 @@ test('a mesa carrega a trilha e liga atalhos, comandos e controle remoto', () =>
   const html = read('public/index.html'), server = read('server.cjs'), commands = read('public/commands.js'), desk = read('public/remote-desk.js');
   assert.ok(html.indexOf('/rundown.js') < html.indexOf('/trilha.js') && html.indexOf('/trilha.js') < html.indexOf('/workspace-custom.js'));
   assert.match(server, /'\/trilha\.js':'trilha\.js'/);
-  for (const id of ['trilha', 'trilhanext']) assert.match(commands, new RegExp("id: '" + id + "'"));
+  assert.match(commands, /\{ id: 'trilha', name:/); assert.doesNotMatch(commands, /\{ id: 'trilhanext', name:/, 'PRÓXIMA FAIXA saiu dos Comandos (a tecla N continua)'); assert.match(commands, /\{ id: 'trilhanext', label:/);
   assert.match(commands, /id: 'trilha', label: [^\n]*key: 'T'/);
   for (const c of ['trilha', 'trilhanext']) assert.match(desk, new RegExp("case '" + c + "'"));
   const js = read('public/trilha.js'); assert.match(js, /fadeIn: 2, fadeOut: 3/, 'fade in 2 s e fade out 3 s já programados');

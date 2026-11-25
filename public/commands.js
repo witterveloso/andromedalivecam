@@ -59,19 +59,17 @@
   const COMMANDS = [
     { id: 'gc0', name: () => 'GC', run: () => $('#fxGC0').click(), on: () => fx.live.layers[0]?.on, settings: () => openGC(0) },
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
+    // ARTE: arte (cartaz, aviso, patrocinador) por cima da imagem do AR, com fade de 2 s. Dois cliques: carregar e escolher as artes.
+    { id: 'arte', name: () => 'ARTE', sub: () => window.andromedaArte?.label() || '', run: () => window.andromedaArte?.toggle(), on: () => !!window.andromedaArte?.isOn(), settings: b => openPop(b, 'ARTE', window.andromedaArte.panel()) },
     { id: 'countdown', name: () => 'REGRESSIVA', sub: () => R.formatClock(countdown.on ? (countdown.paused ?? Math.max(0, (countdown.endAt - performance.now()) / 1000)) : countdown.seconds), run: () => R.toggleCountdown(), on: () => countdown.on, settings: b => popCountdown(b) },
     { id: 'pip', name: () => 'JANELA', run: () => $('#fxPip').click(), on: () => fx.live.pip.on, settings: () => openFx('#pipSource') },
     { id: 'vinheta', name: () => 'VINHETA', sub: () => (vinhetaPlayer.loop ? '↻ ' : '') + (vinhetaPlayer.running && vinhetaPlayer.item?.duration ? '−' + R.formatClock(vinhetaPlayer.item.duration - vinhetaPlayer.item.el.currentTime) : vinhetaPlayer.item?.name || 'sem vídeo') + (vinhetaPlayer.loop && !vinhetaPlayer.running ? ' · LOOP' : '') + (vinhetaPlayer.audio === false ? ' · SEM ÁUDIO' : ''), run: () => R.vinhetaToPreview(), on: () => state.pgm === VINHETA_SOURCE, prv: () => state.prv === VINHETA_SOURCE, settings: b => popVinheta(b) },
     { id: 'black', name: () => 'BLACK', sub: () => black.on ? 'direto no AR' : '', run: () => R.blackToPreview(), on: () => state.pgm === 10 || black.on, prv: () => state.prv === 10, settings: b => popBlack(b) },
     { id: 'vt', name: () => 'VT', sub: () => vtPlayer.running && vtPlayer.item?.duration ? '−' + R.formatClock(vtPlayer.item.duration - vtPlayer.item.el.currentTime) : R.vt.items[R.vt.cue]?.name || 'playlist vazia', run: () => R.vtToPreview(), on: () => state.pgm === VT_SOURCE, prv: () => state.prv === VT_SOURCE, settings: () => openVT() },
-    { id: 'vtnext', name: () => 'PRÓXIMO VT', icon: () => 'next', sub: () => R.vtNextLabel(), run: () => R.vtNext(), on: () => false, prv: () => false, settings: () => openVT() },
-    { id: 'vtpause', name: () => vtPlayer.paused ? 'CONTINUAR VT' : 'PAUSAR VT', icon: () => vtPlayer.paused ? 'play' : 'pause', sub: () => vtPlayer.running ? (vtPlayer.paused ? 'pausado' : 'tocando') : 'sem VT no ar', run: () => R.vtPause(), on: () => !!vtPlayer.paused, prv: () => false, settings: () => openVT() },
-    { id: 'vtstop', name: () => 'PARAR VT', icon: () => 'stop', sub: () => state.pgm === VT_SOURCE ? 'tira do ar' : 'sem VT no ar', run: () => R.vtStop(), on: () => false, prv: () => false, settings: () => openVT() },
     // MOSAICO: as câmeras marcadas com o M (no multiview) numa grade só; entra pelo PREVIEW como as demais fontes.
     { id: 'mosaic', name: () => 'MOSAICO', sub: () => { const n = (window.andromedaStage?.members || []).length; return n ? n + (n === 1 ? ' câmera' : ' câmeras') : 'marque com M'; }, run: () => select('prv', 11), on: () => state.pgm === 11, prv: () => state.prv === 11, settings: () => openMosaic() },
     // TRILHA: música de fundo direto no AR (sem PREVIEW), com fade in ao ligar e fade out ao desligar.
     { id: 'trilha', name: () => 'TRILHA', icon: () => 'note', sub: () => { const t = R.trilha.info(); return t.state === 'out' ? 'saindo do AR…' : t.state === 'in' ? 'entrando…' : t.on ? '♪ ' + (t.name || 'no ar') : t.total ? t.name : 'playlist vazia'; }, run: () => R.trilha.toggle(), on: () => R.trilha.info().on, prv: () => R.trilha.info().out, settings: () => R.trilha.openPanel() },
-    { id: 'trilhanext', name: () => 'PRÓXIMA FAIXA', icon: () => 'next', sub: () => { const t = R.trilha.info(); return t.total > 1 ? 'troca suave' : 'sem outra faixa'; }, run: () => R.trilha.next(), on: () => false, prv: () => false, settings: () => R.trilha.openPanel() },
     // TRACKING: liga e desliga o seguimento automático da câmera selecionada no Controle de câmera (a que segue o PREVIEW).
     { id: 'tracking', name: () => 'TRACKING', icon: () => 'target', sub: () => { const T = window.andromedaTracking; if (!T) return ''; const cam = String(sources[camCtl.slot] || 'CAM ' + (camCtl.slot + 1)).split('—')[0].trim(); return T.info().on ? cam + ' · seguindo' : camCtl.enabled && camCtl.caps.has(camCtl.slot) ? cam + ' · desligado' : 'ative o controle de câmera'; }, run: () => window.andromedaTracking?.toggle(), on: () => false, prv: () => !!window.andromedaTracking?.info().on, settings: () => openCamCtl() },
     // MARCAÇÕES: abre sobre o PREVIEW as 4 posições salvas da câmera que está nele (com miniatura); escolher leva a câmera à posição antes do AR.
@@ -94,7 +92,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['vtnext', 'vt'], ['vtpause', 'vtnext'], ['vtstop', 'vtpause'], ['trilha', 'mosaic'], ['trilhanext', 'trilha'], ['tracking', 'trilhanext'], ['marks', 'tracking']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['arte', 'logo'], ['trilha', 'mosaic'], ['tracking', 'trilha'], ['marks', 'tracking']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -382,6 +380,7 @@
     { id: 'logo', label: 'LOGO', key: 'F6', run: () => byId('logo').run() },
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
     { id: 'pip', label: 'JANELA (imagem dentro da imagem)', key: 'F8', run: () => byId('pip').run() },
+    { id: 'arte', label: 'ARTE no AR (coloca / retira, fade 2 s)', key: 'A', run: () => window.andromedaArte?.toggle() },
     { id: 'vt', label: 'VT no PREVIEW', key: 'F9', run: () => R.vtToPreview() },
     { id: 'vtnext', label: 'VT PRÓXIMO (dispara o próximo da playlist)', key: 'Shift+F9', run: () => R.vtNext() },
     { id: 'vtpause', label: 'VT PAUSAR / CONTINUAR', key: 'Shift+F7', run: () => R.vtPause() },

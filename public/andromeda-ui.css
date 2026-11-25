@@ -1507,3 +1507,23 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .mark-save:not(:disabled):hover { background: #c3263b; color: #fff; }
 .mark-go:focus-visible, .mark-save:focus-visible, .marks-close:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 1px; }
 @container (max-width: 420px) { .marks-note { display: none; } }
+
+/* ---------- 0.27.7: ARTE — biblioteca de artes para inserir no AR (janela do botão ARTE) ---------- */
+.arte-panel { display: flex; flex-direction: column; gap: 8px; border-radius: 8px; }
+.arte-panel.drop { outline: 2px dashed var(--brand-blue); outline-offset: 4px; }
+.arte-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 300px; overflow: auto; }
+.arte-card { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 4px; border-radius: 8px; border: 1.5px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .03); }
+.arte-card[aria-selected="true"] { border-color: var(--brand-blue); box-shadow: 0 0 0 1px var(--brand-blue); }
+.arte-card[data-air="true"] { border-color: #ff4a5e; box-shadow: 0 0 0 1px #ff4a5e; }
+.arte-card[data-air="true"]::after { content: 'NO AR'; position: absolute; left: 8px; top: 8px; padding: 1px 5px; border-radius: 4px; font: 700 9px/14px var(--font-mono, monospace); background: #ff4a5e; color: #fff; }
+.arte-pick { width: 100%; aspect-ratio: 16 / 9; max-width: 100%; padding: 0; border-radius: 5px; border: 0; background: #05060c center / contain no-repeat; }
+.arte-name { font-size: 11px; color: #d6deee; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arte-fit { align-self: flex-start; padding: 1px 6px; font-size: 10px; border-radius: 4px; }
+.arte-del { position: absolute; right: 6px; top: 6px; width: 20px; height: 20px; padding: 0; font-size: 11px; border-radius: 4px; background: rgba(0, 0, 0, .7); }
+.arte-del:hover { background: #c3263b; color: #fff; }
+.arte-actions { display: flex; gap: 8px; align-items: center; }
+.arte-add { flex: 1; text-align: center; padding: 7px 8px; border-radius: 6px; border: 1px dashed rgba(120, 190, 255, .6); color: #cfe3ff; cursor: pointer; font-size: 12px; }
+.arte-add:hover { background: rgba(120, 190, 255, .12); }
+.arte-air { flex: 1; padding: 7px 8px; font-weight: 700; font-size: 12px; }
+.arte-air[data-on="true"] { background: #c3263b; border-color: #ff4a5e; color: #fff; }
+.arte-note { margin: 0; font-size: 11px; color: #b9c4dc; line-height: 1.35; }
