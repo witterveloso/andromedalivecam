@@ -1,13 +1,13 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 function harness(){
- let now=0;const timers=[],failures=[],encoded=[],closedFrames=[];let deliver=true;
+ let now=0;const timers=[],failures=[],encoded=[],closedFrames=[],keyRequests=[];let deliver=true,honor=()=>true;
  class Frame{constructor(src,o={}){this.timestamp=o.timestamp;this.src=src;}close(){closedFrames.push(this);}}
- class Encoder{static async isConfigSupported(){return{supported:true};}constructor(callbacks){this.cb=callbacks;this.encodeQueueSize=0;}configure(c){this.config=c;}encode(frame){encoded.push(frame.timestamp);if(deliver)this.cb.output({type:'delta',timestamp:frame.timestamp,byteLength:1,copyTo(){}},{});}async flush(){}close(){}}
+ class Encoder{static async isConfigSupported(){return{supported:true};}constructor(callbacks){this.cb=callbacks;this.encodeQueueSize=0;}configure(c){this.config=c;}encode(frame,opts){encoded.push(frame.timestamp);if(opts?.keyFrame)keyRequests.push(frame.timestamp);const isKey=!!opts?.keyFrame&&honor(frame.timestamp);if(deliver)this.cb.output({type:isKey?'key':'delta',timestamp:frame.timestamp,byteLength:1,copyTo(){}},{});}async flush(){}close(){}}
  const context={module:{exports:{}},VideoEncoder:Encoder,AudioEncoder:Encoder,VideoFrame:Frame,AudioData:class{},MediaStreamTrackProcessor:class{},performance:{now:()=>now},AndromedaMkv:{},setInterval(fn,ms){const t={fn,ms};timers.push(t);return t;},clearInterval(t){if(t)t.closed=true;},Uint8Array,ArrayBuffer};
  vm.runInNewContext(fs.readFileSync(require.resolve('../public/engine.js'),'utf8'),context);
  const api=context.module.exports;
  const session=api.create({dedicated:true,audioReadable:{getReader:()=>({read:()=>new Promise(()=>{}),cancel:async()=>{}})},outputs:[{id:'h',width:1920,height:1080,bitrate:6000000,onChunk(){}}],onError:e=>failures.push(e.message),now:()=>now});
- return{api,session,timers,failures,encoded,closedFrames,frame:()=>new Frame({}),at:t=>now=t,deliver:v=>deliver=v,tick:()=>timers.find(t=>t.ms===4).fn()};
+ return{api,session,timers,failures,encoded,closedFrames,keyRequests,setHonor:f=>honor=f,frame:()=>new Frame({}),at:t=>now=t,deliver:v=>deliver=v,tick:()=>timers.find(t=>t.ms===4).fn()};
 }
 test('delayed first camera frame does not trigger a startup cadence failure',async()=>{
  const h=harness();await h.session.start();h.at(650);h.session.setFrame('h',h.frame());h.tick();
@@ -57,4 +57,12 @@ test('0.28.1: capturas em rajadas de 3 (comum na captura do canvas) chegam todas
  // 30 quadros em 1 s, entregues em grupos de 3 a cada 100 ms; o codificador pede um quadro a cada 33,3 ms.
  for(let slot=0;slot<30;slot++){h.at(slot*1000/30+.1);if(slot%3===0)for(let k=0;k<3;k++)h.session.setFrame('h',h.frame());h.tick();}
  h.at(1000);const s=h.session.stats();assert.equal(s.outputs[0].queueDropped,0,'nenhuma captura descartada');assert.equal(s.repeated,0,'nenhum quadro repetido');assert.equal(s.freshFps,30);h.session.abort();
+});
+test('0.28.1: quadro-chave pedido e ignorado pelo codificador é pedido de novo antes de 2,3 s (nunca 4 s sem quadro-chave)',async()=>{
+ const h=harness();await h.session.start();
+ // O codificador ignora o pedido de quadro-chave em 2,0 s (como no ensaio 4K do CI); os outros ele atende.
+ h.setHonor(ts=>Math.abs(ts-2000000)>1);
+ for(let slot=0;slot<150;slot++){h.at(slot*1000/30+.1);h.session.setFrame('h',h.frame());h.tick();}
+ const keys=h.keyRequests.filter(ts=>ts>0);assert(keys.includes(2000000),'pedido em 2 s');
+ const retry=keys.find(ts=>ts>2000000);assert(retry!==undefined&&retry<=2300000,'novo pedido logo depois: '+retry);h.session.abort();
 });

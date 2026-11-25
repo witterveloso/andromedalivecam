@@ -6,6 +6,7 @@
   - **Perda na fila:** a mesa compunha o PGM a **29,1 quadros por segundo**, mas só **26 chegavam novos** ao codificador. Os outros 3 eram descartados na fila de entrega: 77.343 quadros na sessão, cerca de 9%. Para manter os 30 por segundo, o codificador repetia o quadro anterior (12,4% de repetidos).
 - **Causa:** a captura do PGM entrega os quadros em rajadas, 2 ou 3 de uma vez, e depois fica um vão. A fila tinha lugar para 2: numa rajada de 3, um quadro era jogado fora, e no vão seguinte faltava quadro novo.
 - **Correção:** a fila passa a ter lugar para **4 quadros** (até ~133 ms, irrelevante perto dos 2 a 5 s de atraso das plataformas). Em simulação com rajadas de 3, a entrega sobe de **19,6 para 28,6 quadros novos por segundo**, sem nenhum descarte. Um teste automático novo reprova a versão se a fila voltar a perder quadros em rajada.
+- **Quadro-chave garantido.** No ensaio 4K do CI, uma vez, a plataforma ficou **4 s sem quadro-chave** (a diretriz é 2 s, nunca acima de 4): o codificador deixou de atender um pedido. Agora a mesa confere o que **sai** do codificador, e se passarem 2,2 s sem quadro-chave emitido, pede de novo no quadro seguinte. Teste automático: com o codificador ignorando o pedido de 2 s, o novo pedido sai antes de 2,3 s (e o teste reprova sem a correção).
 
 ## 0.28.0 — regra 1080p30, conformidade técnica e envio multiplataforma
 - **Regra: só 1080p (ou 4K) a 30 fps.**
