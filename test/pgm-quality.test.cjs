@@ -81,6 +81,13 @@ test('0.27.5: MARCAÇÕES — 4 posições da câmera no PREVIEW com miniatura, 
   assert.match(css, /\.marks \{ position: absolute; left: 6px; right: 6px; bottom: 6px/);
 });
 
+test('0.27.6: cadência registra a carga de cada etapa do desenho, tarefas longas, página e visibilidade', () => {
+  const h = read('public/index.html'), d = read('public/diagnostics.js'), r = read('public/rundown.js');
+  assert.match(h, /const stageMs=window\.andromedaStageMs=new Map\(\);function guarded\(name,fn\)/); assert.match(h, /key=\/\^câmera \/\.test\(name\)\?'câmeras':name/);
+  assert.match(d, /observe\(\{ type: 'longtask'/); assert.match(d, /carga: loadSnapshot\(\(now - sampleAt\) \/ 1000\)/); assert.match(d, /visivel: !document\.hidden/);
+  assert.match(r, /largura: item\.el\?\.videoWidth \|\| 0, altura: item\.el\?\.videoHeight \|\| 0/);
+});
+
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
   const e = read('public/engine.js');
   assert.match(e, /if \(!session\) \{ value\.close\(\); continue; \}/); assert.match(e, /else if \(m\.type === 'abort'\) \{ session\?\.abort\(\); await settle\(\);/, 'encerramento lê a fila até o fim em vez de descartar quadros'); assert.doesNotMatch(e, /else if \(m\.type === 'stop'\) \{ await Promise\.all\(readers\.map\(r=>r\.cancel/); assert.match(e, /try \{ session\.setFrame\(id, value\); \} catch \(e\) \{ try \{ value\.close\(\); \} catch \{\} throw e; \}/);

@@ -192,7 +192,7 @@ async function startPlayer(p) {
   item.el.currentTime = item.startAt > 0 && item.startAt < (item.duration || Infinity) ? item.startAt : 0; item.startAt = 0; item.el.loop = !!p.loop;
   try { await item.el.play(); } catch (e) { p.running = false; log(p.label + ' não iniciou: ' + e.message); return; }
   sources[p.source] = p.label + ' · ' + item.name;
-  log(p.label + ' no AR: ' + item.name); audit('info', p.label.toLowerCase() + '-no-ar', p.label + ' no AR: ' + item.name, { duracao: Math.round(item.duration || 0) });
+  log(p.label + ' no AR: ' + item.name); audit('info', p.label.toLowerCase() + '-no-ar', p.label + ' no AR: ' + item.name, { duracao: Math.round(item.duration || 0), largura: item.el?.videoWidth || 0, altura: item.el?.videoHeight || 0 });
 }
 function stopPlayer(p) {
   if (!p.running) return;
