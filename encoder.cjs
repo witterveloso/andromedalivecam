@@ -129,7 +129,10 @@ const teeEscape = value => value.replace(/\\/g, '/').replace(/(['\[\]])/g, '\\$1
 // Cada destino se identifica com marca e versão (flashVer do RTMP, como pede o programa YouTube Live Verified):
 // format_opts vai entre aspas e com ':' escapado, senão o tee separa as opções antes de chegarem à conexão RTMP.
 const FLASHVER = 'AndromedaLive/' + String(require('./package.json').version).replace(/[^0-9A-Za-z.\-]/g, '');
-const FIFO = "f=fifo:fifo_format=flv:format_opts='flush_packets=1\\:rtmp_flashver=" + FLASHVER + "':queue_size=80:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore";
+// Fila de cada destino: 300 pacotes (~4 s de imagem e som) seguram uma trava da rede ou da plataforma sem descartar nada.
+// Com 80 (~1 s), uma trava de 3,5 s descartava ~60 quadros no meio do GOP: sumia um quadro-chave (intervalo de 4 s) e a
+// imagem corrompia até o próximo (test/fifo-stall.test.cjs). A fila só enche durante a trava; sem trava, não soma atraso.
+const FIFO = "f=fifo:fifo_format=flv:format_opts='flush_packets=1\\:rtmp_flashver=" + FLASHVER + "':queue_size=300:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore";
 
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);

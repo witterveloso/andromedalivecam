@@ -20,6 +20,12 @@
 - **Sem STUN de terceiros.** Saíram o STUN do Google e o da Cloudflare das câmeras. A Cloudflare não aparece mais como opção na tela; quem já tinha configurado passa para a Rede Andrômeda.
 - **Windows.** Na primeira vez, o Windows pergunta se o Andrômeda Live pode receber conexões: clique em **Permitir**.
 
+- **Transmissão: nenhuma perda numa trava curta da rede.** A fila de cada destino passou de ~1 s para ~4 s.
+  - Antes, uma trava de 3,5 s da rede ou da plataforma descartava ~60 quadros, junto com um quadro-chave: o intervalo entre quadros-chave ia a 4 s, fora da diretriz de 2 s, e a imagem ficava corrompida até o próximo.
+  - Era essa a falha que aparecia de vez em quando no diagnóstico 4K do CI.
+  - Agora chegam 360 de 360 quadros, com quadro-chave a cada 2 s.
+  - Sem trava, a fila fica vazia e não soma atraso.
+
 ### O que ainda usa terceiros (e como eliminar)
 - **Ponto de encontro sem servidor da empresa.** Sem o servidor da Rede Andrômeda no ar, a conversa inicial entre celular e mesa ainda passa pelos servidores MQTT públicos de antes. As mensagens vão cifradas de ponta a ponta. Com o servidor da empresa configurado, eles deixam de ser usados.
 - **Página do app da câmera.** Continua publicada no GitHub Pages. Pode ser hospedada no mesmo servidor da empresa (`configure.py`: deixe a URL do GitHub Pages em branco).
