@@ -6,5 +6,11 @@
   request_body {
     max_size 8KB
   }
-  reverse_proxy gateway:8080
+  # Ponto de encontro da Rede Andrômeda (WebSocket)
+  handle /mqtt {
+    reverse_proxy host.docker.internal:8090
+  }
+  handle {
+    reverse_proxy gateway:8080
+  }
 }

@@ -39,21 +39,26 @@ jobs:
       - name: Testes da configuração do gateway
         if: runner.os == 'Linux'
         run: python3 -m unittest discover -s test -p "*_test.py"
-      - name: Validar e construir o contêiner do gateway
+      - name: Validar e construir o contêiner do gateway e da Rede Andrômeda
         if: runner.os == 'Linux'
         env:
           CAM_DOMAIN: cam.example.com
           TURN_HOST: turn.example.com
+          PUBLIC_IP: 203.0.113.10
         run: |
           # Valores descartáveis só para este teste; os reais são gerados por cloud/configure.py no VPS.
           export CLOUD_TOKEN=$(openssl rand -hex 32) TURN_SECRET=$(openssl rand -hex 32)
-          touch cloud/turnserver.conf
           docker compose -f cloud/compose.yaml config --quiet
           docker build -f cloud/Dockerfile -t andromeda-gateway:ci .
           docker run -d --name gw -e CLOUD_ORIGIN=https://cam.example.com -e CLOUD_TOKEN -e TURN_HOST -e TURN_SECRET -p 8080:8080 andromeda-gateway:ci
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/health | grep -q '"ok":true'
           docker rm -f gw
+          # Servidor da Rede Andrômeda (ponto de encontro + retransmissão própria) sobe e responde.
+          docker run -d --name rede --network host -e TURN_SECRET -e PUBLIC_IP -e TURN_PORT=3478 -e REDE_PORT=8090 andromeda-gateway:ci node andromeda-rede.cjs
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8090/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8090/health | grep -q '"turn":{'
+          docker rm -f rede
 
   transmission:
     name: Vídeo real e gravação (Windows)

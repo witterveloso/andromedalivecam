@@ -8,7 +8,13 @@ const localTest = new URLSearchParams(location.search).get('teste') === '1';
 const gateway = String(window.ANDROMEDA_GATEWAY || '').replace(/\/+$/, '');
 const KEY = /^[a-f0-9]{48}$/;
 // Convite pela internet: #r=CHAVE (ponto de encontro + WebRTC direto). Convite por gateway ou rede local: #CHAVE.
-const parseHash = hash => { const h = String(hash || '').replace(/^#/, ''); if (h.startsWith('r=') && KEY.test(h.slice(2))) return { key: h.slice(2), relay: true }; return KEY.test(h) ? { key: h, relay: false } : null; };
+// #r=CHAVE&p=wss://…/mqtt: o convite pode trazer o ponto de encontro da Rede Andrômeda da empresa (sem servidores de terceiros).
+const parseHash = hash => {
+  const [h, ...rest] = String(hash || '').replace(/^#/, '').split('&'), extra = new URLSearchParams(rest.join('&'));
+  let point = null; try { const u = new URL(extra.get('p') || ''); if (u.protocol === 'wss:' && !u.username && !u.password) point = u.toString(); } catch { /* sem ponto próprio */ }
+  if (h.startsWith('r=') && KEY.test(h.slice(2))) return { key: h.slice(2), relay: true, point };
+  return KEY.test(h) ? { key: h, relay: false } : null;
+};
 const firstInvite = parseHash(location.hash);
 const relayBrokers = Array.isArray(window.ANDROMEDA_RELAY) && window.ANDROMEDA_RELAY.length ? window.ANDROMEDA_RELAY : window.AndromedaRelay?.DEFAULT_BROKERS || [];
 const q = s => document.querySelector(s);
@@ -61,8 +67,8 @@ document.addEventListener('fullscreenchange', paintFullscreen);
 document.addEventListener('webkitfullscreenchange', paintFullscreen);
 
 if (standalone() && !localTest) {
-  if (firstInvite) prefs.set('invite', (firstInvite.relay ? 'r=' : '') + firstInvite.key);
-  else { const last = parseHash(prefs.get('invite', '')); if (last) { cam.key = last.key; cam.relay = last.relay; } }
+  if (firstInvite) prefs.set('invite', (firstInvite.relay ? 'r=' : '') + firstInvite.key + (firstInvite.point ? '&p=' + encodeURIComponent(firstInvite.point) : ''));
+  else { const last = parseHash(prefs.get('invite', '')); if (last) { cam.key = last.key; cam.relay = last.relay; cam.point = last.point || null; } }
 }
 // A chave do convite sai da barra de endereço assim que é lida.
 history.replaceState(null, '', location.pathname + (localTest ? '?teste=1' : ''));
@@ -356,7 +362,7 @@ function relayChannel() {
   if (!window.AndromedaRelay) throw Object.assign(Error('Página incompleta: recarregue o link do convite.'), { name: 'InviteError' });
   if (!cam.channel || cam.channel.inviteKey !== cam.key) {
     cam.channel?.close();
-    cam.channel = new AndromedaRelay.Channel({ inviteKey: cam.key, role: 'cam', brokers: relayBrokers });
+    cam.channel = new AndromedaRelay.Channel({ inviteKey: cam.key, role: 'cam', brokers: cam.point ? [cam.point] : relayBrokers });
     cam.channel.inviteKey = cam.key;
   }
   return cam.channel;
@@ -425,7 +431,7 @@ function readInvite(text) {
 function useInvite() {
   const result = readInvite(q('#invite').value);
   if (result.error) { say(result.error, 'error'); return false; }
-  cam.key = result.key; cam.relay = result.relay; q('#invite').value = '';
+  cam.key = result.key; cam.relay = result.relay; cam.point = result.point || null; q('#invite').value = '';
   return true;
 }
 q('#inviteApply').onclick = () => {

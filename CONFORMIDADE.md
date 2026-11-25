@@ -28,7 +28,7 @@ Este documento lista as diretrizes técnicas publicadas pelas plataformas de tra
 ## 3. Envio para várias plataformas ao mesmo tempo
 
 - **Uma codificação por formato.** Há uma codificação 16:9 e uma 9:16. A codificação de cada formato vai para todos os destinos daquele formato, sem codificar de novo para cada plataforma.
-- **Uma conexão própria por destino.** Cada destino tem sua fila, que descarta pacotes se a rede travar em vez de acumular atraso. A reconexão é automática e recomeça num quadro-chave.
+- **Uma conexão própria por destino.** Cada destino tem sua fila de ~4 s (300 pacotes): uma trava da rede ou da plataforma de até ~4 s passa sem perder nenhum quadro nem quadro-chave (`test/fifo-stall.test.cjs`: trava de 3,5 s, 360 de 360 quadros, quadro-chave a cada 2 s). Só uma trava mais longa descarta pacotes, em vez de acumular atraso sem limite. A reconexão é automática e recomeça num quadro-chave.
 - **Falha isolada.** Se um destino cair, os outros continuam no ar.
 - **Formatos independentes.** O 16:9 e o 9:16 rodam em processos separados: a queda de um não derruba o outro.
 - **Painel de conformidade.** A página **Transmissão** mostra, antes de entrar no ar:
