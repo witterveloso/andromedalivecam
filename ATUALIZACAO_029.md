@@ -1,5 +1,27 @@
 # Andrômeda Live 0.29 — Rede Andrômeda: câmeras no 4G/5G como no Wi-Fi, com tecnologia própria
 
+## 0.29.1 — convite pela internet: a mesa e o celular dizem por que a imagem não chega
+- **Causa encontrada.** Montamos uma internet simulada, com a mesa atrás de um roteador doméstico e o celular atrás de um CGNAT de operadora, como no 5G. Nela, o convite abre, o celular e a mesa se encontram, mas a imagem só chega por um destes caminhos:
+  - o celular no **mesmo Wi-Fi** da mesa;
+  - o **roteador abre a porta** da Rede Andrômeda (UPnP ou encaminhamento manual da porta 3478 UDP/TCP);
+  - o **servidor da Rede Andrômeda** da empresa.
+- **Sem nenhum dos três, a imagem não chega.** O celular só recebia a retransmissão da rede local, que não se alcança de fora.
+  - Um STUN público, como o do Google, que a 0.28 usava, também não resolve no 5G: a simulação mostrou que o vídeo não chega do mesmo jeito.
+- **A mesa não promete mais o que não pode cumprir.**
+  - Antes, o passo 1 dos convites dizia "o link abre a câmera em qualquer rede" mesmo com o 4G/5G fora do ar.
+  - Agora ele avisa quando o convite só funciona no mesmo Wi-Fi e abre sozinho o quadro **Rede móvel (4G/5G)** com o motivo e a solução.
+  - Com o servidor da empresa configurado, o quadro mostra "4G/5G pelo servidor da empresa".
+- **O celular explica a falha.** Em vez de "Reconectando…", o app da câmera diz que a imagem não chega por aquela rede e o que a mesa precisa fazer.
+- **O Diagnóstico registra a falha.** O celular avisa a mesa, que registra no Diagnóstico e no log, uma vez por minuto por câmera, qual câmera ficou sem caminho e por quê.
+- **Prova técnica:** `test/sim-5g/` reproduz os quatro cenários com rede de verdade (namespaces de Linux, NAT doméstico e CGNAT simétrico):
+
+| Cenário | Resultado |
+|---|---|
+| 5G, roteador sem UPnP | não chega; mesa e celular explicam |
+| 5G, roteador com UPnP | chega pela retransmissão da mesa |
+| mesmo Wi-Fi | chega direto |
+| 5G com o servidor da empresa | chega pelo servidor |
+
 ## 0.29.0 — retransmissão própria (STUN/TURN), porta aberta no roteador e ponto de encontro próprio
 - **Câmera no 5G igual ao Wi-Fi.**
   - No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado (CGNAT). Sem retransmissão, a câmera conectava e a imagem não chegava.

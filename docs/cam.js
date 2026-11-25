@@ -328,8 +328,13 @@ async function makePeer(lane) {
     if (pc.connectionState === 'connected') { bitrate().catch(() => {}); say('Vídeo conectado à mesa. O tally indica o barramento PGM, não a confirmação do YouTube.', 'ok'); q('#ptt').disabled = false; }
     if (['failed', 'disconnected'].includes(pc.connectionState)) {
       tally('offline'); ptt(false);
-      const relayed = (cam.ice || []).some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(u)));
-      say(pc.connectionState === 'failed' && !relayed ? 'A rede móvel bloqueou o caminho direto até a mesa. Peça para a mesa ativar "Rede móvel (4G/5G)" em Convites; enquanto isso, use Wi-Fi. Tentando de novo…' : 'Conexão interrompida. Reconectando…', 'warn');
+      // Retransmissão alcançável de fora do Wi-Fi da mesa = algum turn: com endereço público (porta aberta no roteador ou servidor da Rede Andrômeda).
+      const publicRelay = (cam.ice || []).some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(u) && !/^turns?:(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|\[?f[cd]|\[?fe80)/i.test(u)));
+      if (pc.connectionState === 'failed') {
+        send({ type: 'path', reach: publicRelay ? 'public' : 'local' });
+        say(publicRelay ? 'A imagem não achou caminho até a mesa. Confira a internet do celular e peça para a mesa conferir o firewall do Windows (Permitir o Andrômeda Live). Tentando de novo…'
+          : 'A imagem não chega à mesa por esta rede. No 4G/5G ou em outro Wi-Fi, a mesa precisa abrir a porta da Rede Andrômeda no roteador (avise o operador). No mesmo Wi-Fi da mesa funciona. Tentando de novo…', 'warn');
+      } else say('Conexão interrompida. Reconectando…', 'warn');
       clearTimeout(cam.retry); cam.retry = setTimeout(() => { if (cam.running) cam.ws?.close(); }, 2000);
     }
   };
