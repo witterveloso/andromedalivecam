@@ -13,8 +13,8 @@ test('each platform gets its own screen format: YouTube/Facebook 16:9, Instagram
   assert.deepEqual(cfg.destinations.map(d => d.name + ' ' + d.aspect), ['YouTube 16:9', 'Facebook 16:9', 'Instagram 9:16', 'TikTok 9:16']);
   const [h, v] = groupsFor(cfg);
   assert.equal(h.size, '1920:1080'); assert.deepEqual(h.destinations.map(d => d.id), ['yt', 'fb']);
-  assert.equal(v.size, '720:1280', 'Instagram live default is 720×1280'); assert.equal(v.bitrate, 4); assert.deepEqual(v.destinations.map(d => d.id), ['ig', 'tk']);
-  assert(argsForGroup(cfg, v).includes('scale=720:1280:flags=bilinear,setsar=1')); assert(!argsForGroup(cfg, v).at(-1).includes('youtube'), 'vertical encode never reaches 16:9 destinations');
+  assert.equal(v.size, '1080:1920', 'regra 1080p30: vertical ao vivo em 1080×1920'); assert.equal(v.bitrate, 6, '1080×1920 começa em 6 Mbps'); assert.deepEqual(v.destinations.map(d => d.id), ['ig', 'tk']);
+  assert(argsForGroup(cfg, v).includes('scale=1080:1920:flags=bilinear,setsar=1')); assert(!argsForGroup(cfg, v).at(-1).includes('youtube'), 'vertical encode never reaches 16:9 destinations');
   const big = validateBroadcast({ resolution: '720p', bitrate: 4, destinations: [ig], vertical: { resolution: '1080p', bitrate: 7 } });
   assert.deepEqual(groupsFor(big).map(g => g.id + ' ' + g.size + ' ' + g.bitrate), ['v 1080:1920 7'], 'only Instagram: no 16:9 encode at all');
   // O operador pode mudar o formato de um destino (ex.: servidor próprio vertical).
@@ -67,11 +67,11 @@ test('real run: 16:9 and 9:16 go out together, each to its own platform, and bot
   await done;
   assert(!seen.some(m => m.type === 'error' || m.state === 'error'), JSON.stringify(seen.filter(m => m.type === 'error' || m.state === 'error')));
   assert(!seen.some(m => m.type === 'notice' && /poucos quadros/.test(m.message)), 'a full 30 frames/s signal never triggers the missing-frames warning');
-  assert.equal(dims(outH), '1280x720', 'the 16:9 platform receives 16:9');
-  assert.equal(dims(outV), '720x1280', 'the 9:16 platform receives 9:16');
+  assert.equal(dims(outH), '1920x1080', 'the 16:9 platform receives 16:9 em 1080p (regra)');
+  assert.equal(dims(outV), '1080x1920', 'the 9:16 platform receives 9:16 em 1080×1920 (regra)');
   const recorded = seen.filter(m => m.type === 'recorded').map(m => m.file).sort();
   assert.equal(recorded.length, 2, JSON.stringify(recorded));
-  assert.deepEqual(recorded.map(f => dims(f)).sort(), ['1280x720', '720x1280']);
+  assert.deepEqual(recorded.map(f => dims(f)).sort(), ['1080x1920', '1920x1080']);
   assert(recorded.some(f => f.endsWith('_9x16.mp4')) && recorded.some(f => f.endsWith('_16x9.mp4')), 'file names say the format');
   const log = audit.export(); assert(!log.includes('keyH1111') && !log.includes('keyV2222'), 'no keys in the audit');
   assert(audit.since(0).some(e => e.code === 'inicio' && /16:9 e 9:16/.test(e.message)));
@@ -125,5 +125,5 @@ test('if the 9:16 output fails, the 16:9 output stays on air', async t => sessio
   assert(seen.some(m => m.type === 'destination' && m.id === 'v' && m.state === 'error'), 'the vertical platform is marked as failed');
   assert(!seen.some(m => m.type === 'error'), 'the session itself did not fail');
   assert(seen.filter(m => m.type === 'sending').at(-1).frames > 200, '16:9 kept sending');
-  assert.equal(dims(outH), '1280x720');
+  assert.equal(dims(outH), '1920x1080');
 }));

@@ -1532,3 +1532,16 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .camctl-pv-wrap > video { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); object-fit: contain; border-radius: 7px; background: #000; pointer-events: none; }
 .camctl-pv-wrap > canvas { position: relative; }
 .camctl-preview canvas[data-native="true"] { background: transparent; }
+/* Trilha: LOOP (repete a música atual) */
+.tr-loop { min-height: 44px; padding: 0 12px; font-weight: 700; letter-spacing: .04em; }
+.tr-loop[data-on="true"] { background: var(--brand-blue); border-color: var(--brand-blue); color: var(--d-accent-ink, #001426); }
+/* Transmissão: conformidade técnica */
+.tx-compliance { grid-column: 1 / -1; display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(80, 200, 140, .35); background: rgba(40, 160, 100, .07); }
+.tx-compliance h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #9fe3bf; }
+.tx-comp-row { margin: 0; display: grid; grid-template-columns: minmax(110px, auto) 1fr; gap: 10px; font-size: 12px; line-height: 1.35; }
+.tx-comp-row b { color: #bff0d6; font-weight: 700; }
+.tx-comp-row[data-tone="warn"] b { color: #ffd27a; }
+.tx-comp-row span { color: #d5dcec; min-width: 0; }
+.tx-comp-note { margin: 4px 0 0; font-size: 11px; color: #9aa6c0; }
+.dest-studio { justify-self: start; font-size: 12px; font-weight: 600; color: #8fd0ff; text-decoration: none; }
+.dest-studio:hover { text-decoration: underline; }

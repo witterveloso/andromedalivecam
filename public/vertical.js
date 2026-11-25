@@ -12,8 +12,8 @@
 (() => {
   const STORE = 'andromeda.vertical.v1';
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
-  const s = { mode: 'crop', pos: 0.5, resolution: '720p', bitrate: 4 };
-  try { const saved = JSON.parse(localStorage.getItem(STORE) || '{}'); if (['crop', 'blur', 'bars'].includes(saved.mode)) s.mode = saved.mode; if (Number.isFinite(saved.pos)) s.pos = Math.min(1, Math.max(0, saved.pos)); if (['720p', '1080p'].includes(saved.resolution)) s.resolution = saved.resolution; if (Number.isFinite(saved.bitrate)) s.bitrate = Math.min(12, Math.max(2, saved.bitrate)); } catch { /* primeiro uso */ }
+  const s = { mode: 'crop', pos: 0.5, resolution: '1080p', bitrate: 6 };
+  try { const saved = JSON.parse(localStorage.getItem(STORE) || '{}'); if (['crop', 'blur', 'bars'].includes(saved.mode)) s.mode = saved.mode; if (Number.isFinite(saved.pos)) s.pos = Math.min(1, Math.max(0, saved.pos)); if (Number.isFinite(saved.bitrate)) s.bitrate = Math.min(12, Math.max(6, saved.bitrate)); s.resolution = '1080p'; /* regra: vertical sempre 1080×1920 */ } catch { /* primeiro uso */ }
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify(s)); } catch { /* sem armazenamento */ } };
 
   const canvas = make('canvas'); canvas.id = 'programVertical'; canvas.setAttribute('aria-label', 'Prévia da saída vertical 9:16');
@@ -62,8 +62,8 @@
     const quick = make('div', 'vertical-quick');
     for (const [text, v] of [['Esquerda', 0], ['Centro', .5], ['Direita', 1]]) { const b = make('button', '', text); b.type = 'button'; b.onclick = () => setPos(v); quick.append(b); }
     posLabel.append(posHead, pos, quick);
-    const res = make('select'); res.add(new Option('720 × 1280 · padrão do Instagram', '720p')); res.add(new Option('1080 × 1920', '1080p'));
-    const bit = make('input'); Object.assign(bit, { type: 'number', min: 2, max: 12, step: .5 });
+    const res = make('select'); res.add(new Option('1080 × 1920 · 30 fps', '1080p'));
+    const bit = make('input'); Object.assign(bit, { type: 'number', min: 6, max: 12, step: .5 });
     const resLabel = make('label', '', 'Resolução vertical'); resLabel.append(res);
     const bitLabel = make('label', '', 'Bitrate vertical (Mbps)'); bitLabel.append(bit);
     const note = make('p', 'quality-note', 'Montada a partir do PGM, com GC e logotipo. No recorte, o que estiver nas laterais do 16:9 fica fora do quadro: para garantir o GC inteiro, use "Inteira". A saída vertical tem codificação própria; se ela falhar, a 16:9 continua no ar.');
@@ -75,7 +75,7 @@
     function setPos(v) { s.pos = Math.min(1, Math.max(0, v)); save(); paint(); draw(); }
     pos.oninput = () => setPos(Number(pos.value) / 100);
     res.onchange = () => { s.resolution = res.value; s.bitrate = s.resolution === '1080p' ? Math.max(s.bitrate, 6) : s.bitrate; save(); paint(); draw(); onChange?.(); };
-    bit.onchange = () => { s.bitrate = Math.min(12, Math.max(2, Number(bit.value) || 4)); save(); paint(); onChange?.(); };
+    bit.onchange = () => { s.bitrate = Math.min(12, Math.max(6, Number(bit.value) || 6)); save(); paint(); onChange?.(); };
     // Arrastar na prévia move o recorte (também durante a live).
     let drag = null;
     preview.addEventListener('pointerdown', e => { if (s.mode !== 'crop') return; drag = { x: e.clientX, pos: s.pos }; preview.setPointerCapture(e.pointerId); });

@@ -41,19 +41,15 @@ test('o monitor da tela nunca cresce: só a superfície HD, o overlay e a saída
   assert.doesNotMatch(broadcast + live, /\[\$\('#monProgram canvas'\), overlay, programOutput\]|\[\$\('#monProgram canvas'\),overlay,programOutput\]/, 'o monitor da tela não é redimensionado pelo envio');
 });
 
-test('regulador de carga: reduz a resolução sem encerrar o envio, o serviço reabre o codificador e a decisão fica lembrada', () => {
-  const b = read('public/broadcast.js'), pub = read('publish.cjs');
-  assert.match(b, /STEPS = \[\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]\]/); assert.match(b, /over >= 10/); assert.match(b, /deskSlow >= 8/); assert.match(b, /type: 'resync'/);
-  assert.match(b, /Date\.now\(\) - shiftAt < wait\)/, 'carência e intervalo mínimo'); assert.match(b, /wait = 30000/); assert.match(b, /14 \* 864e5/, 'lembra por 14 dias'); assert.match(b, /resolution\.onchange = \(\) => \{ model\.resolution = resolution\.value;/); assert.match(b, /bitrate\.value=model\.bitrate; clearCap\(\); save\(\); summary\(\)/);
-  assert.match(pub, /msg\.type === 'resync' && everStarted/); assert.match(pub, /function resyncAll\(reason\)/); assert.match(b, /type: 'start', resolution: outRes/);
-});
-
-test('teste do computador antes de ir ao ar: mede os quadros por segundo no tamanho pedido, escolhe o primeiro que sustenta e lembra por 7 dias', () => {
-  const b = read('public/broadcast.js'), e = read('public/engine.js');
-  assert.match(e, /async function benchmark\(/); assert.match(e, /return \{ probe, create, createDedicated, benchmark, qualify, supported: hasApi \}/); assert.match(e, /new VideoFrame\(canvas/);
-  assert.match(b, /AndromedaEngine\.benchmark\(\{ canvas: programOutput/); assert.match(b, /r\.fps >= 29 && desk >= 29/); assert.match(b, /7 \* 864e5/); assert.match(b, /\[1920, 1080, '1080p'\], \[1280, 720, '720p'\], \[960, 540, '540p'\]/);
-  assert.match(b, /severe >= 3\) downshift\([^)]*\)?, false, 8000|severe >= 3\) downshift\('mais de um terço/, 'reação rápida a descartes fortes'); assert.match(b, /liveTx\.notice = sizeNote/, 'o aviso do tamanho não é apagado ao conectar');
-  assert.match(read('public/index.html'), /master:q\('\.audio-master select'\)\?\.selectedIndex\?\?0/, 'salvamento de configurações à prova de painel ausente');
+test('regra 1080p30: a transmissão nunca desce de 1080p a 30 fps (sem perfil adaptativo, sem 720p/540p no pré-voo, no teste dedicado ou no regulador)', () => {
+  const b = read('public/broadcast.js'), enc = read('encoder.cjs'), pub = read('publish.cjs');
+  assert.doesNotMatch(b, /new Option\('Adaptativo'/); assert.match(b, /if \(!\['fixed','fixed4k'\]\.includes\(model\.policy\)\) model\.policy = 'fixed';/);
+  assert.doesNotMatch(b, /\[1280, 720, '720p'\]|\[960, 540, '540p'\]|\[1280,720,'720p'\]|\[960,540,'540p'\]/, 'nenhuma escada abaixo de 1080p');
+  assert.match(b, /const STEPS = \[\[3840, 2160, '2160p'\], \[1920, 1080, '1080p'\]\];/); assert.match(b, /if \(width <= 1920\) \{ if \(!window\.andromedaLight\)/, 'no piso: modo leve, não reduz');
+  assert.match(b, /let \[width, height\] = outRes === '2160p' \? \[3840,2160\] : \[1920, 1080\];/); assert.match(b, /\(check\.fps \|\| 0\) >= 28\.5\) \{\s*window\.andromedaLight = true;/, 'codificador a 30: segue em 1080p30 com quadros repetidos');
+  assert.match(b, /Math\.min\(20, Math\.max\(6, model\.bitrate\)\)/, '1080p com no mínimo 6 Mbps');
+  assert.match(enc, /if \(live && resolution !== '2160p'\) resolution = '1080p';/); assert.match(enc, /vres = live \? '1080p'/, 'vertical ao vivo em 1080×1920');
+  assert.match(pub, /msg\.type === 'resync' && everStarted/); assert.match(b, /type: 'start', resolution: outRes/);
 });
 
 test('sem a opção 720p na transmissão, no convite da câmera e no app da câmera (a segurança automática continua)', () => {
@@ -104,6 +100,16 @@ test('0.27.7: captura por quadro como segundo método, Controle de câmera pelo 
   assert.match(b, /\(check\.composedFps \|\| 0\) >= 25 && \(check\.receivedFps \|\| 0\) < 28\.5/); assert.match(b, /capture: liveTx\.capture \|\| 'stream'/); assert.match(b, /localStorage\.setItem\('andromeda\.tx\.capture\.v1', other\)/);
   assert.match(n, /streamOf: i =>/); assert.match(k, /if \(!native\) try \{ pvCtx\.drawImage\(el, dx, dy, dw, dh\); \}/); assert.match(k, /function pvDetach\(\)/);
   assert.match(d, /if \(data\.events\.length && !page\.hidden\) paint\(\);/); assert.match(r, /el\.videoWidth \* el\.videoHeight > 1920 \* 1080 \* 1\.2/);
+});
+
+test('0.28.0: conformidade técnica — limites por plataforma, RTMPS, High@4.1, flashVer da Andrômeda, painel ao vivo e quadro de conformidade', () => {
+  const b = read('public/broadcast.js'), e = read('public/engine.js'), enc = read('encoder.cjs'), tx = read('test/transmission-electron.cjs');
+  assert.match(b, /PLATFORM_CAP_MBPS = \{ facebook: 6, twitch: 6, linkedin: 6, instagram: 6, tiktok: 6, kick: 8, youtube: 14 \}/);
+  assert.match(b, /if \(outRes === '1080p' && capH < outBitrate\)/); assert.match(b, /liveTx\.vCap = capOf\(vTargets\)/);
+  assert.match(b, /server: 'rtmps:\/\/live\.twitch\.tv:443\/app'/); assert.match(b, /function paintCompliance\(\)/); assert.match(b, /STUDIO_URL = \{ youtube: 'https:\/\/studio\.youtube\.com/);
+  assert.match(e, /blocks > 3600 \? \['29', '28'\]/, '1080p30 em High@4.1, 4.0 de reserva');
+  assert.match(enc, /const FLASHVER = 'AndromedaLive\/' \+ String\(require\('\.\/package\.json'\)\.version\)/); assert.match(enc, /format_opts='flush_packets=1\\\\:rtmp_flashver=" \+ FLASHVER \+ "'/);
+  assert.match(tx, /keyframeGapMaxS<=2\.1/); assert.match(tx, /assert\.equal\(c\.audio\?\.hz,48000/); assert.match(tx, /mesa sem erros de JavaScript/);
 });
 
 test('captura do PGM no Worker: todo quadro lido é fechado, mesmo sem sessão ou com erro na entrega', () => {
