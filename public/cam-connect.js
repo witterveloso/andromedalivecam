@@ -10,7 +10,7 @@
   if (!flow || !step) return;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const MODES = [
-    ['internet', 'Internet', 'Wi-Fi, 4G ou 5G, de qualquer lugar. Nada para configurar; o computador precisa de internet.'],
+    ['internet', 'Internet', 'Wi-Fi, 4G ou 5G, de qualquer lugar. O computador precisa de internet; para 4G/5G, o roteador precisa abrir a porta (automático com UPnP) ou a empresa usa o servidor da Rede Andrômeda.'],
     ['lan', 'Rede local (IP)', 'Celular no mesmo Wi-Fi do computador. Funciona sem internet.'],
     ['gateway', 'Endereço próprio', 'Gateway na nuvem ou Tailscale, já configurados por você.'],
   ];
@@ -47,8 +47,13 @@
     if (cloud) internet.textContent = 'Gateway público configurado (mesa-cloud.env). Os convites usam esse endereço.';
     else if (state.mode === 'internet') {
       const r = state.relay || {};
-      internet.textContent = r.invites ? (r.brokersUp ? 'Pronto: ponto de encontro conectado (' + r.brokersUp + ' de ' + r.brokers + '). Convites ativos: ' + r.invites + '.' : 'Procurando o ponto de encontro… confira a internet deste computador.') : 'Pronto. Gere o convite: o link abre a câmera em qualquer rede.';
-      internet.dataset.tone = r.invites && !r.brokersUp ? 'warn' : 'ok';
+      const t = state.turn || {}, mobile = t.provider === 'env' || (t.provider === 'andromeda' ? !!(t.router?.reachable || t.network) : t.provider === 'custom' && t.ready);
+      const checking = t.provider === 'andromeda' && t.ready && !t.router && !t.network;
+      const reach = mobile ? 'O link abre a câmera em qualquer rede: Wi-Fi, 4G ou 5G.' : checking ? 'Conferindo se o 4G/5G alcança esta mesa…'
+        : 'Atenção: por enquanto o convite só funciona com o celular no mesmo Wi-Fi desta mesa. No 4G/5G a imagem não chega até o roteador abrir a porta — veja "Rede móvel (4G/5G)" logo abaixo.';
+      internet.textContent = r.invites && !r.brokersUp ? 'Procurando o ponto de encontro… confira a internet deste computador.' : (r.invites ? 'Ponto de encontro conectado (' + r.brokersUp + ' de ' + r.brokers + '). Convites ativos: ' + r.invites + '. ' : 'Pronto para gerar o convite. ') + reach;
+      internet.dataset.tone = (r.invites && !r.brokersUp) || (!mobile && !checking) ? 'warn' : 'ok';
+      const tb = document.querySelector('#turnBox'); if (tb && !mobile && !checking && !tb.dataset.autoOpened) { tb.open = true; tb.dataset.autoOpened = '1'; }
     }
     const current = ip.value;
     ip.replaceChildren(...(state.lanAddresses || []).map(a => new Option(a.address + ' · ' + a.name + (a.vpn ? ' (VPN)' : ''), a.address)));
@@ -98,10 +103,11 @@
   function paint(s) {
     const state = q('#turnState');
     if (s.provider === 'env') { state.textContent = 'gateway próprio'; state.dataset.tone = 'ok'; box.hidden = true; return; }
-    const own = s.provider === 'andromeda', open5g = own && s.router?.reachable;
-    state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : !s.ready ? 'com problema' : own ? (open5g ? 'Rede Andrômeda · 4G/5G pronto' : s.router ? 'Rede Andrômeda · só Wi-Fi (veja abaixo)' : 'Rede Andrômeda · abrindo a porta…') : s.provider === 'custom' ? 'ativa · servidor da Rede Andrômeda' : 'ativa · ' + s.provider;
+    const own = s.provider === 'andromeda', viaNet = own && !s.router?.reachable && !!s.network, open5g = own && (s.router?.reachable || viaNet);
+    state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : !s.ready ? 'com problema' : own ? (viaNet ? 'Rede Andrômeda · 4G/5G pelo servidor da empresa' : open5g ? 'Rede Andrômeda · 4G/5G pronto' : s.router ? 'Rede Andrômeda · só Wi-Fi (veja abaixo)' : 'Rede Andrômeda · abrindo a porta…') : s.provider === 'custom' ? 'ativa · servidor da Rede Andrômeda' : 'ativa · ' + s.provider;
     state.dataset.tone = s.provider === 'off' ? 'warn' : !s.ready ? 'error' : own && s.router && !open5g ? 'warn' : 'ok';
     if (own) q('#turnOwnInfo').textContent = !s.ready ? 'A retransmissão não iniciou: ' + (s.error || 'porta ocupada') + '.'
+      : viaNet ? 'Funcionando: celulares em 4G/5G mandam a imagem pelo servidor da Rede Andrômeda da empresa (' + s.network.map(u => u.replace(/^turns?:|\?.*$/g, '')).filter((u, i, a) => a.indexOf(u) === i).join(', ') + '). No mesmo Wi-Fi, a imagem vai direto para esta mesa.'
       : open5g ? 'Funcionando: porta ' + s.port + ' (UDP e TCP) aberta no roteador ' + (s.router.mapped || []).join(', ') + ' · IP público ' + s.router.externalIP + '. Celulares em 4G/5G mandam a imagem direto para esta mesa.' + (s.stats?.active ? ' Câmeras retransmitidas agora: ' + s.stats.active + '.' : '')
       : s.router ? (s.router.externalIP && !s.router.reachable ? 'A internet deste computador usa endereço compartilhado da operadora (CGNAT: ' + s.router.externalIP + '): o 4G/5G não alcança a mesa por aqui.' : 'O roteador não abriu a porta automaticamente (' + (s.router.error || 'UPnP desligado') + ').') + ' Soluções: ative o UPnP no roteador, ou encaminhe a porta ' + s.port + ' UDP e TCP para ' + s.lan + ', ou use o Servidor da Rede Andrômeda. No Wi-Fi tudo funciona normalmente.'
       : 'Retransmissão ativa na porta ' + s.port + '. Abrindo a porta no roteador…';

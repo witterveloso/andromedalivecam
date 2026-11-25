@@ -41,6 +41,18 @@ Para mesas atrás de CGNAT, e para não depender de mais ninguém, a empresa rod
 
 **Saúde do servidor:** `curl -s http://127.0.0.1:8090/health` mostra conexões, mensagens e retransmissões ativas.
 
+## Quando a imagem não chega pelo convite
+
+| Onde está o celular | O que precisa | O que a mesa mostra |
+|---|---|---|
+| Mesmo Wi-Fi da mesa | nada | "O link abre a câmera…" |
+| 4G/5G ou outro Wi-Fi | porta 3478 UDP/TCP aberta no roteador (UPnP ligado ou encaminhamento manual) **ou** o servidor da Rede Andrômeda da empresa | se faltar: "o convite só funciona no mesmo Wi-Fi desta mesa", com o motivo em *Rede móvel (4G/5G)* |
+
+- **Por que não existe outro jeito.** No 4G/5G o celular fica atrás de um CGNAT que muda de porta para cada destino (NAT simétrico). Nenhuma técnica de "furar" NAT funciona entre ele e uma mesa atrás de roteador. Alguém com endereço público precisa receber a imagem: a própria mesa, com a porta aberta, ou o servidor da empresa.
+- **Firewall do Windows.** Se a mesa mostra "4G/5G pronto" e a imagem mesmo assim não chega, confira o firewall do Windows: o Andrômeda Live precisa estar em *Permitir*.
+- **Sinal da falha.** Quando a imagem não acha caminho, o celular avisa a mesa e o Diagnóstico registra `camera-sem-caminho`, com o motivo.
+- **Simulação.** `test/sim-5g/` reproduz cada caso com rede de verdade (instruções no README da pasta).
+
 ## Prova técnica (testes automáticos)
 
 - **STUN próprio** responde com o endereço visto; o FINGERPRINT confere.
