@@ -16,7 +16,7 @@ test('4G/5G relay: Cloudflare TURN credentials are generated on the desk, the ke
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-turn-')), calls = [];
   const turn = createTurn({ dataDir: dir, fetchImpl: fakeFetch(calls) });
   try {
-    assert.equal(turn.status().provider, 'off');
+    assert.equal(turn.status().provider, 'andromeda', 'padrão: Rede Andrômeda (sem terceiros)');
     assert(!turn.servers().some(s => s.urls.some(u => u.startsWith('turn'))), 'without configuration: STUN only');
     await assert.rejects(turn.save({ provider: 'cloudflare', keyId: 'curto', token: TOKEN }), /ID da chave/);
     const st = await turn.save({ provider: 'cloudflare', keyId: KEY, token: TOKEN });
@@ -26,7 +26,7 @@ test('4G/5G relay: Cloudflare TURN credentials are generated on the desk, the ke
     assert(!JSON.stringify(st).includes(TOKEN), 'the API token is never returned to the browser');
     const relay = turn.servers().find(s => s.username);
     assert.deepEqual(relay, { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turn:turn.cloudflare.com:3478?transport=tcp', 'turns:turn.cloudflare.com:443?transport=tcp'], username: 'u-temp', credential: 'c-temp' });
-    assert(turn.servers().some(s => s.urls.includes('stun:stun.cloudflare.com:3478')), 'STUN stays first for direct paths');
+    assert(!turn.servers().some(s => s.urls.some(u => /google\.com/.test(u))), 'sem STUN do Google (nenhum serviço de terceiros por padrão)');
     assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'turn.json'), 'utf8')).token, TOKEN, 'saved on this computer only');
     // Reabrir a mesa: mantém o token salvo; editar só o ID sem reenviar o token continua válido.
     const again = createTurn({ dataDir: dir, fetchImpl: fakeFetch(calls) }); await again.start();
@@ -57,7 +57,7 @@ test('4G/5G relay: the desk API shows the state and only accepts changes with th
   const bridge = createBridge({ port, dataDir: dir, ffmpeg: null, audit: createAudit({ write: false }) }); bridge.listen(); await once(bridge.server, 'listening');
   try {
     const base = 'http://localhost:' + port;
-    assert.equal((await (await fetch(base + '/api/turn')).json()).provider, 'off');
+    assert.equal((await (await fetch(base + '/api/turn')).json()).provider, 'andromeda');
     assert.equal((await fetch(base + '/api/turn', { method: 'POST', body: JSON.stringify({ provider: 'off' }) })).status, 403);
     const { token } = await (await fetch(base + '/api/session')).json();
     const r = await fetch(base + '/api/turn', { method: 'POST', headers: { 'X-Andromeda-Token': token }, body: JSON.stringify({ provider: 'custom', urls: 'turn:turn.example.test:3478', username: 'u', credential: 'p' }) });

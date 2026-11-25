@@ -4,7 +4,7 @@ const {spawn}=require('node:child_process');const {WebSocketServer,WebSocket}=re
 const {detectEncoders,findFFmpeg,PLATFORMS}=require('./encoder.cjs');const {handlePublish}=require('./publish.cjs');
 const storage=require('./storage.cjs');const {createRelay}=require('./relay.cjs');const lan=require('./lan.cjs');const {DEFAULT_BROKERS}=require('./public/cam/relay.js');
 // STUN público: permite que celular em 4G/5G e mesa atrás de roteador se encontrem sem servidor próprio.
-const DEFAULT_ICE=[{urls:['stun:stun.l.google.com:19302','stun:stun.cloudflare.com:3478']}];
+const DEFAULT_ICE=[]; // sem STUN de terceiros: a Rede Andrômeda (turn.cjs) entrega STUN e TURN próprios
 const CAM_PAGE=process.env.ANDROMEDA_CAM_PAGE||'https://witterveloso.github.io/andromedalivecam/';const {createAudit}=require('./audit.cjs');const {createLicense}=require('./license.cjs');const {version}=require('./package.json');
 const {createCameraHub}=require('./camera-hub.cjs');const {createSlidesConverter}=require('./slides-convert.cjs');const {createAudioProxy}=require('./trilha-proxy.cjs');const {createCloudClient}=require('./cloud-client.cjs');
 const {streamPreset}=require('./network.cjs');
@@ -17,7 +17,7 @@ function createBridge({dataDir=process.env.ANDROMEDA_DATA_DIR||path.join(__dirna
  // Como os celulares chegam à mesa: internet (ponto de encontro + WebRTC direto), rede local (HTTPS no IP) ou gateway próprio.
  const modeFile=path.join(dataDir,'conexao-cameras.json');let link={mode:'internet',address:null};try{Object.assign(link,JSON.parse(fs.readFileSync(modeFile,'utf8')))}catch{}
  let lanServer=null,relay=null;const brokers=relayBrokers.length?relayBrokers:DEFAULT_BROKERS;
- const cameraHub=createCameraHub({sessionToken:token,iceServers,onEvent:(level,code,message,data)=>audit.event(level,'cameras',code,message,data),inviteURL:key=>link.mode==='internet'?camPage+'#r='+key:null,onInvite:key=>{if(link.mode==='internet')relay.watch(key)},onInviteEnd:key=>relay?.unwatch(key)});
+ const cameraHub=createCameraHub({sessionToken:token,iceServers,onEvent:(level,code,message,data)=>audit.event(level,'cameras',code,message,data),inviteURL:key=>link.mode==='internet'?camPage+'#r='+key+(relayBrokers.length&&/^wss:\/\//.test(relayBrokers[0])?'&p='+encodeURIComponent(relayBrokers[0]):''):null,onInvite:key=>{if(link.mode==='internet')relay.watch(key)},onInviteEnd:key=>relay?.unwatch(key)});
  relay=createRelay({hub:cameraHub,brokers,onEvent:(level,code,message)=>audit.event(level,'cameras',code,message)});
  async function setLink(next){const mode=['internet','lan','gateway'].includes(next.mode)?next.mode:'internet';
   if(lanServer&&(mode!=='lan'||next.address!==link.address)){await lanServer.close();lanServer=null}

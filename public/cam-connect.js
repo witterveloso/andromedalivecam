@@ -85,29 +85,34 @@
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const box = make('details', 'turn-box'); box.id = 'turnBox';
   box.innerHTML = '<summary><strong>Rede móvel (4G/5G)</strong><span id="turnState" class="turn-state">verificando…</span></summary>' +
-    '<p class="link-note">No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado e a imagem pode não chegar sem um servidor de retransmissão (TURN). Ative uma vez neste computador; os convites passam a usar a retransmissão quando o caminho direto falhar.</p>' +
-    '<label>Retransmissão<select id="turnProvider"><option value="cloudflare">Cloudflare (recomendado · cota gratuita mensal)</option><option value="custom">Servidor próprio (coturn)</option><option value="off">Desligada (só Wi-Fi / mesma rede)</option></select></label>' +
-    '<div class="turn-cf"><label>ID da chave TURN (Turn Token ID)<input id="turnKeyId" autocomplete="off" spellcheck="false" placeholder="32 letras e números"></label><label>Token da API (API Token)<input id="turnToken" type="password" autocomplete="off" spellcheck="false" placeholder="guardado só neste computador"></label>' +
-    '<p class="link-note">Para obter: entre em <b>dash.cloudflare.com</b> → <b>Realtime</b> → <b>TURN Server</b> → <b>Create</b>. Copie o <b>Turn Token ID</b> e o <b>API Token</b> e cole aqui. A conta é gratuita.</p></div>' +
-    '<div class="turn-own"><label>Endereços (um por linha)<textarea id="turnUrls" rows="2" spellcheck="false" placeholder="turn:turn.seudominio.com:3478\nturns:turn.seudominio.com:443?transport=tcp"></textarea></label><label>Usuário<input id="turnUser" autocomplete="off" spellcheck="false"></label><label>Senha<input id="turnPass" type="password" autocomplete="off"></label></div>' +
+    '<p class="link-note">No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado e a imagem não chega sem retransmissão. A <b>Rede Andrômeda</b> é a retransmissão própria do sistema (sem serviços de terceiros): roda dentro desta mesa, abre a porta no roteador sozinha e entrega ao celular uma credencial temporária junto com o convite.</p>' +
+    '<label>Retransmissão<select id="turnProvider"><option value="andromeda">Rede Andrômeda nesta mesa (recomendado)</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada (só Wi-Fi / mesma rede)</option></select></label>' +
+    '<div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p><p class="link-note">Na primeira vez, o Windows pergunta se o <b>Andrômeda Live</b> pode receber conexões: clique em <b>Permitir</b> (redes privadas e públicas). Sem isso, o celular no 4G/5G não alcança a mesa.</p></div>' +
+    '<div class="turn-cf" hidden><input id="turnKeyId" hidden><input id="turnToken" hidden></div>' +
+    '<div class="turn-own"><label>Endereços do servidor (um por linha)<textarea id="turnUrls" rows="2" spellcheck="false" placeholder="turn:rede.suaempresa.com.br:3478\nturn:rede.suaempresa.com.br:3478?transport=tcp"></textarea></label><label>Usuário<input id="turnUser" autocomplete="off" spellcheck="false"></label><label>Senha<input id="turnPass" type="password" autocomplete="off"></label></div>' +
     '<div class="turn-actions"><button type="button" id="turnSave">Salvar e testar</button><span id="turnMessage" class="link-note" role="status"></span></div>';
   step.append(box);
   const q = s => box.querySelector(s);
-  const paintForm = () => { const p = q('#turnProvider').value; q('.turn-cf').hidden = p !== 'cloudflare'; q('.turn-own').hidden = p !== 'custom'; };
+  const paintForm = () => { const p = q('#turnProvider').value; q('.turn-cf').hidden = true; q('.turn-own').hidden = p !== 'custom'; q('.turn-andromeda').hidden = p !== 'andromeda'; };
   q('#turnProvider').onchange = paintForm;
   function paint(s) {
     const state = q('#turnState');
     if (s.provider === 'env') { state.textContent = 'gateway próprio'; state.dataset.tone = 'ok'; box.hidden = true; return; }
-    state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : s.ready ? 'ativa · ' + (s.provider === 'cloudflare' ? 'Cloudflare' : 'servidor próprio') : 'com problema';
-    state.dataset.tone = s.provider === 'off' ? 'warn' : s.ready ? 'ok' : 'error';
+    const own = s.provider === 'andromeda', open5g = own && s.router?.reachable;
+    state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : !s.ready ? 'com problema' : own ? (open5g ? 'Rede Andrômeda · 4G/5G pronto' : s.router ? 'Rede Andrômeda · só Wi-Fi (veja abaixo)' : 'Rede Andrômeda · abrindo a porta…') : s.provider === 'custom' ? 'ativa · servidor da Rede Andrômeda' : 'ativa · ' + s.provider;
+    state.dataset.tone = s.provider === 'off' ? 'warn' : !s.ready ? 'error' : own && s.router && !open5g ? 'warn' : 'ok';
+    if (own) q('#turnOwnInfo').textContent = !s.ready ? 'A retransmissão não iniciou: ' + (s.error || 'porta ocupada') + '.'
+      : open5g ? 'Funcionando: porta ' + s.port + ' (UDP e TCP) aberta no roteador ' + (s.router.mapped || []).join(', ') + ' · IP público ' + s.router.externalIP + '. Celulares em 4G/5G mandam a imagem direto para esta mesa.' + (s.stats?.active ? ' Câmeras retransmitidas agora: ' + s.stats.active + '.' : '')
+      : s.router ? (s.router.externalIP && !s.router.reachable ? 'A internet deste computador usa endereço compartilhado da operadora (CGNAT: ' + s.router.externalIP + '): o 4G/5G não alcança a mesa por aqui.' : 'O roteador não abriu a porta automaticamente (' + (s.router.error || 'UPnP desligado') + ').') + ' Soluções: ative o UPnP no roteador, ou encaminhe a porta ' + s.port + ' UDP e TCP para ' + s.lan + ', ou use o Servidor da Rede Andrômeda. No Wi-Fi tudo funciona normalmente.'
+      : 'Retransmissão ativa na porta ' + s.port + '. Abrindo a porta no roteador…';
     if (document.activeElement?.closest('#turnBox')) return;
-    q('#turnProvider').value = s.provider === 'off' ? (box.dataset.touched ? 'off' : 'cloudflare') : s.provider;
+    q('#turnProvider').value = s.provider === 'cloudflare' ? 'andromeda' : s.provider;
     if (s.keyId) q('#turnKeyId').value = s.keyId;
     if (s.hasToken) q('#turnToken').placeholder = 'salvo · deixe em branco para manter';
     if (s.urls && s.provider === 'custom') q('#turnUrls').value = s.urls.join('\n');
     if (s.username) q('#turnUser').value = s.username;
     if (s.provider === 'custom') q('#turnPass').placeholder = 'salva · deixe em branco para manter';
-    q('#turnMessage').textContent = s.error ? 'Problema: ' + s.error : s.ready ? 'Funcionando. Celulares em 4G/5G recebem a retransmissão automaticamente.' : '';
+    q('#turnMessage').textContent = s.provider === 'andromeda' ? '' : s.error ? 'Problema: ' + s.error : s.ready ? 'Funcionando. Celulares em 4G/5G recebem a retransmissão automaticamente.' : '';
     if (s.provider === 'off' && !box.dataset.opened) { box.open = true; box.dataset.opened = '1'; }
     paintForm();
   }

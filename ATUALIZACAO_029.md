@@ -1,0 +1,35 @@
+# Andrômeda Live 0.29 — Rede Andrômeda: câmeras no 4G/5G como no Wi-Fi, com tecnologia própria
+
+## 0.29.0 — retransmissão própria (STUN/TURN), porta aberta no roteador e ponto de encontro próprio
+- **Câmera no 5G igual ao Wi-Fi.**
+  - No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado (CGNAT). Sem retransmissão, a câmera conectava e a imagem não chegava.
+  - Agora a **Rede Andrômeda** retransmite a imagem: STUN/TURN escrito pela Andrômeda (`andromeda-turn.cjs`), sobre UDP e TCP.
+  - A retransmissão vem **ligada por padrão, dentro da própria mesa**, na porta 3478.
+  - Não usa Cloudflare, Google nem nenhum outro serviço de terceiros.
+- **Porta aberta no roteador automaticamente.** A mesa pede ao roteador, por UPnP, para encaminhar a porta 3478 UDP/TCP. O código é próprio, sem biblioteca externa (`upnp.cjs`). A mesa também descobre o IP público e reconhece quando a internet é CGNAT.
+  - A tela **Rede móvel (4G/5G)** mostra se o 4G/5G está pronto (porta aberta, IP público, câmeras retransmitidas agora).
+  - Se não estiver, a tela diz o motivo e a solução: ligar o UPnP, encaminhar a porta manualmente ou usar o servidor da empresa.
+- **Credencial temporária por convite.** Cada câmera recebe uma credencial válida por 24 h, assinada por um segredo que fica só no computador da mesa. Credencial vencida ou de outro segredo é recusada.
+- **A retransmissão da mesa não vira porta aberta para a internet.** Ela só entrega mídia para a rede local, ou seja, para a própria mesa.
+- **Servidor da Rede Andrômeda para a empresa** (`andromeda-rede.cjs`, kit em `cloud/`): ponto de encontro próprio (`/mqtt`) e a mesma retransmissão com IP público, para mesas atrás de CGNAT.
+  - Substitui o coturn do kit antigo, que limitava cada câmera a 2 Mbps.
+  - Com o `mesa-cloud.env` da empresa:
+    - o convite leva ao celular o endereço do ponto de encontro próprio (`#r=…&p=wss://…/mqtt`), sem servidores MQTT públicos;
+    - a retransmissão da empresa entra como reserva da retransmissão da mesa.
+  - Instruções em `REDE_ANDROMEDA.md`.
+- **Sem STUN de terceiros.** Saíram o STUN do Google e o da Cloudflare das câmeras. A Cloudflare não aparece mais como opção na tela; quem já tinha configurado passa para a Rede Andrômeda.
+- **Windows.** Na primeira vez, o Windows pergunta se o Andrômeda Live pode receber conexões: clique em **Permitir**.
+
+### O que ainda usa terceiros (e como eliminar)
+- **Ponto de encontro sem servidor da empresa.** Sem o servidor da Rede Andrômeda no ar, a conversa inicial entre celular e mesa ainda passa pelos servidores MQTT públicos de antes. As mensagens vão cifradas de ponta a ponta. Com o servidor da empresa configurado, eles deixam de ser usados.
+- **Página do app da câmera.** Continua publicada no GitHub Pages. Pode ser hospedada no mesmo servidor da empresa (`configure.py`: deixe a URL do GitHub Pages em branco).
+
+### Testes
+- **Automáticos (`test/rede-andromeda.test.cjs`):**
+  - STUN com FINGERPRINT válido;
+  - autenticação: 401, credencial vencida e credencial de outro segredo recusadas, alocação aceita;
+  - UPnP contra um roteador simulado, incluindo o reconhecimento de CGNAT;
+  - a mesa sem nenhum servidor de terceiros;
+  - o ponto de encontro com o cliente real do app, e outro convite sem escutar a conversa;
+  - mesa e empresa juntas, com credencial válida.
+- **Navegador real (Chromium):** com o "celular" forçado a usar só retransmissão (sem caminho direto, como no 5G), o vídeo chegou à mesa a 30 fps, por UDP e por TCP, e a resolução subiu normalmente.
