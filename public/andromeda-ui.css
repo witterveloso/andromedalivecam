@@ -1532,3 +1532,6 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .camctl-pv-wrap > video { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); object-fit: contain; border-radius: 7px; background: #000; pointer-events: none; }
 .camctl-pv-wrap > canvas { position: relative; }
 .camctl-preview canvas[data-native="true"] { background: transparent; }
+/* Trilha: LOOP (repete a música atual) */
+.tr-loop { min-height: 44px; padding: 0 12px; font-weight: 700; letter-spacing: .04em; }
+.tr-loop[data-on="true"] { background: var(--brand-blue); border-color: var(--brand-blue); color: var(--d-accent-ink, #001426); }

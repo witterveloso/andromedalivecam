@@ -69,3 +69,10 @@ test('a mesa carrega a trilha e liga atalhos, comandos e controle remoto', () =>
   for (const c of ['trilha', 'trilhanext']) assert.match(desk, new RegExp("case '" + c + "'"));
   const js = read('public/trilha.js'); assert.match(js, /fadeIn: 2, fadeOut: 3/, 'fade in 2 s e fade out 3 s já programados');
 });
+
+test('0.27.8: LOOP da trilha repete a música atual, sem a troca antecipada para a próxima, e fica salvo', () => {
+  const t = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'public', 'trilha.js'), 'utf8');
+  assert.match(t, /loopOne: false, \.\.\.\(saved\.settings \|\| \{\}\)/); assert.match(t, /deck\.el\.loop = !!settings\.loopOne;/);
+  assert.match(t, /if \(!settings\.loopOne && !tr\.crossing && \(tr\.state === 'in' \|\| tr\.state === 'on'\) && d\.duration - d\.currentTime <=/, 'sem crossfade para a próxima com LOOP');
+  assert.match(t, /id="trLoop"/); assert.match(t, /function setLoop\(on\) \{\s*settings\.loopOne = !!on; for \(const d of tr\.decks\) if \(d\.el\) d\.el\.loop = settings\.loopOne; persist\(\);/);
+});

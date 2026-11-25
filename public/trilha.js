@@ -17,7 +17,7 @@
   const KEY = 'andromeda.trilha.v1';
   const store = { get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sem armazenamento */ } } };
   const saved = store.get(KEY, {});
-  const settings = { volume: 60, fadeIn: 2, fadeOut: 3, cross: 2, order: 'loop', resume: true, ...(saved.settings || {}) };
+  const settings = { volume: 60, fadeIn: 2, fadeOut: 3, cross: 2, order: 'loop', resume: true, loopOne: false, ...(saved.settings || {}) };
   const AUDIO_EXT = new Set(['mp3', 'wav', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'flac', 'weba', 'webm', 'mp4', 'aif', 'aiff']);
   const extOf = name => (String(name).match(/\.([A-Za-z0-9]+)$/) || [, ''])[1].toLowerCase();
   const natural = (a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true, sensitivity: 'base' });
@@ -58,6 +58,7 @@
     }
     if (item.kind === 'url') deck.el.src = '/api/trilha/stream?url=' + encodeURIComponent(item.url) + '&t=' + encodeURIComponent(await sessionToken());
     else deck.el.src = item.objectUrl || (item.objectUrl = URL.createObjectURL(item.file));
+    deck.el.loop = !!settings.loopOne; // LOOP: a música atual repete sem fim
     deck.el.currentTime = 0; await deck.el.play();
   }
   function releaseDeck(deck) {
@@ -177,7 +178,7 @@
   panel.innerHTML =
     '<div class="tr-top"><div class="tr-now"><span class="tr-state" id="trState">TRILHA DESLIGADA</span><strong id="trTitle">Playlist vazia</strong></div><output class="tr-clock" id="trClock" aria-live="off">--:--</output></div>' +
     '<div class="tr-bar" aria-hidden="true"><i id="trProgress"></i></div>' +
-    '<div class="tr-actions"><button type="button" id="trToggle" class="tr-toggle">▶ LIGAR TRILHA</button><button type="button" id="trPrev" class="tr-small" title="Faixa anterior">⏮</button><button type="button" id="trNext" class="tr-small" title="Próxima faixa">⏭</button>' +
+    '<div class="tr-actions"><button type="button" id="trToggle" class="tr-toggle">▶ LIGAR TRILHA</button><button type="button" id="trPrev" class="tr-small" title="Faixa anterior">⏮</button><button type="button" id="trNext" class="tr-small" title="Próxima faixa">⏭</button><button type="button" id="trLoop" class="tr-loop" aria-pressed="false" title="LOOP: repetir a música atual sem parar, até você trocar de faixa ou desligar a trilha">↻ LOOP</button>' +
     '<label class="tr-vol">Volume <input id="trVolume" type="range" min="0" max="100" aria-label="Volume da trilha"><output id="trVolOut"></output><meter id="trMeter" min="0" max="1" value="0" aria-label="Nível da trilha"></meter></label></div>' +
     '<ol class="tr-list" id="trList" aria-label="Playlist da trilha"></ol>' +
     '<p class="tr-msg" id="trMsg" role="status"></p>' +
@@ -197,6 +198,7 @@
     $p('#trTitle').textContent = item ? (nameOf(item) + (item.error ? ' — ' + item.error : '')) : 'Playlist vazia';
     const b = $p('#trToggle'); b.textContent = air ? '■ DESLIGAR TRILHA' : tr.state === 'out' ? '▶ VOLTAR COM A TRILHA' : '▶ LIGAR TRILHA'; b.dataset.on = String(air); b.disabled = !tr.items.length;
     $p('#trPrev').disabled = $p('#trNext').disabled = !tr.items.length;
+    $p('#trLoop').setAttribute('aria-pressed', String(!!settings.loopOne)); $p('#trLoop').dataset.on = String(!!settings.loopOne);
     const list = $p('#trList'); list.replaceChildren();
     if (!tr.items.length) { const li = rundownEl('li', 'tr-empty', 'Adicione músicas, um link de rádio ou uma entrada de áudio. Arraste arquivos para este painel.'); list.append(li); }
     tr.items.forEach((it, i) => {
@@ -218,6 +220,12 @@
   panel.addEventListener('dragleave', () => panel.classList.remove('dropping'));
   panel.addEventListener('drop', e => { e.preventDefault(); panel.classList.remove('dropping'); addFiles(e.dataTransfer?.files); });
   $p('#trToggle').onclick = () => toggle(); $p('#trNext').onclick = () => next(); $p('#trPrev').onclick = () => prev();
+  // LOOP: repete a música atual direto (sem troca nem fade entre as voltas). Vale na hora, com a trilha no ar, e fica salvo.
+  function setLoop(on) {
+    settings.loopOne = !!on; for (const d of tr.decks) if (d.el) d.el.loop = settings.loopOne; persist();
+    log(settings.loopOne ? 'Trilha em LOOP: a música atual repete até você trocar de faixa ou desligar.' : 'Trilha sem loop: segue a ordem da playlist.'); paint(); window.andromedaCommands?.paint?.();
+  }
+  $p('#trLoop').onclick = () => setLoop(!settings.loopOne);
   const addUrl = () => { const it = addLink($p('#trUrl').value); if (it) $p('#trUrl').value = ''; };
   $p('#trUrlAdd').onclick = addUrl; $p('#trUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.stopPropagation(); addUrl(); } });
   const sel = $p('#trDevices');
@@ -242,7 +250,7 @@
     let clockText = '--:--', pct = 0;
     if (item && d && tr.state !== 'off') {
       if (item.kind !== 'file' && !Number.isFinite(d.duration)) clockText = 'AO VIVO';
-      else if (Number.isFinite(d.duration) && d.duration > 0) { clockText = '−' + clock(d.duration - d.currentTime); pct = d.currentTime / d.duration * 100; if (!tr.crossing && (tr.state === 'in' || tr.state === 'on') && d.duration - d.currentTime <= Math.max(nextIndex() < 0 ? settings.fadeOut : settings.cross, 0.05) + 0.05 && tr.items.length) advance(); }
+      else if (Number.isFinite(d.duration) && d.duration > 0) { clockText = '−' + clock(d.duration - d.currentTime); pct = d.currentTime / d.duration * 100; if (!settings.loopOne && !tr.crossing && (tr.state === 'in' || tr.state === 'on') && d.duration - d.currentTime <= Math.max(nextIndex() < 0 ? settings.fadeOut : settings.cross, 0.05) + 0.05 && tr.items.length) advance(); }
     }
     if ($p('#trClock').textContent !== clockText) $p('#trClock').textContent = clockText; $p('#trProgress').style.width = pct.toFixed(1) + '%';
   }, 250);
@@ -250,7 +258,7 @@
   // Restaura links e entradas salvos
   for (const s of saved.saved || []) if (s?.kind === 'url' && s.url) addLink(s.url, s.name); else if (s?.kind === 'device') addDevice(s.deviceId, s.name);
   const info = () => ({ state: tr.state, on: tr.state === 'in' || tr.state === 'on', out: tr.state === 'out', index: tr.cur, total: tr.items.length, name: tr.items[tr.cur] ? nameOf(tr.items[tr.cur]) : '', gain: tr.bus ? tr.bus.gain.value : 0, level: tr.analyser ? meterValue(tr.analyser) : 0 });
-  const api = { decks: () => tr.decks, start, stop, toggle, next, prev, go, addFiles, addLink, addDevice, info, settings, items: tr.items, openPanel, paint };
+  const api = { decks: () => tr.decks, start, stop, toggle, next, prev, go, addFiles, addLink, addDevice, info, settings, items: tr.items, openPanel, paint, setLoop, loop: () => !!settings.loopOne };
   Object.assign(R, { trilha: api }); window.andromedaTrilha = api;
   paint();
 })();
