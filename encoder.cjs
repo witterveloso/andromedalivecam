@@ -134,9 +134,15 @@ const FLASHVER = 'AndromedaLive/' + String(require('./package.json').version).re
 // imagem corrompia até o próximo (test/fifo-stall.test.cjs). A fila só enche durante a trava; sem trava, não soma atraso.
 const FIFO = "f=fifo:fifo_format=flv:format_opts='flush_packets=1\\:rtmp_flashver=" + FLASHVER + "':queue_size=300:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1:recovery_wait_time=2:restart_with_keyframe=1:onfail=ignore";
 
+// ~30 s de imagem e som (2400 pacotes): um disco travado por até ~30 s não perde nada; mais que isso, a gravação descarta em
+// vez de segurar a transmissão.
+const RECORD_FIFO = "f=fifo:fifo_format=matroska:format_opts='flush_packets=1':queue_size=2400:drop_pkts_on_overflow=1:onfail=ignore";
+
 function outputArgs(group) {
   const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
-  if (group.record) outputs.push('[f=matroska:flush_packets=1:onfail=ignore]' + teeEscape(group.record.file));
+  // A gravação também tem fila própria: se o disco engasgar (HD externo, antivírus, disco lento), a live segue sem parar
+  // e a gravação alcança depois. Sem a fila, o tee esperava o disco e a transmissão parava junto (test/record-stall.test.cjs).
+  if (group.record) outputs.push('[' + RECORD_FIFO + ']' + teeEscape(group.record.file));
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
 }
 

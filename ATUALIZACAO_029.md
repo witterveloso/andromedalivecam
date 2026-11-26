@@ -1,5 +1,19 @@
 # Andrômeda Live 0.29 — Rede Andrômeda: câmeras no 4G/5G como no Wi-Fi, com tecnologia própria
 
+## 0.29.3 — gravar e transmitir ao mesmo tempo sem travar
+- **Causa.** A gravação e os destinos saem do mesmo processo. Os destinos já tinham fila própria; a gravação escrevia direto no disco.
+  - Quando o disco engasgava (HD externo, antivírus, disco lento ou quase cheio), o processo esperava o disco e a **live parava junto**.
+  - Medido: disco travado por 3,5 s = **3,4 s sem nada chegar à plataforma**.
+- **Correção.** A gravação ganhou fila própria de ~30 s de imagem e som.
+  - O disco pode engasgar que a live segue; a gravação alcança logo depois, sem perder nada.
+  - Se o disco parar por mais de ~30 s, a gravação descarta em vez de segurar a transmissão: **a live nunca para por causa do disco**.
+- **Prova (`test/record-stall.test.cjs`, rede e disco de verdade):** disco travado por 3,5 s no meio do envio.
+
+| | Maior buraco na plataforma | Gravação |
+|---|---|---|
+| antes | 3.392 ms | — |
+| depois | 44 ms | 300 de 300 quadros |
+
 ## 0.29.2 — Comandos sem batimento
 - **Causa.** Os botões dos Comandos reescreviam nome, subtítulo e tecla cinco vezes por segundo, mesmo sem nada mudar. O navegador redesenhava todos os botões a cada vez, e na tela isso aparecia como um batimento na área dos Comandos.
   - Os rótulos das câmeras e as faixas de informação dos monitores tinham o mesmo defeito.
