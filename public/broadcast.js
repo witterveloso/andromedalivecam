@@ -333,8 +333,8 @@
       const capOf = list => Math.min(Infinity, ...list.map(d => PLATFORM_CAP_MBPS[d.platform] || Infinity));
       const capH = capOf(hTargets); if (outRes === '1080p' && capH < outBitrate) { log('Bitrate 16:9 ajustado para ' + capH + ' Mbps: limite de ' + hTargets.filter(d => PLATFORM_CAP_MBPS[d.platform] === capH).map(d => d.name).join(', ') + ' em 1080p30.'); outBitrate = capH; }
       liveTx.vCap = capOf(vTargets);
-      const recordH = model.record && model.recordFormats !== '9:16', recordV = model.record && model.recordFormats !== '16:9';
-      const needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
+      let recFormats = model.recordFormats || '16:9'; const recordH = model.record && recFormats !== '9:16', recordV = model.record && recFormats !== '16:9';
+      let needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
       if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
       // Motor de envio: o próprio (WebCodecs: uma só codificação, no navegador) ou o padrão (MediaRecorder → FFmpeg). O padrão é sempre o plano B.
       if (fixed) log('Perfil '+outRes+'30: preparando saída dedicada');
@@ -404,6 +404,14 @@
         if (!check.ok && (check.fps || 0) >= 28.5) {
           window.andromedaLight = true; liveTx.notice = 'Computador no limite para ' + outRes + '30: a saída segue em ' + outRes + ' a 30 fps constantes, com mesa em modo leve. Para imagem mais fluida, feche programas pesados e use o carregador ligado.';
           log(liveTx.notice); window.andromedaAudit?.('warn', 'computador-no-limite', liveTx.notice, { fps: check.fps, fpsPGM: check.freshFps, composicao: check.composedFps });
+          // Gravar em 9:16 sem nenhum destino vertical obriga a mesa a montar e codificar uma segunda imagem (1080×1920) só para o
+          // arquivo: o dobro do trabalho. No limite, isso derrubava a live (diagnóstico real: mesa a 5 q/s, captura parada 10 s).
+          // A live e a gravação 16:9 continuam; o 9:16 da gravação fica para um computador com folga.
+          if (recordV && !vTargets.length && recordH) {
+            needV = false; recFormats = '16:9';
+            const note = 'Gravação 9:16 desligada nesta live: o computador está no limite e o 9:16 sozinho dobraria o trabalho. A transmissão e a gravação 16:9 continuam normalmente.';
+            log(note); window.andromedaAudit?.('warn', 'gravacao-vertical-desligada', note, { fpsPGM: check.freshFps }); liveTx.notice += ' ' + note;
+          }
         } else if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' O codificador deste computador não produziu ' + outRes + ' a 30 fps; a transmissão não foi aberta (regra: só 1080p ou 4K a 30 fps).');
         liveTx.outputResolution=outRes;
       }
@@ -513,7 +521,7 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: model.recordFormats || '16:9' } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');
