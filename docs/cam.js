@@ -512,7 +512,7 @@ async function start() {
     cam.ac = new AudioContext(); await cam.ac.resume();
     cam.meter = cam.ac.createAnalyser(); cam.ac.createMediaStreamSource(cam.stream).connect(cam.meter);
     cam.running = true; cam.started = Date.now(); cam.lastTally = 0; cam.lastBytes = 0; cam.lastStatsAt = 0;
-    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live');
+    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live'); wakeHud();
     if (localTest) { tally('offline'); say('Câmera e microfone reais ativos somente neste aparelho. Nenhum sinal enviado à mesa.', 'ok'); }
     else { tally('offline'); say('Câmera ativa. Conectando à mesa…', 'info'); signal(); }
     await keepAwake();
@@ -542,10 +542,21 @@ async function resumeCamera() {
   say('Câmera religada' + (away ? ' depois de ' + away + ' s em segundo plano' : '') + '.', 'ok');
 }
 
+// Tela no ar limpa: 8 s depois do último toque, saem o botão de escuta e o lembrete de girar, os avisos informativos
+// somem e os instrumentos ficam discretos. Ficam a imagem, o tally, a barra de ajustes, o medidor e o timecode.
+// Qualquer toque traz tudo de volta; alertas e erros nunca são escondidos.
+let cleanTimer = null;
+function wakeHud() {
+  root.dataset.clean = 'off'; clearTimeout(cleanTimer);
+  if (cam.running) cleanTimer = setTimeout(() => { if (cam.running && !root.dataset.drawer && !q('#setup').open) root.dataset.clean = 'on'; else wakeHud(); }, 8000);
+}
+document.addEventListener('pointerdown', wakeHud, { capture: true, passive: true });
+document.addEventListener('keydown', wakeHud, { capture: true });
+
 async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request('screen'); } catch { /* o sistema pode negar */ } }
 
 function stop() {
-  cam.running = false; cam.generation++; clearTimeout(cam.retry);
+  cam.running = false; cam.generation++; clearTimeout(cam.retry); clearTimeout(cleanTimer); root.dataset.clean = 'off';
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
   cam.stream?.getTracks().forEach(t => t.stop()); cam.stream = null; q('#view').srcObject = null;

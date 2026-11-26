@@ -1,5 +1,16 @@
 # Andrômeda Live 0.30 — Andrômeda Cam como câmera de transmissão
 
+## 0.30.1 — tela no ar limpa
+- **Só o que importa no ar.** Com a câmera ativa, depois de 8 s sem tocar na tela:
+  - somem o botão "Ouvir microfone nos fones", o lembrete de girar o celular e os avisos informativos;
+  - os instrumentos (resolução, envio, bateria) ficam discretos;
+  - ficam a imagem, o tally, a barra de ajustes, o medidor de áudio e o timecode.
+- **Um toque traz tudo de volta.** Qualquer toque na tela mostra os controles de novo.
+- **Alertas nunca somem.** Alertas e erros continuam sempre visíveis. Com a gaveta de ajustes ou os Ajustes abertos, a tela não se esconde.
+- **Testes.**
+  - Teste automático novo em `test/cam-broadcast.test.cjs`.
+  - Conferido num celular simulado, em retrato e paisagem: a tela fica limpa depois de 9 s e tudo volta com um toque.
+
 ## 0.30.0 — auditoria completa do Andrômeda Cam e visual broadcast
 
 ### Engenharia (auditoria)

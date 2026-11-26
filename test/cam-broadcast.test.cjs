@@ -28,3 +28,10 @@ test('queda momentânea da rede: espera o WebRTC se recuperar antes de refazer a
   assert.match(cam, /pc\.connectionState === 'failed' \? 1000 : 6000/);
   assert.match(cam, /pc\.connectionState !== 'connected'\) cam\.ws\?\.close\(\)/, 'só refaz se continuar sem caminho');
 });
+
+test('tela no ar limpa: some em 8 s sem toque, volta com qualquer toque, e nunca esconde alertas nem erros', () => {
+  assert.match(cam, /function wakeHud\(\)[\s\S]*?8000/); assert.match(cam, /addEventListener\('pointerdown', wakeHud/);
+  assert.match(cam, /setRun\(localTest \? 'test' : 'live'\); wakeHud\(\);/, 'começa a contar ao ativar a câmera');
+  const css = read('../docs/cam.css');
+  assert.match(css, /body\[data-clean="on"\] \.status:not\(\[data-kind="error"\]\):not\(\[data-kind="warn"\]\)/, 'alertas e erros continuam visíveis');
+});
