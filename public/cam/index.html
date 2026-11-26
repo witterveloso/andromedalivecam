@@ -64,6 +64,7 @@
     <p id="connection" class="status" role="status" data-kind="info">Abra o link de convite enviado pela mesa.</p>
     <div class="telemetry">
       <span id="qualityActual">—</span>
+      <span id="sendRate" hidden></span>
       <span id="stats">0 Mbps</span>
       <span id="link" hidden></span>
       <span id="network" hidden></span>
@@ -78,9 +79,10 @@
   <footer class="dock">
     <div class="meter-row">
       <span class="mic-label">MIC</span>
-      <div class="vu" aria-hidden="true"><i id="micBar"></i></div>
+      <div class="vu" aria-hidden="true"><i id="micBar"></i><b id="micPeak"></b><span class="vu-scale"><em class="m18">-18</em><em class="m6">-6</em></span></div>
+      <span id="micClip" class="clip" aria-hidden="true">CLIP</span>
       <meter id="micLevel" class="sr-only" min="0" max="1" value="0" aria-label="Nível do microfone"></meter>
-      <time id="elapsed">00:00</time>
+      <time id="elapsed">00:00:00</time>
     </div>
     <div class="actions">
       <button id="mute" class="pad" type="button" aria-pressed="false" aria-label="Silenciar microfone do programa">
@@ -147,6 +149,8 @@
       <label>Microfone
         <select id="input"><option value="">Padrão do sistema / fone externo</option></select>
       </label>
+      <label class="check"><input id="echoPref" type="checkbox">Celular sem fones (cancelar o eco do retorno)</label>
+      <p class="hint">Desligado (padrão de transmissão): o som vai limpo, sem filtros de eco, ruído ou ganho automático, em Opus 128 kb/s. Ligue só se estiver sem fones.</p>
     </section>
 
     <section class="group">
