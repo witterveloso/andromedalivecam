@@ -1,7 +1,8 @@
 'use strict';
 // Andrômeda Cam como câmera de transmissão: áudio de programa limpo e em qualidade de transmissão, nos dois lados.
 const { test } = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
-const cam = fs.readFileSync(path.join(__dirname, '../docs/cam.js'), 'utf8'), desk = fs.readFileSync(path.join(__dirname, '../public/cam-desk.js'), 'utf8');
+const read = f => fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\r\n/g, '\n'); // checkout do Windows vem com CRLF
+const cam = read('../docs/cam.js'), desk = read('../public/cam-desk.js');
 const fn = src => new Function(src.match(/function opusBroadcast\(sdp\) ?\{[\s\S]*?\n\}\n|function opusBroadcast\(sdp\)\{.*\}\n/)[0] + ';return opusBroadcast')();
 const SDP = 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111 63\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\na=rtpmap:63 red/48000/2\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 H264/90000\r\n';
 
