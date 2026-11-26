@@ -345,7 +345,14 @@
         const bad = probes.find(p => !p.ok);
         if (!bad) { engine = 'native'; liveTx.hardware = probes.every(p => p.hardware); } else log('Motor Andrômeda indisponível neste computador: ' + bad.reason + ' Usando o codificador padrão.');
       }
-      if (fixed && engine !== 'native') throw Error('Saída dedicada indisponível. O teste do codificador H.264/Opus falhou neste computador. Consulte Diagnóstico antes de transmitir.');
+      // Computador sem o codificador H.264 do navegador (Windows "N" sem o Media Feature Pack, driver de vídeo antigo ou
+      // aceleração desligada): a saída continua 1080p a 30 fps, codificada pelo FFmpeg (placa de vídeo quando houver
+      // NVENC/Quick Sync/AMF; senão o processador). Mais pesado, mas a live abre em qualquer computador.
+      if (fixed && engine !== 'native') {
+        if (typeof MediaRecorder !== 'function') throw Error('Este computador não tem codificador de vídeo disponível no navegador da mesa. Consulte Diagnóstico.');
+        const note = 'Codificador de vídeo do navegador indisponível neste computador: a saída ' + outRes + '30 é codificada pelo FFmpeg (' + (selectedEncoder || 'automático') + '), mais pesado para o computador.';
+        log(note); window.andromedaAudit?.('warn', 'motor-plano-b', note, { encoder: selectedEncoder || 'auto' }); liveTx.outputResolution = outRes;
+      }
       model.engineUsed = engine; liveTx.engine = engine;
       // Teste do computador (só o motor próprio e só quando ainda não há resultado recente para este tamanho): do tamanho pedido para baixo, o primeiro que
       // sai a pelo menos 26 quadros por segundo, com a mesa desenhando junto. O resultado vale por 7 dias; escolher a resolução na lista refaz o teste.
@@ -362,7 +369,7 @@
         writeBench(outRes, pick[2], chosen ? chosen[3] : 0); if (pick[2] !== outRes) writeBench(pick[2], pick[2], chosen ? chosen[3] : 0); log('Teste do computador: ' + tried.join(' → ') + '. Transmitindo em ' + pick[2] + '.'); window.andromedaAudit?.('info', 'teste-do-computador', 'Teste do computador: ' + tried.join(' → ') + ' · transmitindo em ' + pick[2]);
         if (pick[2] !== outRes) { writeCap(pick[2]); sizeNote = 'Este computador não sustenta ' + outRes + ': transmitindo em ' + pick[2] + '.'; txStatus(sizeNote); }
       } else if (false) { const b = readBench(outRes); const hit = null; if (hit && hit[0] < width) { [width, height] = [hit[0], hit[1]]; for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } } }
-      if (fixed) {
+      if (fixed && engine === 'native') {
         txStatus('Verificando PGM e codificador em '+outRes+'30 antes de abrir o envio…');
         // Captura lembrada: se a captura por quadro já foi a que sustentou 30 fps neste computador, o teste começa por ela.
         liveTx.capture = (() => { try { return localStorage.getItem('andromeda.tx.capture.v1') === 'frame' ? 'frame' : 'stream'; } catch { return 'stream'; } })();

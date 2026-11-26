@@ -84,6 +84,31 @@ jobs:
             transmission-screen.png
           if-no-files-found: warn
 
+  transmission-noenc:
+    name: Computador sem codificador do navegador 1080p30 (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    # Plano B: sem o codificador H.264 do navegador (Windows "N", driver antigo), a saída 1080p30 sai pelo FFmpeg.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Envio local 1080p30 com o codificador do navegador indisponível
+        env:
+          ANDROMEDA_TEST_NO_NATIVE: '1'
+        run: npx electron test/transmission-electron.cjs
+      - name: Guardar diagnóstico do plano B
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transmission-noenc-diagnostic
+          path: |
+            transmission-report.json
+            transmission-screen.png
+          if-no-files-found: warn
   transmission-frame:
     name: Captura por quadro 1080p30 (Windows)
     runs-on: windows-latest
@@ -213,6 +238,29 @@ jobs:
           if (-not $data.ok) { throw 'Conferência falhou' }
           if ($data.ffmpeg -notmatch 'app\.asar\.unpacked') { throw "FFmpeg fora do pacote: $($data.ffmpeg)" }
           Copy-Item (Join-Path $env:RUNNER_TEMP 'smoke.*') dist\
+      - name: Instalar como usuário comum (sem administrador) e abrir com a porta 3180 ocupada por outro programa
+        shell: pwsh
+        run: |
+          # O que acontece num computador qualquer: instalador silencioso por usuário, sem administrador, e outra aplicação
+          # já usando a porta da mesa. O programa instalado precisa abrir mesmo assim, na porta seguinte.
+          $setup = Get-ChildItem dist\Andromeda-Live-Setup-*.exe | Select-Object -First 1
+          if (-not $setup) { throw 'Instalador não foi gerado' }
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Instalador terminou com código $($p.ExitCode)" }
+          $exe = Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Recurse -Filter 'Andromeda Live.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'Programa instalado não encontrado em LOCALAPPDATA\Programs' }
+          Write-Host "Instalado em $($exe.FullName)"
+          $busy = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 3180); $busy.Start()
+          try {
+            $result = Join-Path $env:RUNNER_TEMP 'smoke-instalado.json'
+            $run = Start-Process -FilePath $exe.FullName -ArgumentList "--smoke-test=$result" -PassThru
+            if (-not $run.WaitForExit(120000)) { $run.Kill(); throw 'O programa instalado não terminou a conferência em 120 s' }
+          } finally { $busy.Stop() }
+          Get-Content $result
+          $data = Get-Content $result | ConvertFrom-Json
+          if (-not $data.ok) { throw 'Conferência do programa instalado falhou' }
+          if ($data.porta -ne 3190) { throw "Esperava a porta 3190 com a 3180 ocupada; abriu em $($data.porta)" }
+          Copy-Item $result dist\
       - name: Publicar o instalador como artefato
         uses: actions/upload-artifact@v4
         with:

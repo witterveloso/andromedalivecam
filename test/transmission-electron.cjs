@@ -6,7 +6,9 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {spawn,spawnSync}=require('node:child_process');
 const assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'andromeda-tx-'));
-const fourK=process.env.ANDROMEDA_TEST_4K==='1';let dimensions=fourK?'3840x2160':'1920x1080';const seconds=fourK?10:12;
+const fourK=process.env.ANDROMEDA_TEST_4K==='1';
+// ANDROMEDA_TEST_NO_NATIVE=1: computador sem o codificador H.264 do navegador (Windows "N", driver antigo): a saída 1080p30 sai pelo FFmpeg.
+const noNative=process.env.ANDROMEDA_TEST_NO_NATIVE==='1';let dimensions=fourK?'3840x2160':'1920x1080';const seconds=fourK?10:12;
 const reportPath=path.join(root,'transmission-report.json');
 app.setPath('userData',path.join(dir,'profile'));
 app.commandLine.appendSwitch('autoplay-policy','no-user-gesture-required');
@@ -43,6 +45,7 @@ app.whenReady().then(async()=>{
    document.querySelector('#txAudio').value='silent';
    // A TCP preflight probe would consume FFmpeg's single RTMP listener; bypass only in this test.
    window.andromedaPreflight=async()=>({});sync();
+   if(${noNative})AndromedaEngine.probe=async()=>({ok:false,reason:'sem codificador H.264 no navegador (ensaio)'});
  })()`);
  for(let attempt=0;attempt<(fourK?1:2);attempt++){
    const received=path.join(dir,`received-${attempt}.mkv`);let receiverLog='';
@@ -85,10 +88,10 @@ app.whenReady().then(async()=>{
     assert(c.keyframes>=Math.floor(seconds/2)-1&&c.keyframeGapMaxS!==null&&c.keyframeGapMaxS<=2.1,'quadro-chave a cada 2 s (máx. medido '+c.keyframeGapMaxS+' s)');}
    // Qualquer erro de JavaScript na mesa durante o envio reprova o ensaio (um erro no regulador passaria despercebido).
    assert(!report.errors.some(e=>/Uncaught|ReferenceError|TypeError/.test(e)),'mesa sem erros de JavaScript: '+report.errors.filter(e=>/Uncaught|ReferenceError|TypeError/.test(e)).slice(0,2).join(' | '));
-   assert(samples.every(s=>s.phase==='sending'&&s.engine==='native'),'native engine remains active');
+   assert(samples.every(s=>s.phase==='sending'&&s.engine===(noNative?'webm':'native')),noNative?'plano B (FFmpeg) ativo do começo ao fim':'native engine remains active');
    const steady=samples.slice(3),average=name=>steady.reduce((n,s)=>n+(s.stats?.[name]||0),0)/steady.length;
-   r.encodedFps=average('fps');r.freshFps=average('freshFps');
-   assert(r.encodedFps>=28.5,'encoded frames >=28.5/s');assert(r.freshFps>=28.5,'new PGM compositions >=28.5/s');
+   if(!noNative){r.encodedFps=average('fps');r.freshFps=average('freshFps');
+   assert(r.encodedFps>=28.5,'encoded frames >=28.5/s');assert(r.freshFps>=28.5,'new PGM compositions >=28.5/s');}
    assert(r.received.frames>=seconds*28&&r.recorded.frames>=seconds*28,'at least 28 frames/s');
    assert(r.received.uniqueFrames/r.received.frames>.90,'moving received video, not repeated still frames');
    assert(Math.abs(r.received.frames-r.recorded.frames)<=3,'stream and recording share video frames');
