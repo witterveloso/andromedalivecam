@@ -75,6 +75,12 @@ async function startService() {
   process.env.ANDROMEDA_LICENSE_FILE ||= path.join(data, 'licenca.txt');
   process.env.ANDROMEDA_DATA_DIR ||= data;
   loadCloudConfig(data);
+  // Proteção: no programa instalado, a mesa e seus arquivos só são entregues à janela do próprio Andrômeda Live (uma chave
+  // nova a cada abertura, posta pelo programa em cada pedido). Um navegador comum em http://localhost recebe "acesso negado".
+  if (app.isPackaged && !process.env.ANDROMEDA_DESK_KEY) process.env.ANDROMEDA_DESK_KEY = require('node:crypto').randomBytes(24).toString('hex');
+  if (process.env.ANDROMEDA_DESK_KEY) session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://localhost/*', 'http://127.0.0.1/*', 'ws://localhost/*', 'ws://127.0.0.1/*'] }, (details, callback) => {
+    details.requestHeaders['X-Andromeda-Desk'] = process.env.ANDROMEDA_DESK_KEY; callback({ requestHeaders: details.requestHeaders });
+  });
   const { createBridge } = require('../server.cjs');
   for (const port of PORTS) {
     const candidate = createBridge({ port, camPort: port + 5 });
@@ -122,7 +128,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700, show: false,
     title: 'Andrômeda Live', backgroundColor: '#060817', icon: path.join(__dirname, 'build', 'icon.png'),
-    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true, spellcheck: false },
+    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true, spellcheck: false, devTools: !app.isPackaged }, // instalado: sem console de desenvolvedor
   });
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
 
@@ -161,7 +167,7 @@ function createWindow() {
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     // F1–F12 chegam à mesa (atalhos do Andrômeda Live); F11 sem função na mesa alterna a tela cheia pela própria página.
-    if (input.control && input.shift && input.key.toLowerCase() === 'i') { contents.toggleDevTools(); event.preventDefault(); }
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') { if (!app.isPackaged) contents.toggleDevTools(); event.preventDefault(); }
     else if (input.control && input.key.toLowerCase() === 'r' && !input.shift) event.preventDefault(); // sem recarregar a mesa por engano no ar
   });
   win.on('close', event => closeGuard.handleClose(event)); // pergunta antes de fechar (toque sem querer no X)

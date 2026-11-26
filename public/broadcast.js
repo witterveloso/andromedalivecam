@@ -348,10 +348,13 @@
       // Computador sem o codificador H.264 do navegador (Windows "N" sem o Media Feature Pack, driver de vídeo antigo ou
       // aceleração desligada): a saída continua 1080p a 30 fps, codificada pelo FFmpeg (placa de vídeo quando houver
       // NVENC/Quick Sync/AMF; senão o processador). Mais pesado, mas a live abre em qualquer computador.
+      let planBPreset = null;
       if (fixed && engine !== 'native') {
         if (typeof MediaRecorder !== 'function') throw Error('Este computador não tem codificador de vídeo disponível no navegador da mesa. Consulte Diagnóstico.');
         const note = 'Codificador de vídeo do navegador indisponível neste computador: a saída ' + outRes + '30 é codificada pelo FFmpeg (' + (selectedEncoder || 'automático') + '), mais pesado para o computador.';
         log(note); window.andromedaAudit?.('warn', 'motor-plano-b', note, { encoder: selectedEncoder || 'auto' }); liveTx.outputResolution = outRes;
+        // Sem placa de vídeo que codifique, o processador faz tudo (mesa + codificação 1080p): x264 "superfast" gasta cerca de metade.
+        if (!selectedEncoder || selectedEncoder === 'libx264') planBPreset = 'superfast';
       }
       model.engineUsed = engine; liveTx.engine = engine;
       // Teste do computador (só o motor próprio e só quando ainda não há resultado recente para este tamanho): do tamanho pedido para baixo, o primeiro que
@@ -528,7 +531,7 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: planBPreset || model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');

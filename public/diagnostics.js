@@ -73,7 +73,8 @@
   pages.diagnostics = page;
   const tab = make('button', '', 'Diagnóstico'); tab.dataset.page = 'diagnostics'; tab.onclick = () => { openWorkspace('diagnostics'); unseen = 0; badge(); paint(); };
   nav.insertBefore(tab, [...nav.children].find(b => !b.dataset.page) || null);
-  const badge = () => { tab.dataset.alerts = unseen ? String(Math.min(99, unseen)) : ''; tab.setAttribute('aria-label', unseen ? 'Diagnóstico, ' + unseen + ' aviso(s) novo(s)' : 'Diagnóstico'); };
+  // O Diagnóstico grava tudo o tempo todo (no serviço, em arquivo), mas não chama a atenção do operador: sem contador na aba.
+  const badge = () => { tab.dataset.alerts = ''; tab.setAttribute('aria-label', 'Diagnóstico'); };
 
   const LEVEL = { info: 'Info', warn: 'Aviso', error: 'Erro' };
   function paint() {
@@ -90,7 +91,7 @@
 
   function paintLicense(lic) {
     if (!lic) return;
-    $('#diagLicense').textContent = lic.required ? lic.message + (lic.customer ? ' · ' + lic.customer + ' · plano ' + lic.planName + ' · vence em ' + lic.expires.slice(0, 10).split('-').reverse().join('/') : '') : lic.message;
+    $('#diagLicense').textContent = (lic.required ? lic.message + (lic.customer ? ' · ' + lic.customer + ' · plano ' + lic.planName + ' · vence em ' + lic.expires.slice(0, 10).split('-').reverse().join('/') : '') : lic.message) + (lic.device ? ' · Código deste computador: ' + lic.device : '');
     $('#diagLicense').dataset.tone = !lic.valid ? 'bad' : lic.warning ? 'warn' : '';
     $('#diagActivate').hidden = !lic.required || (lic.valid && !lic.warning);
   }

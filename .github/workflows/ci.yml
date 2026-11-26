@@ -178,6 +178,8 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
+      - name: Proteger o código que vai no instalador (compactado, sem comentários, aviso de direitos)
+        run: node tools/proteger.cjs
       - name: Gerar instalador (assina se houver certificado configurado)
         shell: pwsh
         env:

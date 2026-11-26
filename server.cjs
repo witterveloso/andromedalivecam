@@ -80,8 +80,11 @@ function createBridge({dataDir=process.env.ANDROMEDA_DATA_DIR||path.join(__dirna
   if(req.url==='/api/license'){json(res,license.status());return}
   if(req.url==='/api/input/status'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({...receivers.get(6).status(),inputs:receivers.status(),maximum:8}));return}
   const inputURL=new URL(req.url,'http://localhost');if(['/api/input/video.mjpeg','/api/input/audio.pcm'].includes(inputURL.pathname)){try{const receiver=receivers.get(inputURL.searchParams.has('slot')?inputURL.searchParams.get('slot'):undefined);if(inputURL.pathname.endsWith('.mjpeg'))receiver.subscribe(res);else receiver.subscribeAudio(res);}catch(e){res.writeHead(400).end(e.message)}return}
+  if(req.url==='/api/session'&&process.env.ANDROMEDA_DESK_KEY&&req.headers['x-andromeda-desk']!==process.env.ANDROMEDA_DESK_KEY){res.writeHead(403).end();return}
   if(req.url==='/api/session'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({token,ffmpegReady:!!ffmpeg,busy:!!shared.active,version,encoders:detectEncoders(ffmpeg),platforms:Object.fromEntries(Object.entries(PLATFORMS).map(([id,p])=>[id,{name:p.name,example:p.example}])),license:license.status()}));return}
   if(req.url==='/favicon.ico'){res.writeHead(204).end();return}
+  // Programa instalado: arquivos da mesa só para a janela do Andrômeda Live (chave por sessão posta pelo programa).
+  if(process.env.ANDROMEDA_DESK_KEY&&req.headers['x-andromeda-desk']!==process.env.ANDROMEDA_DESK_KEY){res.writeHead(403,{'Content-Type':'text/plain; charset=utf-8'}).end('Andrômeda Live: a mesa abre somente dentro do programa instalado.');return}
   const name=files[req.url];if(!name){res.writeHead(404).end();return}
   res.setHeader('Content-Type',name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css; charset=utf-8':name.endsWith('.svg')?'image/svg+xml':name.endsWith('.png')?'image/png':name.endsWith('.woff2')?'font/woff2':name.endsWith('.wasm')?'application/wasm':/\.(bcmap|pfb|ttf|icc|tflite)$/.test(name)?'application/octet-stream':/(^|\/)(LICENSE[^/]*)$/.test(name)?'text/plain; charset=utf-8':'text/javascript; charset=utf-8');if(/^(fonts|brand|vendor\/pdfjs|vendor\/mediapipe)\//.test(name))res.setHeader('Cache-Control','public, max-age=86400');fs.createReadStream(path.join(__dirname,'public',name)).pipe(res);
  });

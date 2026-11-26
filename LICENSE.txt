@@ -1,0 +1,7 @@
+Andrômeda Live — software proprietário
+© 2026 Andrômeda Live. Todos os direitos reservados.
+
+Este repositório e todo o seu conteúdo (código, telas, marcas, ícones, textos e documentação) são propriedade
+exclusiva do titular. Nenhuma licença é concedida pela simples disponibilidade do código. É proibido copiar,
+modificar, redistribuir, descompilar ou usar este software, no todo ou em parte, sem autorização por escrito.
+Protegido pela Lei 9.610/98 (Direitos Autorais) e pela Lei 9.609/98 (Software).

@@ -4,7 +4,8 @@
  * Ferramenta do vendedor: cria o par de chaves e emite tokens de ativação.
  *
  *   node tools/licenca.cjs chaves
- *   node tools/licenca.cjs emitir --plano anual --cliente "Nome do cliente" [--email a@b.c] [--dias 366]
+ *   node tools/licenca.cjs emitir --plano anual --cliente "Nome do cliente" --computador XXXX-XXXX-XXXX-XXXX [--email a@b.c] [--dias 366]
+ *     (--computador: o código mostrado em Diagnóstico → Licença no computador do cliente; a licença só vale nele)
  *   node tools/licenca.cjs conferir <token>
  *
  * A chave privada (licenca-privada.pem) fica só com o vendedor: nunca vai para o
@@ -31,12 +32,12 @@ if (command === 'chaves') {
 } else if (command === 'emitir') {
   if (!fs.existsSync(privateFile)) stop('Chave privada não encontrada. Rode primeiro: node tools/licenca.cjs chaves');
   try {
-    const token = issue(fs.readFileSync(privateFile, 'utf8'), { plan: option('plano'), customer: option('cliente'), email: option('email'), days: option('dias') });
+    const token = issue(fs.readFileSync(privateFile, 'utf8'), { plan: option('plano'), customer: option('cliente'), email: option('email'), days: option('dias'), device: option('computador') });
     const info = verify(fs.readFileSync(publicFile, 'utf8'), token);
-    console.error('Plano ' + info.planName + ' · ' + info.customer + ' · vence em ' + info.expires.slice(0, 10));
+    console.error('Plano ' + info.planName + ' · ' + info.customer + ' · vence em ' + info.expires.slice(0, 10) + (info.device ? ' · só no computador ' + info.device : ' · ATENÇÃO: sem --computador, vale em qualquer computador'));
     console.log(token);
   } catch (e) { stop(e.message + '\nPlanos: ' + Object.entries(PLANS).map(([id, p]) => id + ' (' + p.days + ' dias)').join(', ')); }
 } else if (command === 'conferir') {
   if (!fs.existsSync(publicFile)) stop('Chave pública não encontrada.');
   console.log(JSON.stringify(verify(fs.readFileSync(publicFile, 'utf8'), rest[0]), null, 2));
-} else stop('Uso:\n  node tools/licenca.cjs chaves\n  node tools/licenca.cjs emitir --plano mensal|anual|teste --cliente "Nome" [--email a@b.c] [--dias N]\n  node tools/licenca.cjs conferir <token>');
+} else stop('Uso:\n  node tools/licenca.cjs chaves\n  node tools/licenca.cjs emitir --plano mensal|anual|teste --cliente "Nome" --computador XXXX-XXXX-XXXX-XXXX [--email a@b.c] [--dias N]\n  node tools/licenca.cjs conferir <token>');
