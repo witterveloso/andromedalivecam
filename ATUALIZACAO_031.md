@@ -1,5 +1,16 @@
 # Andrômeda Live 0.31 — proteção contra cópia
 
+## Andrômeda Cam — visor limpo
+- **Sem máscara sobre a imagem.**
+  - Saíram o brilho vermelho que entrava pela imagem quando a câmera está NO AR e os degradês escuros do topo e do rodapé.
+  - O NO AR continua como borda vermelha sólida e faixa no topo.
+  - Os textos do topo ganharam sombra para continuarem legíveis sobre qualquer imagem.
+- **Informações de transmissão no rodapé.**
+  - Resolução, envio, Mbps, enlace, bateria e estabilização ficam sempre na última linha, colados na base da imagem.
+  - Aviso e botão de retorno ficam acima deles.
+  - Antes, um botão invisível na tela limpa ocupava lugar e empurrava os dados para o meio da imagem.
+  - Na tela limpa os dados ficam 100% legíveis, sem esmaecer.
+
 ## 0.31.0 — proteção do Andrômeda Live e dos seus recursos
 - **Código protegido dentro do instalador.**
   - Todo o código próprio (serviço, programa e mesa, inclusive os scripts da página) vai compactado: sem comentários, sem espaços, com os nomes internos trocados por letras.

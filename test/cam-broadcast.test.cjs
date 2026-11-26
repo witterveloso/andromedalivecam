@@ -35,3 +35,13 @@ test('tela no ar limpa: some em 8 s sem toque, volta com qualquer toque, e nunca
   const css = read('../docs/cam.css');
   assert.match(css, /body\[data-clean="on"\] \.status:not\(\[data-kind="error"\]\):not\(\[data-kind="warn"\]\)/, 'alertas e erros continuam visíveis');
 });
+
+test('visor limpo: sem véu sobre a imagem e dados de transmissão no rodapé', () => {
+  const css = read('../docs/cam.css').replace(/\r\n/g, '\n');
+  const last = css.slice(css.lastIndexOf('Visor limpo'));
+  assert.match(last, /body\[data-tally="program"\] \.frame \{ box-shadow: inset 0 0 0 5px var\(--pgm\); \}/, 'tally só como borda sólida, sem brilho vermelho por cima da imagem');
+  assert.match(last, /\.top, \.bottom \{ background: none; \}/, 'sem degradê escuro no topo e no rodapé');
+  assert.match(last, /\.hud \.telemetry \{ order: 9; \}/, 'dados de transmissão sempre na última linha');
+  assert.match(last, /body\[data-clean="on"\] \.telemetry \{ opacity: 1; \}/, 'dados legíveis na tela limpa');
+  assert.match(last, /body\[data-clean="on"\] \.chip-btn \{ display: none; \}/, 'botão escondido não ocupa lugar');
+});
