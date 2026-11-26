@@ -7,6 +7,12 @@
 - **Correção.** A gravação ganhou fila própria de ~30 s de imagem e som.
   - O disco pode engasgar que a live segue; a gravação alcança logo depois, sem perder nada.
   - Se o disco parar por mais de ~30 s, a gravação descarta em vez de segurar a transmissão: **a live nunca para por causa do disco**.
+- **Gravação 9:16 no computador no limite.** O diagnóstico de 26/11 mostrou outra causa, mais grave.
+  - Situação: YouTube + gravação em 16:9 **e** 9:16, sem nenhum destino vertical.
+  - O 9:16 fazia a mesa montar e codificar uma segunda imagem (1080×1920) só para o arquivo: o dobro do trabalho.
+  - Num computador já no limite (8 GB, sem folga), a mesa caiu para 5 q/s, ficou até 34 s sem responder, a captura parou e a live caiu em 32 s.
+  - Agora, quando o teste de saída acusa "computador no limite" e o 9:16 existe só para a gravação, a mesa desliga a gravação 9:16 daquela live e avisa no log e no Diagnóstico (`gravacao-vertical-desligada`).
+  - A transmissão e a gravação 16:9 continuam.
 - **Prova (`test/record-stall.test.cjs`, rede e disco de verdade):** disco travado por 3,5 s no meio do envio.
 
 | | Maior buraco na plataforma | Gravação |
