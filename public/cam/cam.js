@@ -201,6 +201,14 @@ async function enumerate() {
 }
 navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (cam.stream) enumerate().catch(() => {}); });
 
+// Áudio de programa como num equipamento de transmissão: sem cancelamento de eco, sem supressão de ruído e sem ganho
+// automático (esses filtros "bombeiam" o som, abafam música e cortam o ambiente). Com fones, não há eco a cancelar.
+// "Celular sem fones" liga o cancelamento de eco para o retorno do DTV não voltar pelo microfone.
+function audioConstraints() {
+  const noHeadphones = prefs.get('echo', '0') === '1';
+  return { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
+    echoCancellation: noHeadphones, noiseSuppression: false, autoGainControl: false };
+}
 function videoConstraints(deviceId = q('#lens').value) {
   const [width, height] = q('#resolution').value.split('x').map(Number);
   return {
@@ -228,6 +236,8 @@ async function bitrate() {
   e.maxFramerate = fps; e.priority = 'high'; e.networkPriority = 'high';
   params.degradationPreference = 'maintain-framerate';
   await sender.setParameters(params).catch(() => { delete e.priority; delete e.networkPriority; delete params.degradationPreference; return sender.setParameters(params); });
+  const audio = p.pc.getSenders().find(s => s.track?.kind === 'audio'), ap = audio?.getParameters();
+  if (ap?.encodings?.length) { ap.encodings[0].maxBitrate = 128000; ap.encodings[0].priority = 'high'; await audio.setParameters(ap).catch(() => {}); }
 }
 const MAX_MBPS = 25;
 // Codificador de hardware: os celulares codificam H.264 no chip (iPhone sempre, Android quase sempre).
@@ -285,7 +295,7 @@ async function applyMic() {
   if (!cam.stream) return;
   const old = cam.stream.getAudioTracks()[0];
   let fresh;
-  try { fresh = (await navigator.mediaDevices.getUserMedia({ video: false, audio: { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: false } })).getAudioTracks()[0]; }
+  try { fresh = (await navigator.mediaDevices.getUserMedia({ video: false, audio: audioConstraints() })).getAudioTracks()[0]; }
   catch (e) { say('Microfone não abriu: ' + captureMessage(e), 'error'); return; }
   fresh.enabled = old ? old.enabled : true;
   if (old) { cam.stream.removeTrack(old); old.stop(); }
@@ -306,6 +316,15 @@ q('#input').onchange = () => { if (cam.running) applyMic().catch(e => say(e.mess
 
 /* ---------- WebRTC ---------- */
 
+// Áudio de programa com qualidade de transmissão: Opus a 128 kb/s, estéreo e com correção de perdas (o padrão do
+// WebRTC é ~32 kb/s, pensado para voz). Quem recebe declara no SDP o que aceita; os dois lados declaram o mesmo.
+function opusBroadcast(sdp) {
+  const pt = /a=rtpmap:(\d+) opus\/48000\/2/i.exec(sdp)?.[1]; if (!pt) return sdp;
+  const want = { maxaveragebitrate: '128000', stereo: '1', 'sprop-stereo': '1', useinbandfec: '1', cbr: '0' };
+  const line = new RegExp('a=fmtp:' + pt + ' ([^\\r\\n]*)');
+  const add = cur => { const have = Object.fromEntries(cur.split(';').filter(Boolean).map(kv => kv.split('='))); return Object.entries({ ...have, ...want }).map(([k, v]) => k + '=' + v).join(';'); };
+  return line.test(sdp) ? sdp.replace(line, (_, cur) => 'a=fmtp:' + pt + ' ' + add(cur)) : sdp.replace(new RegExp('(a=rtpmap:' + pt + ' opus\\/48000\\/2[^\\r\\n]*\\r?\\n)', 'i'), '$1a=fmtp:' + pt + ' ' + add('') + '\r\n');
+}
 async function makePeer(lane) {
   const pc = new RTCPeerConnection({ iceServers: cam.ice }), p = { pc, queue: [] };
   cam.pcs.set(lane, p);
@@ -335,10 +354,14 @@ async function makePeer(lane) {
         say(publicRelay ? 'A imagem não achou caminho até a mesa. Confira a internet do celular e peça para a mesa conferir o firewall do Windows (Permitir o Andrômeda Live). Tentando de novo…'
           : 'A imagem não chega à mesa por esta rede. No 4G/5G ou em outro Wi-Fi, a mesa precisa abrir a porta da Rede Andrômeda no roteador (avise o operador). No mesmo Wi-Fi da mesa funciona. Tentando de novo…', 'warn');
       } else say('Conexão interrompida. Reconectando…', 'warn');
-      clearTimeout(cam.retry); cam.retry = setTimeout(() => { if (cam.running) cam.ws?.close(); }, 2000);
+      // "disconnected" é muitas vezes passageiro (troca de antena, Wi-Fi → 5G): o WebRTC se recupera sozinho em segundos.
+      // Só refaz a conexão se continuar sem caminho; "failed" refaz logo.
+      clearTimeout(cam.retry);
+      cam.retry = setTimeout(() => { if (cam.running && cam.pcs.get('media')?.pc === pc && pc.connectionState !== 'connected') cam.ws?.close(); }, pc.connectionState === 'failed' ? 1000 : 6000);
     }
   };
-  await pc.setLocalDescription(await pc.createOffer());
+  const offer = await pc.createOffer(); if (lane === 'media') offer.sdp = opusBroadcast(offer.sdp);
+  await pc.setLocalDescription(offer);
   send({ type: 'signal', lane, signal: { description: pc.localDescription.toJSON() } });
 }
 
@@ -482,7 +505,7 @@ async function start() {
     if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(Error('Abra este link no Safari ou Chrome atualizado. O navegador interno do mensageiro pode não permitir a câmera.'), { name: 'InviteError' });
     cam.stream = await navigator.mediaDevices.getUserMedia({
       video: videoConstraints(),
-      audio: { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+      audio: audioConstraints(),
     });
     q('#view').srcObject = cam.stream; await q('#view').play();
     await enumerate(); showCapabilities(); await preferPhysicalLens();
@@ -530,8 +553,8 @@ function stop() {
   cam.wake?.release().catch(() => {}); cam.wake = null;
   if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
   setStartLabel(localTest ? 'ATIVAR TESTE' : cam.key ? 'ATIVAR CÂMERA' : 'CONECTAR');
-  setRun('idle'); q('#ptt').disabled = true; showMicLevel(0); q('#elapsed').textContent = '00:00';
-  tally('offline'); q('#stats').textContent = localTest ? 'SEM TRANSMISSÃO' : '0 Mbps';
+  setRun('idle'); q('#ptt').disabled = true; showMicLevel(0); q('#elapsed').textContent = '00:00:00';
+  tally('offline'); q('#stats').textContent = localTest ? 'SEM TRANSMISSÃO' : '0 Mbps'; q('#sendRate').hidden = true;
   if (localTest) {
     q('#returnAudio').pause(); q('#returnAudio').srcObject = null;
     q('#hear').textContent = 'Ouvir microfone nos fones';
@@ -550,29 +573,37 @@ window.addEventListener('offline', () => { tally('offline'); ptt(false); say('Se
 /* ---------- telemetria ---------- */
 
 // Barra em escala de dB (−60 a 0 dBFS); o <meter> guarda o valor RMS para leitores de tela.
-function showMicLevel(rms) {
+// Medidor de transmissão: barra em dBFS (−60 a 0) com as cores no lugar (verde até −18, amarelo até −6, vermelho),
+// marca de pico que segura 1,5 s e aviso CLIP quando o pico encosta em 0 dBFS.
+const peakHold = { db: -60, at: 0, clipAt: 0 };
+function showMicLevel(rms, peak = rms) {
   q('#micLevel').value = rms;
   const bar = q('#micBar'); if (!bar.style) return;
-  const db = 20 * Math.log10(rms || 1e-6);
-  bar.style.transform = 'scaleX(' + Math.max(0, Math.min(1, (db + 60) / 60)).toFixed(3) + ')';
-  bar.dataset.level = db > -3 ? 'poor' : db > -12 ? 'fair' : 'good';
+  const toPos = db => Math.max(0, Math.min(1, (db + 60) / 60));
+  const db = 20 * Math.log10(rms || 1e-6), pdb = 20 * Math.log10(peak || 1e-6), now = Date.now();
+  bar.style.clipPath = 'inset(0 ' + ((1 - toPos(db)) * 100).toFixed(1) + '% 0 0)';
+  bar.dataset.level = db > -6 ? 'poor' : db > -18 ? 'fair' : 'good';
+  if (pdb >= peakHold.db || now - peakHold.at > 1500) { peakHold.db = pdb; peakHold.at = now; }
+  if (pdb > -0.5) peakHold.clipAt = now;
+  const mark = q('#micPeak'); if (mark?.style) { mark.style.left = (toPos(peakHold.db) * 100).toFixed(1) + '%'; mark.hidden = peakHold.db <= -59; }
+  const clip = q('#micClip'); if (clip) clip.dataset.on = now - peakHold.clipAt < 2000 ? 'on' : 'off';
 }
 
 setInterval(async () => {
   if (Date.now() - cam.lastTally > 3500) tally('offline');
   if (cam.running) {
     const sec = Math.floor((Date.now() - cam.started) / 1000);
-    q('#elapsed').textContent = String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+    q('#elapsed').textContent = [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map(n => String(n).padStart(2, '0')).join(':');
   }
   if (cam.meter) {
     const a = new Float32Array(cam.meter.fftSize); cam.meter.getFloatTimeDomainData(a);
-    showMicLevel(Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length));
+    showMicLevel(Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length), a.reduce((m, v) => Math.max(m, Math.abs(v)), 0));
   }
   const p = cam.pcs.get('media'); if (!p) return;
   try {
-    const reports = await p.pc.getStats(); let bytes = 0, rtt = null, lost = null;
+    const reports = await p.pc.getStats(); let bytes = 0, rtt = null, lost = null, out = null;
     reports.forEach(r => {
-      if (r.type === 'outbound-rtp' && r.kind === 'video') bytes += r.bytesSent || 0;
+      if (r.type === 'outbound-rtp' && r.kind === 'video') { bytes += r.bytesSent || 0; if (!out || (r.frameWidth || 0) > (out.frameWidth || 0)) out = r; }
       if (r.type === 'remote-inbound-rtp' && r.kind === 'video') {
         if (typeof r.roundTripTime === 'number') rtt = r.roundTripTime;
         if (typeof r.fractionLost === 'number') lost = r.fractionLost;
@@ -581,6 +612,12 @@ setInterval(async () => {
     const now = Date.now();
     if (cam.lastStatsAt) q('#stats').textContent = (Math.max(0, bytes - cam.lastBytes) * 8 / (now - cam.lastStatsAt) / 1000).toFixed(2) + ' Mbps';
     cam.lastBytes = bytes; cam.lastStatsAt = now;
+    // Envio real: tamanho e quadros/s que saem para a mesa, e o que está segurando (rede ou processador do celular).
+    if (out?.frameWidth) {
+      const el = q('#sendRate'), fps = Math.round(out.framesPerSecond || 0), why = ({ bandwidth: 'rede', cpu: 'processador' })[out.qualityLimitationReason];
+      el.hidden = false; el.dataset.level = fps >= 28 && !why ? 'good' : fps >= 24 ? 'fair' : 'poor';
+      el.textContent = 'ENVIO ' + out.frameWidth + '×' + out.frameHeight + ' · ' + fps + ' q/s' + (why ? ' · limite: ' + why : '');
+    }
     if (rtt !== null) {
       const link = q('#link'), ms = Math.round(rtt * 1000), loss = lost || 0;
       const level = ms < 150 && loss < .02 ? 'good' : ms < 400 && loss < .08 ? 'fair' : 'poor';
@@ -626,6 +663,8 @@ sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); })
 q('#heroInvite').onclick = () => { sheet.showModal(); q('#invite').focus?.(); };
 q('#heroTest').onclick = () => { location.href = location.pathname + '?teste=1'; };
 q('#localTest').onclick = () => { location.href = location.pathname + (localTest ? '' : '?teste=1'); };
+q('#echoPref').checked = prefs.get('echo', '0') === '1';
+q('#echoPref').onchange = () => { prefs.set('echo', q('#echoPref').checked ? '1' : '0'); if (cam.stream) applyMic().catch(() => {}); };
 q('#fullscreenPref').checked = prefs.get('fullscreen', '1') === '1';
 q('#fullscreenPref').onchange = () => prefs.set('fullscreen', q('#fullscreenPref').checked ? '1' : '0');
 q('#fullToggle').onclick = toggleFullscreen;

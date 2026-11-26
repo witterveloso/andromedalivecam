@@ -457,3 +457,84 @@ body[data-drawer]:not([data-drawer=""]) .hud .status { display: none; }
   .drawer .slider input { min-height: 32px; }
   .drawer-hint { font-size: 11.5px; }
 }
+
+/* ============================================================
+   Broadcast (0.30): visual de câmera de estúdio / ENG
+   - tally como luz de câmera: barra no topo + moldura + rótulo grande (vermelho = NO AR, verde = PREVIEW, âmbar = espera)
+   - números em fonte de instrumento; rótulos curtos em caixa alta
+   - medidor em dBFS com cores no lugar, pico e CLIP; timecode HH:MM:SS
+   - áreas de segurança (título 90%, ação 93%) e cruz central na grade
+   ============================================================ */
+:root {
+  --pgm: #ff1f3d; --pgm-glow: rgba(255, 31, 61, .45);
+  --pvw: #19d36b; --standby: #ffb020;
+  --hud-bg: rgba(0, 0, 0, .62); --hud-line: rgba(255, 255, 255, .16);
+}
+body { background: radial-gradient(120% 80% at 50% -20%, #14123a 0%, #05060c 58%) #05060c; }
+body[data-run="live"], body[data-run="test"] { background: #000; }
+
+/* Luz de tally: faixa no topo da tela, como a lâmpada da câmera. */
+.top::before { content: ""; position: absolute; inset: 0 0 auto; height: calc(5px + var(--safe-t)); background: transparent; transition: background .2s; }
+body[data-tally="program"] .top::before { background: var(--pgm); box-shadow: 0 0 24px var(--pgm-glow); }
+body[data-tally="preview"] .top::before { background: var(--pvw); }
+body[data-tally="standby"] .top::before { background: var(--standby); }
+body[data-tally="program"] .frame { box-shadow: inset 0 0 0 7px var(--pgm), inset 0 0 80px var(--pgm-glow); }
+
+/* Rótulo de tally: placa retangular, legível de longe. */
+.tally { border-radius: 10px; min-height: 38px; padding: 6px 18px; font: 800 15px/1 var(--sans); letter-spacing: .18em; background: var(--hud-bg); border-color: var(--hud-line); }
+.tally::before { width: 10px; height: 10px; }
+.tally[data-state="program"] { background: var(--pgm); border-color: rgba(255, 255, 255, .55); color: #fff; animation: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 0 28px var(--pgm-glow); }
+.tally[data-state="preview"] { background: var(--pvw); color: #04140b; }
+.tally[data-state="standby"] { background: rgba(255, 176, 32, .18); border-color: var(--standby); color: #ffd38a; }
+
+/* Identificação da câmera como no visor de estúdio. */
+.brand { letter-spacing: .28em; }
+#cameraName { font: 800 16px/1.1 var(--sans); letter-spacing: .02em; text-transform: uppercase; }
+
+/* HUD: chips de instrumento, retos e em fonte de número. */
+.telemetry span { border-radius: 6px; padding: 6px 9px; background: var(--hud-bg); border-color: var(--hud-line); color: rgba(255, 255, 255, .86); font: 700 11.5px/1 var(--mono); letter-spacing: .02em; text-transform: uppercase; }
+.status { border-radius: 10px; background: var(--hud-bg); border-color: var(--hud-line); }
+.chip-btn { border-radius: 8px; }
+.params-row { gap: 0; }
+.param { border-radius: 6px 6px 0 0; }
+.param + .param { border-left: 1px solid rgba(255, 255, 255, .08); }
+
+/* Medidor de áudio em dBFS: verde até −18, amarelo até −6, vermelho; marca de pico e CLIP. */
+.meter-row { gap: 10px; }
+.vu { position: relative; width: min(52vw, 230px); height: 10px; border-radius: 2px; overflow: visible;
+  background: repeating-linear-gradient(to right, rgba(255, 255, 255, .10) 0 calc(100% / 30 - 1px), rgba(0, 0, 0, .9) 0 calc(100% / 30)); }
+.vu i { position: absolute; inset: 0; border-radius: 2px; transform: none !important; clip-path: inset(0 100% 0 0); transition: clip-path .06s linear;
+  background: linear-gradient(to right, #19d36b 0 70%, #ffd23f 70% 90%, #ff1f3d 90% 100%) !important;
+  -webkit-mask: repeating-linear-gradient(to right, #000 0 calc(100% / 30 - 1px), transparent 0 calc(100% / 30)); mask: repeating-linear-gradient(to right, #000 0 calc(100% / 30 - 1px), transparent 0 calc(100% / 30)); }
+.vu b { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 4px rgba(255, 255, 255, .7); }
+.vu-scale { position: absolute; inset: 100% 0 auto; height: 10px; pointer-events: none; }
+.vu-scale em { position: absolute; top: 2px; transform: translateX(-50%); color: rgba(255, 255, 255, .45); font: 700 8px/1 var(--mono); font-style: normal; }
+.clip { padding: 3px 5px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, .2); color: rgba(255, 255, 255, .3); font: 800 9px/1 var(--mono); letter-spacing: .08em; }
+.clip[data-on="on"] { background: var(--pgm); border-color: var(--pgm); color: #fff; }
+.meter-row { padding-bottom: 6px; }
+
+/* Timecode de câmera. */
+#elapsed { min-width: 8ch; padding: 4px 7px; border-radius: 4px; background: var(--hud-bg); border: 1px solid var(--hud-line); color: #fff; font: 700 13px/1 var(--mono); letter-spacing: .06em; }
+body[data-tally="program"] #elapsed { border-color: var(--pgm); color: #ffd0d6; }
+
+/* Grade: terços + áreas de segurança de título (90%) e de ação (93%) + cruz central. */
+.grid::before, .grid::after { content: ""; position: absolute; pointer-events: none; }
+.grid::before { inset: 5%; border: 1px dashed rgba(255, 210, 63, .55); box-shadow: 0 0 0 calc(1.5vmin) transparent; outline: 1px solid rgba(255, 255, 255, .22); outline-offset: calc(1.5vmin); }
+.grid::after { left: 50%; top: 50%; width: 28px; height: 28px; transform: translate(-50%, -50%);
+  background: linear-gradient(#fff, #fff) center / 100% 1.5px no-repeat, linear-gradient(#fff, #fff) center / 1.5px 100% no-repeat; opacity: .7; }
+
+/* Botão principal: o texto cabe no disco em qualquer orientação. */
+.start span { font-size: clamp(9px, 2.4vmin, 11px); letter-spacing: .02em; overflow-wrap: anywhere; }
+@media (orientation: landscape) { .start span { font-size: 9.5px; letter-spacing: 0; } }
+/* Paisagem: o medidor cabe no trilho lateral (78 px), sem escala escrita. */
+@media (orientation: landscape) {
+  .vu { width: 78px; }
+  .vu-scale { display: none; }
+  .meter-row { padding-bottom: 0; }
+  #elapsed { font-size: 12px; padding: 3px 5px; }
+}
+/* Rótulo do disco sem quebrar no meio da palavra. */
+.start span { padding: 0; white-space: nowrap; overflow-wrap: normal; }
+@media (orientation: landscape) { .start span { font-size: 9px; } }
+.vu-scale .m18 { left: 70%; }
+.vu-scale .m6 { left: 90%; }
