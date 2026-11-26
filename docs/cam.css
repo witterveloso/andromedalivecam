@@ -538,3 +538,9 @@ body[data-tally="program"] #elapsed { border-color: var(--pgm); color: #ffd0d6; 
 @media (orientation: landscape) { .start span { font-size: 9px; } }
 .vu-scale .m18 { left: 70%; }
 .vu-scale .m6 { left: 90%; }
+
+/* Tela no ar limpa (0.30.1): depois de 8 s sem toque, só imagem, tally, ajustes, medidor e timecode. Tocar traz tudo de volta. */
+.chip-btn, .rotate-hint, .telemetry { transition: opacity .4s; }
+body[data-clean="on"] .chip-btn, body[data-clean="on"] .rotate-hint { opacity: 0; visibility: hidden; transition: opacity .4s, visibility 0s .4s; }
+body[data-clean="on"] .telemetry { opacity: .55; }
+body[data-clean="on"] .status:not([data-kind="error"]):not([data-kind="warn"]) { display: none; }
