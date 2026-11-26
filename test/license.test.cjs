@@ -38,3 +38,24 @@ test('this computer: licensing is off without a public key and enforced once one
   }finally{bridge.shutdown()}
  }finally{try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch{/* Windows may still lock a file; never hide the test's own result */}}
 });
+
+test('licença presa ao computador: vale só no código para o qual foi emitida; o código vem do próprio sistema', () => {
+  const { issue, verify, createLicense, machineCode } = require('../license.cjs');
+  const { publicKey, privateKey } = require('node:crypto').generateKeyPairSync('ed25519');
+  const pub = publicKey.export({ type: 'spki', format: 'pem' }), priv = privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const token = issue(priv, { plan: 'anual', customer: 'Cliente', device: '71ef-5cea-7cbe-38ae' });
+  assert.equal(verify(pub, token, Date.now(), '71EF-5CEA-7CBE-38AE').valid, true, 'no computador certo');
+  const other = verify(pub, token, Date.now(), 'AAAA-BBBB-CCCC-DDDD'); assert.equal(other.valid, false); assert.equal(other.otherDevice, true);
+  assert.match(other.reason, /outro computador.*AAAA-BBBB-CCCC-DDDD/);
+  assert.throws(() => issue(priv, { plan: 'anual', customer: 'C', device: 'xyz' }), /Código do computador inválido/);
+  // o mesmo licenca.txt copiado para outro computador não ativa
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lic-'));
+  fs.writeFileSync(path.join(dir, 'pub.pem'), pub); fs.writeFileSync(path.join(dir, 'licenca.txt'), token);
+  assert.equal(createLicense({ publicKeyFile: path.join(dir, 'pub.pem'), tokenFile: path.join(dir, 'licenca.txt'), device: '71EF-5CEA-7CBE-38AE' }).status().valid, true);
+  const copied = createLicense({ publicKeyFile: path.join(dir, 'pub.pem'), tokenFile: path.join(dir, 'licenca.txt'), device: '1111-2222-3333-4444' }).status();
+  assert.equal(copied.valid, false); assert.equal(copied.device, '1111-2222-3333-4444', 'a tela mostra o código deste computador para pedir a licença');
+  // impressão digital estável e no formato certo
+  const code = machineCode({ platform: 'linux', read: () => 'abc123\n' }); assert.match(code, /^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/); assert.equal(code, machineCode({ platform: 'linux', read: () => 'ABC123' }));
+  assert.equal(machineCode({ platform: 'win32', exec: () => '\r\n    MachineGuid    REG_SZ    9f1c-77aa\r\n' }), machineCode({ platform: 'win32', exec: () => 'MachineGuid REG_SZ 9F1C-77AA' }));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

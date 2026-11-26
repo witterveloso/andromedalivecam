@@ -8,7 +8,10 @@
 const { app, BrowserWindow, Menu, dialog, powerSaveBlocker, session, shell, screen } = require('electron');
 const fs = require('node:fs'), path = require('node:path');
 
-const PORT = 3180, ORIGIN = 'http://localhost:' + PORT;
+// Porta da mesa: 3180. Se outro programa deste computador já usa a 3180, a mesa abre na seguinte livre (3190, 3200…),
+// em vez de não abrir. (O próprio Andrômeda Live aberto duas vezes é barrado antes, pela instância única.)
+const PORTS = [3180, 3190, 3200, 3210, 3220];
+let PORT = PORTS[0], ORIGIN = 'http://localhost:' + PORT;
 const smoke = (process.argv.find(a => a.startsWith('--smoke-test=')) || '').slice('--smoke-test='.length);
 
 // Mesa de transmissão: nada de economia de energia no navegador embutido.
@@ -16,6 +19,22 @@ for (const flag of ['disable-renderer-backgrounding', 'disable-background-timer-
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 if (!smoke && !app.requestSingleInstanceLock()) app.quit();
+
+// Placa de vídeo problemática (driver antigo, placa sem suporte): se o processo da placa cai duas vezes, o programa reabre
+// sem aceleração por 3 dias, em vez de ficar com a tela preta ou fechando. Depois disso tenta de novo com a placa.
+const gpuFlag = () => path.join(app.getPath('userData'), 'sem-aceleracao.json');
+let gpuOff = null;
+try { const saved = JSON.parse(fs.readFileSync(gpuFlag(), 'utf8')); if (Date.now() - saved.at < 3 * 86400000) gpuOff = saved; } catch { /* com aceleração */ }
+if (process.argv.includes('--sem-aceleracao')) gpuOff = gpuOff || { manual: true }; // modo de segurança, pela linha de comando
+if (gpuOff) app.disableHardwareAcceleration();
+let gpuCrashes = 0;
+app.on('child-process-gone', (_e, details) => {
+  if (details.type !== 'GPU' || details.reason === 'clean-exit' || smoke || gpuOff) return;
+  if (++gpuCrashes < 2) return;
+  try { fs.writeFileSync(gpuFlag(), JSON.stringify({ at: Date.now(), reason: details.reason, exitCode: details.exitCode })); } catch { /* sem onde gravar */ }
+  bridge?.audit?.warn('servico', 'placa-de-video', 'A placa de vídeo parou duas vezes (' + details.reason + '): reabrindo sem aceleração por 3 dias. Atualize o driver da placa de vídeo.');
+  closeGuard.confirmNow?.(); app.relaunch(); app.exit(0);
+});
 
 let win = null, bridge = null, closing = false;
 const { createCloseGuard } = require('./closeguard.cjs');
@@ -56,16 +75,46 @@ async function startService() {
   process.env.ANDROMEDA_LICENSE_FILE ||= path.join(data, 'licenca.txt');
   process.env.ANDROMEDA_DATA_DIR ||= data;
   loadCloudConfig(data);
+  // Proteção: no programa instalado, a mesa e seus arquivos só são entregues à janela do próprio Andrômeda Live (uma chave
+  // nova a cada abertura, posta pelo programa em cada pedido). Um navegador comum em http://localhost recebe "acesso negado".
+  if (app.isPackaged && !process.env.ANDROMEDA_DESK_KEY) process.env.ANDROMEDA_DESK_KEY = require('node:crypto').randomBytes(24).toString('hex');
+  if (process.env.ANDROMEDA_DESK_KEY) session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://localhost/*', 'http://127.0.0.1/*', 'ws://localhost/*', 'ws://127.0.0.1/*'] }, (details, callback) => {
+    details.requestHeaders['X-Andromeda-Desk'] = process.env.ANDROMEDA_DESK_KEY; callback({ requestHeaders: details.requestHeaders });
+  });
   const { createBridge } = require('../server.cjs');
-  const candidate = createBridge({ port: PORT, camPort: 3185 });
-  const busy = message => e => { if (e.code === 'EADDRINUSE') fatal('Andrômeda Live já está aberto', message); else fatal('Não foi possível iniciar o serviço', e.message); };
-  candidate.cameraHub.gateway.on('error', busy('A porta 3185 (convites das câmeras) está em uso. Feche a outra janela do Andrômeda Live ou o INICIAR.bat e abra de novo.'));
-  const started = await new Promise((resolve, reject) => {
-    candidate.server.once('listening', () => resolve(true));
-    candidate.server.once('error', reject);
-    candidate.listen();
-  }).catch(busy('A porta 3180 está em uso. Feche a outra janela do Andrômeda Live ou o INICIAR.bat e abra de novo.'));
-  if (started) { bridge = candidate; await candidate.ready(); }
+  for (const port of PORTS) {
+    const candidate = createBridge({ port, camPort: port + 5 });
+    // A porta dos convites por gateway (camPort) só é usada no modo gateway: ocupada, a mesa abre assim mesmo e avisa.
+    candidate.cameraHub.gateway.on('error', e => candidate.audit?.warn('servico', 'porta-gateway', 'A porta ' + (port + 5) + ' (convites por gateway próprio) está em uso por outro programa: ' + e.code + '. Os convites pela internet e pela rede local funcionam normalmente.'));
+    const result = await new Promise(resolve => {
+      candidate.server.once('listening', () => resolve('ok'));
+      candidate.server.once('error', e => resolve(e.code === 'EADDRINUSE' ? 'busy' : e));
+      candidate.listen();
+    });
+    if (result === 'ok') {
+      PORT = port; ORIGIN = 'http://localhost:' + port; bridge = candidate; await candidate.ready();
+      if (port !== PORTS[0]) candidate.audit?.warn('servico', 'porta-alternativa', 'A porta ' + PORTS[0] + ' está em uso por outro programa deste computador: a mesa abriu na porta ' + port + '.');
+      reportMachine(candidate);
+      return;
+    }
+    candidate.shutdown?.();
+    if (result !== 'busy') { fatal('Não foi possível iniciar o serviço', result.message || String(result)); return; }
+  }
+  fatal('Portas da mesa em uso', 'As portas ' + PORTS.join(', ') + ' estão em uso por outros programas. Feche o INICIAR.bat ou o outro programa e abra o Andrômeda Live de novo.');
+}
+
+// Ficha do computador no Diagnóstico: o que varia de máquina para máquina e explica a maioria dos problemas.
+async function reportMachine(b) {
+  try {
+    const os = require('node:os'), gpu = await app.getGPUInfo('basic').catch(() => ({})), feat = app.getGPUFeatureStatus();
+    const device = (gpu.gpuDevice || []).find(d => d.active) || (gpu.gpuDevice || [])[0] || {};
+    const ram = Math.round(os.totalmem() / 1073741824);
+    b.audit?.info('servico', 'computador', 'Computador: ' + os.cpus()[0]?.model?.trim() + ' · ' + os.cpus().length + ' núcleos · ' + ram + ' GB · ' + os.version?.() + ' ' + os.arch() + (gpuOff ? ' · SEM aceleração de vídeo' : ''),
+      { versao: app.getVersion(), sistema: os.version?.() + ' ' + os.release(), arquitetura: os.arch(), memoriaGB: ram, nucleos: os.cpus().length, porta: PORT, aceleracao: gpuOff ? 'desligada' : 'ligada',
+        placa: device.vendorId ? { fabricante: '0x' + device.vendorId.toString(16), modelo: '0x' + device.deviceId.toString(16), driver: device.driverVersion } : null,
+        codificacaoDeVideo: feat.video_encode, decodificacaoDeVideo: feat.video_decode, webgl: feat.webgl2, pastaDeDados: app.getPath('userData') });
+    if (ram < 8) b.audit?.warn('servico', 'pouca-memoria', 'Este computador tem ' + ram + ' GB de memória: para 1080p30 com câmeras, o recomendado é 8 GB ou mais. Feche outros programas durante a live.');
+  } catch { /* ficha opcional */ }
 }
 
 function allowMedia() {
@@ -79,7 +128,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1600, height: 960, minWidth: 1100, minHeight: 700, show: false,
     title: 'Andrômeda Live', backgroundColor: '#060817', icon: path.join(__dirname, 'build', 'icon.png'),
-    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true, spellcheck: false },
+    webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true, spellcheck: false, devTools: !app.isPackaged }, // instalado: sem console de desenvolvedor
   });
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
 
@@ -118,7 +167,7 @@ function createWindow() {
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     // F1–F12 chegam à mesa (atalhos do Andrômeda Live); F11 sem função na mesa alterna a tela cheia pela própria página.
-    if (input.control && input.shift && input.key.toLowerCase() === 'i') { contents.toggleDevTools(); event.preventDefault(); }
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') { if (!app.isPackaged) contents.toggleDevTools(); event.preventDefault(); }
     else if (input.control && input.key.toLowerCase() === 'r' && !input.shift) event.preventDefault(); // sem recarregar a mesa por engano no ar
   });
   win.on('close', event => closeGuard.handleClose(event)); // pergunta antes de fechar (toque sem querer no X)
@@ -142,7 +191,7 @@ async function checkPage() {
     })()`);
     const ok = result.cells === 10 && result.broadcast && result.mosaic && result.ffmpegReady && result.mediaRecorder && result.tabs.includes('Transmissão');
     try { fs.writeFileSync(smoke.replace(/\.json$/, '') + '.png', (await win.webContents.capturePage()).toPNG()); } catch { /* captura opcional */ }
-    report({ ok, ...result, ffmpeg: require('../encoder.cjs').findFFmpeg(), cloudGateway: process.env.ANDROMEDA_CLOUD_URL || null, logDir: process.env.ANDROMEDA_LOG_DIR, platform: process.platform + '-' + process.arch, electron: process.versions.electron });
+    report({ ok, ...result, porta: PORT, aceleracao: gpuOff ? 'desligada' : 'ligada', ffmpeg: require('../encoder.cjs').findFFmpeg(), cloudGateway: process.env.ANDROMEDA_CLOUD_URL || null, logDir: process.env.ANDROMEDA_LOG_DIR, platform: process.platform + '-' + process.arch, electron: process.versions.electron });
   } catch (e) { report({ ok: false, error: e.message }); }
 }
 

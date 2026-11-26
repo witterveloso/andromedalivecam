@@ -1,6 +1,6 @@
 {
   "name": "andromeda-live",
-  "version": "0.30.2",
+  "version": "0.31.0",
   "private": true,
   "description": "Mesa de corte ao vivo com câmeras por convite (WebRTC), entradas Blackmagic RTMP, mosaico, transmissão multiplataforma e gravação",
   "engines": {
@@ -29,12 +29,13 @@
   "devDependencies": {
     "electron": "44.9.3",
     "electron-builder": "26.18.0",
-    "jsdom": "30.1.3"
+    "jsdom": "30.1.3",
+    "terser": "5.36.0"
   },
   "build": {
     "appId": "live.andromeda.desk",
     "productName": "Andromeda Live",
-    "copyright": "Andrômeda Live",
+    "copyright": "© 2026 Andrômeda Live. Todos os direitos reservados.",
     "directories": {
       "output": "dist",
       "buildResources": "desktop/build"
@@ -84,7 +85,8 @@
       "uninstallerSidebar": "desktop/build/uninstallerSidebar.bmp",
       "installerHeader": "desktop/build/installerHeader.bmp",
       "uninstallerIcon": "desktop/build/icon.ico",
-      "artifactName": "Andromeda-Live-Setup-${version}.${ext}"
+      "artifactName": "Andromeda-Live-Setup-${version}.${ext}",
+      "license": "desktop/build/eula.txt"
     },
     "linux": {
       "target": [
@@ -92,6 +94,16 @@
       ],
       "icon": "desktop/build/icon.png",
       "category": "AudioVideo"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
     }
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE.txt"
 }

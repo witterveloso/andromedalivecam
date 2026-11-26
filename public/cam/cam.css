@@ -547,3 +547,33 @@ body[data-clean="on"] .status:not([data-kind="error"]):not([data-kind="warn"]) {
 /* Rótulo do disco (0.30.2): quebra só entre palavras ("ATIVAR / CÂMERA"), nunca no meio, e sempre dentro do círculo. */
 .start span { white-space: normal; word-break: normal; overflow-wrap: normal; hyphens: none; text-wrap: balance; padding: 0 8px; overflow: hidden; line-height: 1.15; font-size: 11px; letter-spacing: .03em; }
 @media (orientation: landscape) { .start span { padding: 0 6px; font-size: 9.5px; letter-spacing: .01em; } }
+
+/* ============================================================
+   Visor limpo (0.31.1): imagem sem máscara e dados de transmissão no rodapé.
+   - Sem véu sobre a imagem: sai o brilho vermelho interno da moldura de tally e os degradês escuros do topo e do rodapé.
+     O tally continua como borda vermelha sólida e faixa no topo. A legibilidade vem do fundo de cada chip e de sombra no texto.
+   - Os dados de transmissão (resolução, envio, Mbps, enlace, bateria, estabilização) ficam sempre na última linha, colados
+     na base da imagem; aviso e botão de retorno ficam acima deles. Na tela limpa os dados continuam 100% legíveis.
+   ============================================================ */
+body[data-tally="program"] .frame { box-shadow: inset 0 0 0 5px var(--pgm); }
+body[data-tally="preview"] .frame { box-shadow: inset 0 0 0 4px var(--pvw); }
+body[data-tally="program"] .top::before { box-shadow: none; }
+.top, .bottom { background: none; }
+.top { text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 8px rgba(0, 0, 0, .6); }
+.param-value, .param-label { text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 8px rgba(0, 0, 0, .6); }
+.tally[data-state="program"] { box-shadow: none; }
+
+.hud .status { order: 1; }
+.hud #notice { order: 2; }
+.hud .chip-btn { order: 3; }
+.hud .telemetry { order: 9; }
+.telemetry { gap: 4px; }
+.telemetry span { padding: 5px 7px; font-size: 10.5px; background: rgba(0, 0, 0, .78); border-color: rgba(255, 255, 255, .14); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body[data-clean="on"] .telemetry { opacity: 1; }
+/* Na tela limpa o botão de retorno some de verdade (antes ficava invisível ocupando lugar e empurrava os dados para cima). */
+body[data-clean="on"] .chip-btn { display: none; }
+
+@media (orientation: landscape) {
+  .hud { background: none; padding-top: 6px; padding-bottom: calc(8px + var(--safe-b)); }
+  .hud .telemetry { flex: 0 1 100%; }
+}

@@ -1,5 +1,33 @@
 # Andrômeda Live 0.30 — Andrômeda Cam como câmera de transmissão
 
+## 0.30.3 — instalador pronto para qualquer computador
+- **Instala sem administrador.** O instalador é por usuário: instala na pasta do próprio usuário, sem pedir senha de administrador.
+  - O CI agora instala de verdade, em silêncio e como usuário comum, num Windows limpo, e abre o programa instalado.
+- **Computador sem o codificador de vídeo do navegador.** Isso acontece no Windows "N" sem o Media Feature Pack, com driver de vídeo antigo ou com a aceleração desligada.
+  - **Antes:** a mesa se recusava a abrir a live ("Saída dedicada indisponível").
+  - **Agora:** a saída continua **1080p a 30 fps**, codificada pelo FFmpeg. Ele usa a placa de vídeo (NVENC, Quick Sync ou AMF) quando existe; senão, o processador.
+  - Fica registrado no Diagnóstico (`motor-plano-b`).
+  - **Ensaio no Electron, simulando esse computador:** a plataforma recebeu 1920×1080, 30 fps, H.264 High, AAC 48 kHz estéreo, quadro-chave a cada 2 s.
+- **Placa de vídeo problemática.** Se a placa de vídeo parar duas vezes (driver antigo, placa sem suporte), o programa reabre sozinho sem aceleração por 3 dias, em vez de ficar com a tela preta ou fechando.
+  - Para forçar o modo de segurança: abra com `--sem-aceleracao`.
+- **Porta 3180 ocupada por outro programa.** Antes, a mesa não abria. Agora ela abre na porta seguinte livre (3190, 3200…) e avisa no Diagnóstico.
+  - A porta dos convites por gateway ocupada também não impede mais a mesa de abrir.
+- **Ficha do computador no Diagnóstico.** Ao abrir, a mesa registra:
+  - processador, núcleos, memória, versão do Windows e arquitetura;
+  - placa de vídeo e driver;
+  - se há codificação de vídeo por hardware;
+  - a porta usada.
+  - Com menos de 8 GB de memória, avisa que 1080p30 com câmeras fica no limite.
+
+### Primeira instalação num computador novo (Windows)
+1. **Aviso do SmartScreen** ("O Windows protegeu o computador"): clique em **Mais informações → Executar assim mesmo**. O instalador ainda não tem assinatura digital; ela exige a compra de um certificado de assinatura de código.
+2. **Aviso do firewall:** clique em **Permitir**. Se a rede for "Pública" e as câmeras não chegarem, use **Convites → Rede móvel → Liberar no firewall do Windows**.
+
+### Provas (CI no Windows e ensaio local)
+- **Instalação silenciosa:** como usuário comum, com a porta 3180 já ocupada por outro programa, o programa instalado abriu na 3190 e a mesa carregou inteira.
+- **Novo trabalho no CI, "Computador sem codificador do navegador 1080p30 (Windows)":** live completa pelo plano B, conferida na saída.
+- **Ensaio local:** com a aceleração desligada e a 3180 ocupada, a mesa abriu na 3190.
+
 ## 0.30.2 — qualquer rede, qualquer computador: Wi-Fi, cabo, troca de rede e firewall
 - **A mesa reconhece a rede sozinha.**
   - **Antes:** a retransmissão das câmeras pegava o primeiro endereço que parecesse de rede local e nunca mais o trocava. Isso falhava em três casos:
