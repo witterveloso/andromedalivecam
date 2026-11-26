@@ -74,6 +74,8 @@ function createRelay({ hub, brokers = DEFAULT_BROKERS, onEvent = () => {}, WebSo
   return {
     watch, unwatch,
     status() { let up = 0, total = 0; for (const e of channels.values()) { up = Math.max(up, e.channel.connected()); total = e.channel.brokers.length || total; } return { invites: channels.size, brokersUp: up, brokers: total || brokers.length }; },
+    // A rede da mesa mudou: reconecta todos os pontos de encontro já e resolve quando pelo menos um voltou (até 8 s).
+    async reconnect() { const list = [...channels.values()].map(e => e.channel); for (const c of list) c.reconnect(); await Promise.all(list.map(c => c.whenConnected(8000))); return list.length; },
     close() { clearInterval(sweep); for (const key of [...channels.keys()]) unwatch(key, true); },
   };
 }

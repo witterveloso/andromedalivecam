@@ -17,7 +17,7 @@
  *  - off: só STUN (funciona no Wi-Fi e na mesma rede; costuma falhar no 4G/5G).
  */
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
-const { createTurnServer, credentials, lanAddress } = require('./andromeda-turn.cjs');
+const { createTurnServer, credentials, lanAddress, localAddresses, routeAddress, isCgnatIp, isLanIp } = require('./andromeda-turn.cjs');
 const upnp = require('./upnp.cjs');
 
 // Sem STUN de terceiros: a própria retransmissão Andrômeda responde STUN.
@@ -35,7 +35,7 @@ function normalize(iceServers) {
 }
 const hasRelay = servers => servers.some(s => s.urls.some(u => /^turns?:/.test(u)));
 
-function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, onEvent = () => {}, port = Number(process.env.ANDROMEDA_TURN_PORT || 3478), openPorts = upnp.openPorts, closePorts = upnp.closePorts, lan = lanAddress,
+function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, onEvent = () => {}, port = Number(process.env.ANDROMEDA_TURN_PORT || 3478), openPorts = upnp.openPorts, closePorts = upnp.closePorts, lan = null, watchMs = 10000,
   network = process.env.ANDROMEDA_TURN_URLS && process.env.ANDROMEDA_TURN_SECRET ? { urls: cleanUrls(process.env.ANDROMEDA_TURN_URLS.split(',')), secret: process.env.ANDROMEDA_TURN_SECRET } : null } = {}) {
   // Servidor da Rede Andrômeda da empresa (mesa-cloud.env): soma-se à retransmissão desta mesa como reserva
   // (mesa atrás de CGNAT ou roteador sem UPnP). Credenciais temporárias geradas aqui com o segredo da rede.
@@ -50,7 +50,11 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
   // Segredo da retransmissão desta mesa: gerado uma vez, guardado só aqui (as câmeras recebem credenciais temporárias).
   let secret = ''; try { secret = JSON.parse(fs.readFileSync(file, 'utf8')).secret || ''; } catch { /* primeiro uso */ }
   if (!/^[0-9a-f]{64}$/.test(secret)) { secret = crypto.randomBytes(32).toString('hex'); try { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ ...config, secret }), { mode: 0o600 }); } catch { /* só nesta sessão */ } }
-  const own = { server: null, port: 0, lan: '', router: null, error: '' }; // Rede Andrômeda nesta mesa
+  const own = { server: null, port: 0, lan: '', lans: [], router: null, error: '' }; // Rede Andrômeda nesta mesa
+  // Endereços desta mesa, o da rota padrão primeiro (cabo ou Wi-Fi, o que estiver levando à internet). Refeito a cada
+  // 10 s: trocar do Wi-Fi para o cabo com o programa aberto não deixa as câmeras apontando para o endereço antigo.
+  const addresses = async () => lan ? [lan()] : [...new Set([await routeAddress(), ...localAddresses()].filter(Boolean))];
+  let watch = null;
   let relay = [], expires = 0, lastError = '', refreshing = null, timer = null;
 
   function validate(input) {
@@ -107,31 +111,57 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
   // Liga a Rede Andrômeda nesta mesa: servidor STUN/TURN próprio + porta aberta no roteador (UPnP).
   async function startOwn() {
     if (own.server) return;
-    own.lan = lan(); own.error = '';
+    own.lans = await addresses(); own.lan = own.lans[0] || '127.0.0.1'; own.error = '';
     for (const p of [port, port + 1, port + 2]) {
       try {
-        own.server = await createTurnServer({ secret, port: p, relayAddress: own.lan, allowPeer: ip => /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip), onEvent }).listen();
+        // Só entrega mídia para esta própria mesa (rede local ou os endereços deste computador): nunca vira retransmissor aberto.
+        own.server = await createTurnServer({ secret, port: p, relayAddress: () => own.lan, allowPeer: ip => /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip) || own.lans.includes(ip), onEvent }).listen();
         own.port = p; break;
       } catch (e) { own.error = 'porta ' + p + ' ocupada'; own.server = null; }
     }
     if (!own.server) return;
-    onEvent('info', 'rede-andromeda', 'Rede Andrômeda ativa nesta mesa (porta ' + own.port + ' UDP/TCP)');
-    // Abre a porta no roteador em segundo plano; a mesa funciona no Wi-Fi mesmo se o roteador recusar.
-    openPorts({ internalClient: own.lan, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).then(r => {
-      own.router = r;
-      onEvent(r.reachable ? 'info' : 'warn', 'rede-andromeda-roteador', r.reachable ? 'Porta ' + own.port + ' aberta no roteador; IP público ' + r.externalIP + ' (câmeras no 4G/5G chegam direto na mesa)'
-        : 'Câmeras no 4G/5G: ' + (r.error ? 'o roteador não abriu a porta (' + r.error + ')' : 'a internet desta mesa usa CGNAT (' + r.externalIP + ')') + '. Use o servidor da Rede Andrômeda ou encaminhe a porta ' + own.port + ' UDP/TCP para ' + own.lan + '.');
-    }).catch(() => {});
+    onEvent('info', 'rede-andromeda', 'Rede Andrômeda ativa nesta mesa (porta ' + own.port + ' UDP/TCP) · ' + describeLan());
+    probeRouter();
+    clearInterval(watch); watch = setInterval(() => recheck().catch(() => {}), watchMs); watch.unref?.();
+  }
+  const describeLan = () => own.lan + (isLanIp(own.lan) ? ' (rede local)' : isCgnatIp(own.lan) ? ' (ligado direto no modem, endereço compartilhado da operadora)' : ' (ligado direto na internet)');
+  // Como o celular de fora chega a esta mesa:
+  //  - computador ligado direto no modem com IP público: chega direto, sem roteador no meio (só o firewall do Windows decide);
+  //  - computador ligado direto no modem com IP de CGNAT: de fora não chega; só o servidor da Rede Andrômeda resolve;
+  //  - computador atrás de roteador: o roteador precisa abrir a porta (UPnP), como antes.
+  function probeRouter(changed = false) {
+    const lanIp = own.lan, done = r => {
+      if (own.lan !== lanIp || !own.server) return; own.router = r;
+      // Só depois de saber como o celular de fora chega (porta aberta, IP público) é que as câmeras são chamadas a reconectar.
+      if (changed) setTimeout(() => onEvent('info', 'rede-pronta', 'Rede nova pronta: ' + describeLan() + (r.reachable ? ' · 4G/5G alcança a mesa' : ' · 4G/5G só pelo servidor da Rede Andrômeda')), 0);
+      onEvent(r.reachable ? 'info' : 'warn', 'rede-andromeda-roteador', r.reachable
+        ? (r.direct ? 'Computador ligado direto na internet (IP público ' + r.externalIP + '): câmeras no 4G/5G chegam direto na mesa. Se o Windows perguntar, permita o Andrômeda Live também em redes públicas.'
+          : 'Porta ' + own.port + ' aberta no roteador; IP público ' + r.externalIP + ' (câmeras no 4G/5G chegam direto na mesa)')
+        : 'Câmeras no 4G/5G: ' + (r.direct ? 'este computador está ligado direto no modem com endereço compartilhado da operadora (CGNAT ' + r.externalIP + '); de fora não há caminho' : r.error ? 'o roteador não abriu a porta (' + r.error + ')' : 'a internet desta mesa usa CGNAT (' + r.externalIP + ')') + '. Use o servidor da Rede Andrômeda' + (r.direct ? '' : ' ou encaminhe a porta ' + own.port + ' UDP/TCP para ' + own.lan) + '.');
+    };
+    if (!isLanIp(lanIp) && lanIp !== '127.0.0.1') { const cg = isCgnatIp(lanIp); done({ ok: !cg, reachable: !cg, direct: true, externalIP: lanIp, mapped: [], error: cg ? 'CGNAT' : '' }); return; }
+    openPorts({ internalClient: lanIp, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).then(done).catch(e => done({ ok: false, reachable: false, error: e.message, mapped: [] }));
+  }
+  async function recheck() {
+    if (!own.server) return;
+    const now = await addresses(); if (!now.length || (now[0] === own.lan && now.join() === own.lans.join())) return;
+    const before = own.lan; own.lans = now; own.lan = now[0];
+    if (before !== own.lan) {
+      onEvent('info', 'rede-mudou', 'A rede deste computador mudou: ' + before + ' → ' + describeLan() + '. As câmeras novas e as que reconectarem já usam o endereço novo.');
+      if (own.router?.control) closePorts({ control: own.router.control, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {});
+      own.router = null; probeRouter(true);
+    }
   }
   function ownServers() {
     if (!own.server) return [];
     const c = credentials(secret, { ttl: 24 * 3600, id: 'camera' }), hosts = [];
     if (own.router?.reachable && own.router.externalIP) hosts.push(own.router.externalIP);
-    hosts.push(own.lan);
-    return [{ urls: hosts.map(h => 'stun:' + h + ':' + own.port) },
-      { urls: hosts.flatMap(h => ['turn:' + h + ':' + own.port + '?transport=udp', 'turn:' + h + ':' + own.port + '?transport=tcp']), username: c.username, credential: c.credential }];
+    hosts.push(...own.lans);
+    const uniq = [...new Set(hosts)];
+    return [{ urls: uniq.map(h => 'stun:' + h + ':' + own.port) },
+      { urls: uniq.flatMap(h => ['turn:' + h + ':' + own.port + '?transport=udp', 'turn:' + h + ':' + own.port + '?transport=tcp']), username: c.username, credential: c.credential }];
   }
-  function stopOwn() { own.server?.close(); own.server = null; if (own.router?.control) closePorts({ control: own.router.control, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {}); own.router = null; }
+  function stopOwn() { clearInterval(watch); watch = null; own.server?.close(); own.server = null; if (own.router?.control) closePorts({ control: own.router.control, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {}); own.router = null; }
   function schedule() {
     clearInterval(timer); timer = null;
     if (config.provider === 'cloudflare') { timer = setInterval(() => refresh(), REFRESH_MS); timer.unref?.(); }
@@ -148,7 +178,7 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     },
     status() {
       if (config.provider === 'andromeda') return { provider: 'andromeda', ready: !!own.server || !!network, network: network ? network.urls : null, error: own.server ? '' : (own.error || lastError), port: own.port, lan: own.lan,
-        router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null, stats: own.server?.stats() || null };
+        lans: own.lans, router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, direct: !!own.router.direct, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null, stats: own.server?.stats() || null };
       return { provider: config.provider, ready: hasRelay(relay), error: lastError, expires: Number.isFinite(expires) && expires ? new Date(expires).toISOString() : null,
         keyId: config.provider === 'cloudflare' ? config.keyId : undefined, hasToken: config.provider === 'cloudflare' ? !!config.token : undefined,
         urls: config.provider === 'custom' ? config.urls : config.provider === 'cloudflare' ? relay.flatMap(s => s.urls).filter(u => /^turns?:/.test(u)) : [],

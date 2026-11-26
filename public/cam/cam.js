@@ -579,6 +579,9 @@ document.addEventListener('visibilitychange', () => {
   else if (cam.running && !cam.wake) keepAwake();
 });
 window.addEventListener('pagehide', stop);
+// A rede do celular voltou ou mudou (Wi-Fi ↔ 5G): reconecta o ponto de encontro já, sem esperar a conexão velha cair.
+window.addEventListener('online', () => { if (cam.running) cam.channel?.reconnect?.(); });
+navigator.connection?.addEventListener?.('change', () => { if (cam.running && navigator.onLine) cam.channel?.reconnect?.(); });
 window.addEventListener('offline', () => { tally('offline'); ptt(false); say('Sem rede. Aguardando reconexão.', 'warn'); cam.ws?.close(); });
 
 /* ---------- telemetria ---------- */

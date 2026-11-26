@@ -84,15 +84,24 @@
       this.ws = ws; ws.binaryType = 'arraybuffer'; const parser = new mqtt.Parser();
       ws.onopen = () => ws.send(mqtt.connect('alv-' + randomHex(8)));
       ws.onmessage = event => {
+        this.lastRx = Date.now();
         for (const p of parser.push(new Uint8Array(event.data))) {
           // CONNACK: conectado; SUBACK: inscrito no tópico, pronto para conversar.
-          if (p.type === 2) { if (p.body[1] !== 0) { ws.close(); return; } this.linked = true; this.retry = 1000; for (const t of this.topics) ws.send(mqtt.subscribe(this.packetId++ & 0xffff || 1, t)); this.ping = setInterval(() => this.send(mqtt.pingreq()), 20000); this.ping.unref?.(); }
+          if (p.type === 2) { if (p.body[1] !== 0) { ws.close(); return; } this.linked = true; this.retry = 1000; for (const t of this.topics) ws.send(mqtt.subscribe(this.packetId++ & 0xffff || 1, t)); this.lastRx = Date.now();
+            // Conexão morta não avisa (troca de rede, Wi-Fi ↔ cabo ↔ 5G): sem nada recebido em 25 s, reconecta sozinho.
+            clearInterval(this.ping); this.ping = setInterval(() => { if (Date.now() - this.lastRx > 25000) this.reconnect(); else this.send(mqtt.pingreq()); }, 10000); this.ping.unref?.(); }
           else if (p.type === 9) { this.ready = true; this.onState?.(); }
           else if (p.type === 3) { const m = mqtt.readPublish(p); this.onMessage(m.topic, m.payload); }
         }
       };
       ws.onclose = () => { clearInterval(this.ping); const was = this.ready; this.linked = false; this.ready = false; if (was) this.onState?.(); this.schedule(); };
       ws.onerror = () => {};
+    }
+    // Reconecta já (rede mudou): descarta a conexão antiga sem esperar o fechamento educado, que numa rede morta não chega.
+    reconnect() {
+      if (this.closed) return; const ws = this.ws; clearInterval(this.ping); clearTimeout(this.timer);
+      if (ws) { ws.onclose = ws.onmessage = ws.onerror = ws.onopen = null; try { ws.terminate ? ws.terminate() : ws.close(); } catch { /* já fechado */ } }
+      const was = this.ready; this.linked = false; this.ready = false; if (was) this.onState?.(); this.retry = 1000; this.open();
     }
     schedule() { if (this.closed) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.open(), this.retry); this.timer.unref?.(); this.retry = Math.min(15000, this.retry * 2); }
     send(bytes) { if (this.linked && this.ws?.readyState === 1) { this.ws.send(bytes); return true; } return false; }
@@ -135,6 +144,7 @@
       const bytes = mqtt.publish(this.topic, await seal(this.key, { ...body, id: randomHex(8), from: this.role, t: Date.now() }));
       return this.brokers.reduce((n, b) => n + (b.ready && b.send(bytes) ? 1 : 0), 0);
     }
+    reconnect() { for (const b of this.brokers) b.reconnect(); }
     close() { this.closed = true; this.listeners.clear(); for (const b of this.brokers) b.close(); }
   }
 

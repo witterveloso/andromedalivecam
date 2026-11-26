@@ -118,3 +118,35 @@ test('mesa + servidor da empresa: retransmissão da mesa primeiro e a da Rede An
     assert(!urls.some(u => /google|cloudflare/.test(u)));
   } finally { turn.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('cabo, Wi-Fi e modem: a mesa usa a placa certa, reconhece o computador ligado direto no modem e acompanha a troca de rede', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-rede-cabo-')), events = []; let ip = '192.168.0.86', upnpCalls = 0;
+  const turn = createTurn({ dataDir: dir, port: 34850, lan: () => ip, watchMs: 50, onEvent: (l, c, m) => events.push(c + ': ' + m),
+    openPorts: async ({ internalClient }) => { upnpCalls++; return { ok: false, reachable: false, error: 'sem UPnP', internalClient }; }, closePorts: async () => {} });
+  const urls = () => turn.servers().flatMap(s => s.urls);
+  try {
+    await turn.start(); await new Promise(r => setTimeout(r, 30));
+    assert(urls().includes('turn:192.168.0.86:34850?transport=udp'), 'Wi-Fi: endereço da rede local');
+    // Cabo direto no modem com IP público: o celular no 5G chega direto, sem roteador nem UPnP.
+    ip = '187.45.10.20'; await new Promise(r => setTimeout(r, 200));
+    assert(urls().includes('turn:187.45.10.20:34850?transport=udp'), 'cabo: endereço novo sem reiniciar o programa');
+    assert(!urls().some(u => u.includes('192.168.0.86')), 'o endereço antigo sai da lista');
+    let st = turn.status(); assert.equal(st.router.direct, true); assert.equal(st.router.reachable, true, 'IP público direto = alcançável do 5G');
+    assert(events.some(e => e.startsWith('rede-mudou: ')), 'troca de rede registrada no Diagnóstico');
+    // Cabo direto no modem com CGNAT: avisa que de fora não há caminho.
+    ip = '100.92.73.153'; await new Promise(r => setTimeout(r, 200));
+    st = turn.status(); assert.equal(st.router.direct, true); assert.equal(st.router.reachable, false);
+    assert(events.some(e => /CGNAT 100\.92\.73\.153/.test(e)));
+    assert.equal(upnpCalls, 1, 'UPnP só faz sentido atrás de roteador');
+  } finally { turn.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('placas virtuais (Hyper-V/WSL, VirtualBox, VPN) ficam fora dos endereços entregues ao celular', () => {
+  const realOs = require('node:os'), saved = realOs.networkInterfaces;
+  realOs.networkInterfaces = () => ({ 'vEthernet (WSL)': [{ family: 'IPv4', address: '172.20.1.1', internal: false }], 'VirtualBox Host-Only Network': [{ family: 'IPv4', address: '192.168.56.1', internal: false }],
+    Ethernet: [{ family: 'IPv4', address: '192.168.0.86', internal: false }], 'Wi-Fi': [{ family: 'IPv4', address: '169.254.3.3', internal: false }], Loopback: [{ family: 'IPv4', address: '127.0.0.1', internal: true }] });
+  try {
+    const { localAddresses, lanAddress } = require('../andromeda-turn.cjs');
+    assert.deepEqual(localAddresses(), ['192.168.0.86']); assert.equal(lanAddress(), '192.168.0.86');
+  } finally { realOs.networkInterfaces = saved; }
+});

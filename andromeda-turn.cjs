@@ -104,9 +104,33 @@ function credentials(secret, { ttl = 24 * 3600, id = 'andromeda', now = Date.now
 
 /* ---------- endereços ---------- */
 const isPrivate = ip => /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip) || /^(::1$|f[cd]|fe80)/i.test(ip);
+// Placas virtuais (Hyper-V/WSL, VirtualBox, VMware, Docker, VPNs) não levam ao celular: ficam fora.
+const VIRTUAL = /vethernet|hyper-?v|virtualbox|vmware|vmnet|docker|wsl|loopback|tailscale|zerotier|hamachi|vpn|tap-|tun|bluetooth/i;
+// Todos os endereços IPv4 reais deste computador (cabo, Wi-Fi), inclusive públicos e de CGNAT quando o computador está
+// ligado direto no modem da operadora.
+function localAddresses() {
+  const out = [];
+  for (const [name, list] of Object.entries(os.networkInterfaces())) for (const n of list || []) {
+    if ((n.family !== 'IPv4' && n.family !== 4) || n.internal || n.address.startsWith('169.254.') || VIRTUAL.test(name)) continue;
+    out.push(n.address);
+  }
+  return [...new Set(out)];
+}
+// Endereço pelo qual este computador sai para a internet (a placa da rota padrão: cabo ou Wi-Fi). "connect" num socket
+// UDP só pergunta ao sistema qual placa usaria; nenhum pacote é enviado.
+function routeAddress() {
+  return new Promise(resolve => {
+    let sock; try { sock = dgram.createSocket('udp4'); } catch { resolve(null); return; }
+    const done = a => { try { sock.close(); } catch { /* fechado */ } resolve(a); };
+    sock.on('error', () => done(null));
+    try { sock.connect(9, '203.0.113.1', () => { let a = null; try { a = sock.address().address; } catch { /* sem rota */ } done(a && a !== '0.0.0.0' ? a : null); }); } catch { done(null); }
+  });
+}
+const isCgnatIp = ip => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+const isLanIp = ip => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
 function lanAddress() {
-  for (const list of Object.values(os.networkInterfaces())) for (const n of list || []) if (n.family === 'IPv4' && !n.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(n.address)) return n.address;
-  return '127.0.0.1';
+  const all = localAddresses();
+  return all.find(isLanIp) || all[0] || '127.0.0.1';
 }
 
 /**
@@ -122,7 +146,7 @@ function createTurnServer({ secret, realm = 'andromeda', port = 3478, bind = '0.
   const nonces = new Map(); // nonce -> expira
   const stats = { allocations: 0, bytesRelayed: 0, bindings: 0, refused: 0 };
   let udp = null, tcp = null;
-  const relayIp = () => relayAddress || lanAddress();
+  const relayIp = () => (typeof relayAddress === 'function' ? relayAddress() : relayAddress) || lanAddress();
 
   function newNonce() { const n = crypto.randomBytes(12).toString('hex'); nonces.set(n, clock() + 3600000); if (nonces.size > 5000) for (const [k, v] of nonces) if (v < clock()) nonces.delete(k); return n; }
   function userKey(username) {
@@ -265,4 +289,4 @@ function createTurnServer({ secret, realm = 'andromeda', port = 3478, bind = '0.
   };
 }
 
-module.exports = { createTurnServer, credentials, isPrivate, lanAddress, _internal: { parse, build, typeOf, methodOf, crc32, encodeXorAddress, xorAddress, checkIntegrity } };
+module.exports = { createTurnServer, credentials, isPrivate, lanAddress, localAddresses, routeAddress, isCgnatIp, isLanIp, _internal: { parse, build, typeOf, methodOf, crc32, encodeXorAddress, xorAddress, checkIntegrity } };

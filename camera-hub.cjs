@@ -36,6 +36,9 @@ function createCameraHub({sessionToken,clock=Date.now,iceServers=[],gatewayHandl
  gateway.on('upgrade',(req,socket,head)=>{if(req.url==='/desk'){deskUpgrade(req,socket,head);return}if(req.url!=='/signal'||!publicURL||(req.headers.origin&&req.headers.origin!==publicURL&&req.headers.origin!==page?.origin)){socket.destroy();return}wss.handleUpgrade(req,socket,head,ws=>{const timeout=setTimeout(()=>ws.close(4001,'Identifique a câmera'),5000);ws.once('message',raw=>{clearTimeout(timeout);try{const m=JSON.parse(raw);if(m.type!=='join')throw Error();connect(ws,'camera',m.key)}catch{ws.close(4001,'Convite inválido')}});ws.on('error',()=>{})})});
  gateway.on('error',e=>console.error('Gateway Andromeda Cam:',e.code));
  // join: conecta uma câmera que chegou por outro transporte (modo Internet); lookup: dados públicos do convite.
- return {state,configure,invite,revoke,deskUpgrade,gateway,heartbeat,join:(ws,key)=>connect(ws,'camera',key),lookup:key=>{const inv=invites.get(key);return inv&&inv.expires>=clock()?{name:inv.name,profile:inv.profile,slot:inv.slot,desk:!!desk}:null},keys:()=>[...invites.keys()],close(){clearInterval(timer);for(const ws of wss.clients)ws.terminate();wss.close();gateway.close()}};
+ // A rede da mesa mudou (Wi-Fi ↔ cabo): a mesa recebe a lista nova e cada câmera reconecta já pelo endereço novo,
+ // em vez de esperar a conexão antiga cair sozinha.
+ function renegotiate(){if(!desk)return 0;send(desk,{type:'ice',iceServers:ice()});let n=0;for(const [,c] of cameras){send(c.ws,{type:'negotiate',iceServers:ice()});n++}return n}
+ return {state,configure,invite,revoke,deskUpgrade,gateway,heartbeat,renegotiate,join:(ws,key)=>connect(ws,'camera',key),lookup:key=>{const inv=invites.get(key);return inv&&inv.expires>=clock()?{name:inv.name,profile:inv.profile,slot:inv.slot,desk:!!desk}:null},keys:()=>[...invites.keys()],close(){clearInterval(timer);for(const ws of wss.clients)ws.terminate();wss.close();gateway.close()}};
 }
 module.exports={createCameraHub};

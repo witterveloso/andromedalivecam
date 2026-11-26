@@ -544,3 +544,6 @@ body[data-tally="program"] #elapsed { border-color: var(--pgm); color: #ffd0d6; 
 body[data-clean="on"] .chip-btn, body[data-clean="on"] .rotate-hint { opacity: 0; visibility: hidden; transition: opacity .4s, visibility 0s .4s; }
 body[data-clean="on"] .telemetry { opacity: .55; }
 body[data-clean="on"] .status:not([data-kind="error"]):not([data-kind="warn"]) { display: none; }
+/* Rótulo do disco (0.30.2): quebra só entre palavras ("ATIVAR / CÂMERA"), nunca no meio, e sempre dentro do círculo. */
+.start span { white-space: normal; word-break: normal; overflow-wrap: normal; hyphens: none; text-wrap: balance; padding: 0 8px; overflow: hidden; line-height: 1.15; font-size: 11px; letter-spacing: .03em; }
+@media (orientation: landscape) { .start span { padding: 0 6px; font-size: 9.5px; letter-spacing: .01em; } }
