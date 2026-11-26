@@ -92,7 +92,7 @@
   box.innerHTML = '<summary><strong>Rede móvel (4G/5G)</strong><span id="turnState" class="turn-state">verificando…</span></summary>' +
     '<p class="link-note">No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado e a imagem não chega sem retransmissão. A <b>Rede Andrômeda</b> é a retransmissão própria do sistema (sem serviços de terceiros): roda dentro desta mesa, abre a porta no roteador sozinha e entrega ao celular uma credencial temporária junto com o convite.</p>' +
     '<label>Retransmissão<select id="turnProvider"><option value="andromeda">Rede Andrômeda nesta mesa (recomendado)</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada (só Wi-Fi / mesma rede)</option></select></label>' +
-    '<div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p><p class="link-note">Na primeira vez, o Windows pergunta se o <b>Andrômeda Live</b> pode receber conexões: clique em <b>Permitir</b> (redes privadas e públicas). Sem isso, o celular no 4G/5G não alcança a mesa.</p></div>' +
+    '<div class="turn-fw" hidden><p class="link-note" id="turnFirewall" role="status"></p><button type="button" id="fwFix">Liberar no firewall do Windows</button></div><div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p><p class="link-note">Na primeira vez, o Windows pergunta se o <b>Andrômeda Live</b> pode receber conexões: clique em <b>Permitir</b> (redes privadas e públicas). Sem isso, o celular no 4G/5G não alcança a mesa.</p></div>' +
     '<div class="turn-cf" hidden><input id="turnKeyId" hidden><input id="turnToken" hidden></div>' +
     '<div class="turn-own"><label>Endereços do servidor (um por linha)<textarea id="turnUrls" rows="2" spellcheck="false" placeholder="turn:rede.suaempresa.com.br:3478\nturn:rede.suaempresa.com.br:3478?transport=tcp"></textarea></label><label>Usuário<input id="turnUser" autocomplete="off" spellcheck="false"></label><label>Senha<input id="turnPass" type="password" autocomplete="off"></label></div>' +
     '<div class="turn-actions"><button type="button" id="turnSave">Salvar e testar</button><span id="turnMessage" class="link-note" role="status"></span></div>';
@@ -107,6 +107,8 @@
     state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : !s.ready ? 'com problema' : own ? (viaNet ? 'Rede Andrômeda · 4G/5G pelo servidor da empresa' : open5g ? 'Rede Andrômeda · 4G/5G pronto' : s.router ? 'Rede Andrômeda · só Wi-Fi (veja abaixo)' : 'Rede Andrômeda · abrindo a porta…') : s.provider === 'custom' ? 'ativa · servidor da Rede Andrômeda' : 'ativa · ' + s.provider;
     state.dataset.tone = s.provider === 'off' ? 'warn' : !s.ready ? 'error' : own && s.router && !open5g ? 'warn' : 'ok';
     if (own) q('#turnOwnInfo').textContent = !s.ready ? 'A retransmissão não iniciou: ' + (s.error || 'porta ocupada') + '.'
+      : s.router?.direct && s.router.reachable ? 'Funcionando: este computador está ligado direto na internet (IP público ' + s.router.externalIP + '). Celulares em 4G/5G mandam a imagem direto para esta mesa. Se o Windows perguntar, permita o Andrômeda Live também em redes públicas.'
+      : s.router?.direct ? 'Este computador está ligado direto no modem da operadora, com endereço compartilhado (CGNAT ' + s.router.externalIP + '). Assim, nenhum celular chega até a mesa, nem pelo Wi-Fi do roteador (são redes diferentes). Soluções: ligue o cabo do computador no mesmo roteador do Wi-Fi das câmeras, ou use o servidor da Rede Andrômeda.'
       : viaNet ? 'Funcionando: celulares em 4G/5G mandam a imagem pelo servidor da Rede Andrômeda da empresa (' + s.network.map(u => u.replace(/^turns?:|\?.*$/g, '')).filter((u, i, a) => a.indexOf(u) === i).join(', ') + '). No mesmo Wi-Fi, a imagem vai direto para esta mesa.'
       : open5g ? 'Funcionando: porta ' + s.port + ' (UDP e TCP) aberta no roteador ' + (s.router.mapped || []).join(', ') + ' · IP público ' + s.router.externalIP + '. Celulares em 4G/5G mandam a imagem direto para esta mesa.' + (s.stats?.active ? ' Câmeras retransmitidas agora: ' + s.stats.active + '.' : '')
       : s.router ? (s.router.externalIP && !s.router.reachable ? 'A internet deste computador usa endereço compartilhado da operadora (CGNAT: ' + s.router.externalIP + '): o 4G/5G não alcança a mesa por aqui.' : 'O roteador não abriu a porta automaticamente (' + (s.router.error || 'UPnP desligado') + ').') + ' Soluções: ative o UPnP no roteador, ou encaminhe a porta ' + s.port + ' UDP e TCP para ' + s.lan + ', ou use o Servidor da Rede Andrômeda. No Wi-Fi tudo funciona normalmente.'
@@ -122,7 +124,24 @@
     if (s.provider === 'off' && !box.dataset.opened) { box.open = true; box.dataset.opened = '1'; }
     paintForm();
   }
-  async function refresh() { try { const r = await fetch('/api/turn', { cache: 'no-store' }); if (r.ok) paint(await r.json()); else box.hidden = true; } catch { box.hidden = true; } }
+  async function refresh() { try { const r = await fetch('/api/turn', { cache: 'no-store' }); if (r.ok) paint(await r.json()); else box.hidden = true; } catch { box.hidden = true; } paintFirewall(); }
+  // Firewall do Windows: em computador novo (ou rede nova marcada como "Pública"), ele pode bloquear as câmeras sem aviso.
+  async function paintFirewall(st) {
+    try { st = st || await (await fetch('/api/firewall', { cache: 'no-store' })).json(); } catch { return; }
+    const wrap = q('.turn-fw'), note = q('#turnFirewall'), btn = q('#fwFix');
+    if (!st.supported) { wrap.hidden = true; return; }
+    wrap.hidden = false; note.textContent = st.message || ''; note.dataset.tone = st.allowed ? 'ok' : 'warn'; btn.hidden = !!st.allowed;
+    if (!st.allowed && !box.dataset.fwOpened) { box.open = true; box.dataset.fwOpened = '1'; }
+  }
+  q('#fwFix').onclick = async () => {
+    const btn = q('#fwFix'), note = q('#turnFirewall'); btn.disabled = true; note.textContent = 'Confirme no aviso do Windows (pede permissão de administrador uma vez)…';
+    try {
+      const session = liveTx.session || await (await fetch('/api/session')).json();
+      const out = await (await fetch('/api/firewall/fix', { method: 'POST', headers: { 'X-Andromeda-Token': session.token } })).json();
+      if (out.status) paintFirewall(out.status); if (!out.ok) note.textContent = out.error || 'Não foi possível liberar.'; else note.textContent = 'Liberado: as câmeras chegam à mesa em qualquer rede (Wi-Fi, cabo, pública ou privada).';
+      note.dataset.tone = out.ok ? 'ok' : 'warn';
+    } catch (e) { note.textContent = e.message; } finally { btn.disabled = false; }
+  };
   q('#turnSave').onclick = async () => {
     const button = q('#turnSave'); button.disabled = true; box.dataset.touched = '1'; q('#turnMessage').textContent = 'Testando…';
     try {
