@@ -33,7 +33,7 @@ jobs:
           PY
       - name: Proteger o código do app da câmera (compactado, sem comentários, aviso de direitos)
         run: |
-          for f in docs/cam.js docs/optics.js docs/relay.js docs/remoto.js; do
+          for f in docs/cam.js docs/optics.js docs/relay.js docs/remoto.js docs/ponto.js; do
             npx --yes terser@5.36.0 "$f" --ecma 2022 -c -m --comments false --preamble "/*! Andrômeda Cam © Andrômeda Live — todos os direitos reservados. Proibidos cópia e engenharia reversa. */" -o "$f"
           done
       - uses: actions/configure-pages@v5

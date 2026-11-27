@@ -472,13 +472,11 @@
         if (!check.ok && (check.fps || 0) >= 28.5) {
           window.andromedaLight = true; liveTx.notice = 'Computador no limite para ' + outRes + '30: a saída segue em ' + outRes + ' a 30 fps constantes, com mesa em modo leve. Para imagem mais fluida, feche programas pesados e use o carregador ligado.';
           log(liveTx.notice); window.andromedaAudit?.('warn', 'computador-no-limite', liveTx.notice, { fps: check.fps, fpsPGM: check.freshFps, composicao: check.composedFps });
-          // Gravar em 9:16 sem nenhum destino vertical obriga a mesa a montar e codificar uma segunda imagem (1080×1920) só para o
-          // arquivo: o dobro do trabalho. No limite, isso derrubava a live (diagnóstico real: mesa a 5 q/s, captura parada 10 s).
-          // A live e a gravação 16:9 continuam; o 9:16 da gravação fica para um computador com folga.
-          if (recordV && !vTargets.length && recordH) {
-            needV = false; recFormats = '16:9';
-            const note = 'Gravação 9:16 desligada nesta live: o computador está no limite e o 9:16 sozinho dobraria o trabalho. A transmissão e a gravação 16:9 continuam normalmente.';
-            log(note); window.andromedaAudit?.('warn', 'gravacao-vertical-desligada', note, { fpsPGM: check.freshFps }); liveTx.notice += ' ' + note;
+          // Gravação 16:9 e 9:16 ao mesmo tempo é escolha do operador: as duas continuam, mesmo com o computador no limite
+          // (antes o 9:16 era desligado sozinho, e a gravação vertical sumia sem o operador pedir). Só avisa.
+          if (recordV && recordH) {
+            const note = 'Gravando 16:9 e 9:16 ao mesmo tempo, como escolhido. Neste computador as duas imagens ocupam o processador no limite: feche programas pesados e deixe o carregador ligado.';
+            log(note); window.andromedaAudit?.('warn', 'gravacao-dupla-no-limite', note, { fpsPGM: check.freshFps }); liveTx.notice += ' ' + note;
           }
         } else if (!check.ok) throw Error((check.reason || 'O teste da saída dedicada falhou.') + ' O codificador deste computador não produziu ' + outRes + ' a 30 fps; a transmissão não foi aberta (regra: só 1080p ou 4K a 30 fps).');
         liveTx.outputResolution=outRes;

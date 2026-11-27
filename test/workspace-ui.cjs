@@ -65,12 +65,20 @@ for(const pf of ['srt','whip']){choose.value=pf;choose.dispatchEvent(new w.Event
  assert.match(q('.tx-compliance, #txCompliance')?.textContent||vm.runInContext('document.body.textContent',ctx),/SRT sem senha|em espera/);
  for(const c of [srt,wh])c.querySelector('.dest-remove').click();}
 console.log('PASS: per-destination start mode (on air / standby / off), SRT and WHIP fields');
+// GC com créditos programados: o crédito NO PONTO entra no AR; ao sair, o próximo fica no ponto. PONTO pronto nos Comandos.
+{const G=vm.runInContext('window.andromedaGcList',ctx);assert(G,'playlist do GC carregada');const panel=G.panel(()=>{});w.document.body.append(panel);
+ for(const [t,s] of [['Maria Silva','Apresentadora'],['João Souza','Repórter']]){panel.querySelector('.gcl-new-title').value=t;panel.querySelector('.gcl-new-sub').value=s;panel.querySelector('.gcl-add-btn').click()}
+ assert.equal(panel.querySelectorAll('.gcl-item').length,2);assert.equal(panel.querySelector('.gcl-item[data-state=cue] .gcl-title').value,'Maria Silva');
+ G.run();assert.equal(vm.runInContext('fx.live.layers[0].on && fx.live.layers[0].title',ctx),'Maria Silva','o crédito no ponto entrou no AR');assert.match(G.label(),/● Maria Silva/);
+ G.run();assert.equal(vm.runInContext('fx.live.layers[0].on',ctx),false);assert.equal(G.state.cue,1,'saiu do AR e o próximo ficou no ponto');assert.match(G.label(),/ponto 2\/2 · João Souza/);
+ panel.remove();const P=vm.runInContext('window.andromedaPonto',ctx);assert(P&&typeof P.toggle==='function'&&/toque para ativar/.test(P.label()),'PONTO pronto nos Comandos');}
+console.log('PASS: GC credits playlist (on cue → on air → next on cue) and the PONTO command');
 {const css=fs.readFileSync(root+'/workspace-custom.css','utf8');assert.match(css,/\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:sticky;top:calc\(var\(--topbar-h,56px\) \+ 12px\)/,'effects preview follows the page scroll');assert.match(css,/@media\(max-width:500px\)\{\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:static/,'stacked on phones');assert(w.document.documentElement.style.getPropertyValue('--topbar-h'),'top bar height measured for the sticky preview');console.log('PASS: effects preview stays in view while the settings scroll')}
 {const rd=vm.runInContext('window.andromedaRundown',ctx),cmd=vm.runInContext('window.andromedaCommands',ctx);
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);
 assert.equal(rd.formatClock(65),'01:05');assert.equal(rd.formatClock(3600),'1:00:00');assert.equal(rd.formatClock(0.2),'00:01','a running countdown shows 00:01 until it really reaches zero');
 // Comandos no lugar da seleção de fontes: o PREVIEW é escolhido no multiview.
-const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','logo','arte','countdown','pip','vinheta','black','vt','mosaic','trilha','tracking','marks','intercom','bars']);
+const cmds=[...q('[data-tool=bus] .cmd-grid').children].map(b=>b.dataset.cmd);assert.deepEqual(cmds,['gc0','logo','arte','countdown','pip','vinheta','black','vt','mosaic','trilha','tracking','marks','intercom','ponto','bars']);
 assert([...q('[data-tool=bus]').querySelectorAll('.bus-row')].every(r=>r.hidden),'PRV/PGM rows leave the panel');assert.equal(q('[data-tool=bus] .dock-handle').firstChild.textContent,'Comandos');
 // Botões personalizáveis: ordem, tamanho, por linha e largo; a barra de ajuste só aparece no Personalizar.
 {const grid=q('[data-tool=bus] .cmd-grid'),tools=q('[data-tool=bus] .cmd-tools');assert(tools&&tools.querySelector('input[type=range]')&&tools.querySelector('select'),'size bar and buttons-per-row in the commands panel');
@@ -160,7 +168,7 @@ assert(q('[data-tool=layers] #masterFader')&&q('[data-tool=layers] #masterFade')
 assert(q('[data-tool=cameras] .dock-handle .dock-tools .stage-tools'),'camera and mosaic tools in the Câmeras bar');
 q('.mv-cell').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));assert(q('#mediaDialog').open,'double click on a camera opens Fontes de câmera');q('#mediaDialog').close();
 // Ordem e visibilidade dos botões de comando.
-cmd.nudge('logo',-1);assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'logo','buttons can be reordered');cmd.setVisible('logo',false);assert.equal(q('[data-tool=bus] .cmd-grid').children.length,13,'and hidden');
+cmd.nudge('logo',-1);assert.equal(q('[data-tool=bus] .cmd-grid').children[0].dataset.cmd,'logo','buttons can be reordered');cmd.setVisible('logo',false);assert.equal(q('[data-tool=bus] .cmd-grid').children.length,14,'and hidden');
 console.log('PASS: commands panel (button styles, audio switches in MASTER, VT timeline seek, custom order, size bar, buttons per row, wide; vinheta LOOP; GC, logo, countdown on air, PiP, VT/vinheta to preview, BLACK F1, BARS F2), master audio with fade, shortcuts, ESC, camera bar, double click to camera sources')}
 {const sync=vm.runInContext('window.andromedaSync',ctx),pre=vm.runInContext('window.andromedaPreflightUI',ctx);
 assert(q('[data-tool=transport] .sync-card #syncCalibrate')&&q('[data-tool=transport] .sync-card #syncSlider'),'lip-sync calibration lives in the encoder panel');assert(q('[data-tool=transport] .pf-card #pfRun')&&q('#pfPreset'),'machine check lives in the encoder panel');

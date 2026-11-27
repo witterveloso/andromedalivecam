@@ -57,7 +57,8 @@
   keyPanel.hidden = true; // a janela do monitor do KEY 1 (PiP) não aparece mais na mesa; o comando PiP continua
 
   const COMMANDS = [
-    { id: 'gc0', name: () => 'GC', run: () => $('#fxGC0').click(), on: () => fx.live.layers[0]?.on, settings: () => openGC(0) },
+    // GC com créditos programados: toque põe no AR o crédito NO PONTO; dois cliques abrem a lista (editar e escolher o do ponto).
+    { id: 'gc0', name: () => 'GC', sub: () => window.andromedaGcList?.label() || '', run: () => window.andromedaGcList ? window.andromedaGcList.run() : $('#fxGC0').click(), on: () => fx.live.layers[0]?.on, settings: b => window.andromedaGcList ? openPop(b, 'GC · Créditos programados', window.andromedaGcList.panel(() => { closePop(); openGC(0); })) : openGC(0) },
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     // ARTE: arte (cartaz, aviso, patrocinador) por cima da imagem do AR, com fade de 2 s. Dois cliques: carregar e escolher as artes.
     { id: 'arte', name: () => 'ARTE', sub: () => window.andromedaArte?.label() || '', run: () => window.andromedaArte?.toggle(), on: () => !!window.andromedaArte?.isOn(), settings: b => openPop(b, 'ARTE', window.andromedaArte.panel()) },
@@ -76,6 +77,8 @@
     { id: 'marks', name: () => 'MARCAÇÕES', icon: () => 'marks', sub: () => window.andromedaMarks?.label() || '', run: () => window.andromedaMarks?.toggle(), on: () => false, prv: () => !!window.andromedaMarks?.isOpen(), settings: () => openCamCtl() },
     // INTERCOM: 1º toque ativa (pede o microfone); depois, cada toque abre ou fecha o microfone para as câmeras.
     { id: 'intercom', name: () => 'INTERCOM', icon: () => 'mic', sub: () => intercomState(), run: () => intercomToggle(), on: () => !!camDesk.talking, prv: () => !!camDesk.mic && !camDesk.talking, settings: () => openIntercom() },
+    // PONTO: a direção fala com apresentador e repórter por um caminho próprio (separado do intercom das câmeras). Toque liga/desliga a fala.
+    { id: 'ponto', name: () => 'PONTO', icon: () => 'mic', sub: () => window.andromedaPonto?.label() || '', run: () => window.andromedaPonto?.toggle(), on: () => !!window.andromedaPonto?.isTalking(), prv: () => !!window.andromedaPonto?.calling() || (!!window.andromedaPonto?.isReady() && !window.andromedaPonto?.isTalking()), settings: b => openPop(b, 'PONTO · direção → apresentador', window.andromedaPonto.panel()) },
     { id: 'bars', name: () => 'BARRAS', sub: () => bars.tone ? 'com tom 1 kHz' : '', run: () => R.barsToPreview(), on: () => state.pgm === BARS_SOURCE || bars.on, prv: () => state.prv === BARS_SOURCE, settings: b => popBars(b) },
   ];
   const byId = id => COMMANDS.find(c => c.id === id);
@@ -92,7 +95,7 @@
   let cmdLayout = store.get(LAYOUT_KEY, null);
   if (!cmdLayout || !Array.isArray(cmdLayout.order)) cmdLayout = { order: COMMANDS.map(c => c.id), hidden: [] };
   // Comando novo entra ao lado do que o originou (VT PRÓXIMO fica depois do VT), não no fim da fila.
-  for (const [add, after] of [['pip', 'countdown'], ['arte', 'logo'], ['trilha', 'mosaic'], ['tracking', 'trilha'], ['marks', 'tracking']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
+  for (const [add, after] of [['pip', 'countdown'], ['arte', 'logo'], ['trilha', 'mosaic'], ['tracking', 'trilha'], ['marks', 'tracking'], ['ponto', 'intercom']]) if (!cmdLayout.order.includes(add) && cmdLayout.order.includes(after)) cmdLayout.order.splice(cmdLayout.order.indexOf(after) + 1, 0, add);
   cmdLayout.order = [...cmdLayout.order.filter(byId), ...COMMANDS.map(c => c.id).filter(id => !cmdLayout.order.includes(id))];
   cmdLayout.hidden = (cmdLayout.hidden || []).filter(byId);
   // Personalização dos botões: tamanho (50–200%), botões por linha (2–8), botões largos (2 colunas) e ordem própria.
@@ -374,9 +377,12 @@
     { id: 'black', label: 'BLACK no PREVIEW', key: 'F1', run: () => R.blackToPreview() },
     { id: 'blackNow', label: 'BLACK direto no AR (fade, emergência)', key: 'Shift+F1', run: () => R.toggleBlack() },
     { id: 'intercom', label: 'INTERCOM (ativar / abrir e fechar o microfone)', key: '', run: () => intercomToggle() },
+    { id: 'ponto', label: 'PONTO (falar com apresentador / repórter: abre e fecha a fala)', key: '', run: () => window.andromedaPonto?.toggle() },
     { id: 'bars', label: 'BARRAS de cor no PREVIEW', key: 'F2', run: () => R.barsToPreview() },
     { id: 'barsNow', label: 'BARRAS direto no AR (emergência)', key: 'Shift+F2', run: () => R.toggleBars() },
     { id: 'gc0', label: 'GC', key: 'F3', run: () => byId('gc0').run() },
+    { id: 'gcnext', label: 'GC · próximo crédito no ponto', key: '', run: () => window.andromedaGcList?.next(1) },
+    { id: 'gcprev', label: 'GC · crédito anterior no ponto', key: '', run: () => window.andromedaGcList?.next(-1) },
     { id: 'logo', label: 'LOGO', key: 'F6', run: () => byId('logo').run() },
     { id: 'countdown', label: 'REGRESSIVA (direto no AR)', key: 'F7', run: () => R.toggleCountdown() },
     { id: 'pip', label: 'JANELA (imagem dentro da imagem)', key: 'F8', run: () => byId('pip').run() },

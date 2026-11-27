@@ -439,6 +439,8 @@ function signal() {
     if (generation !== cam.generation) return;
     cleanPeers(); tally('offline'); q('#ptt').disabled = true;
     if ([4001, 4002, 4003].includes(e.code)) { stop(); say('Convite inválido, ocupado, revogado ou expirado. Peça outro à mesa.', 'error'); return; }
+    // O mesmo link foi aberto em outro aparelho (ou nesta página de novo): esta conexão para, sem ficar disputando a câmera.
+    if (e.code === 4007) { stop(); say('Esta câmera foi conectada de novo pelo mesmo link (outro aparelho ou outra aba). Para voltar aqui, toque em Ativar câmera.', 'warn'); return; }
     if (cam.relay && e.code === 1006 && !navigator.onLine) say('Sem internet. Reconectando quando o sinal voltar…', 'warn'); else
     say('Reconectando à mesa…', 'warn');
     if (cam.running) { clearTimeout(cam.retry); cam.retry = setTimeout(signal, 2500); }

@@ -1555,3 +1555,50 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .tx-comp-note { margin: 4px 0 0; font-size: 11px; color: #9aa6c0; }
 .dest-studio { justify-self: start; font-size: 12px; font-weight: 600; color: #8fd0ff; text-decoration: none; }
 .dest-studio:hover { text-decoration: underline; }
+
+/* PONTO (direção → apresentador): painel da engrenagem do botão PONTO nos Comandos. */
+.ponto-panel { display: grid; gap: 10px; min-width: 0; }
+.ponto-status { margin: 0; color: var(--d-faint); font-size: 12px; line-height: 1.45; }
+.ponto-panel label { display: grid; gap: 4px; font-size: 11.5px; color: var(--d-faint); }
+.ponto-hold { min-height: 52px; font: 800 13px var(--d-display); letter-spacing: .05em; border-radius: 10px; background: var(--d-raise); border: 1px solid var(--d-line-2); color: var(--d-text); user-select: none; -webkit-user-select: none; touch-action: none; }
+.ponto-hold[data-on="true"] { background: var(--d-pgm); border-color: var(--d-pgm); color: #fff; }
+.ponto-enable { min-height: 40px; }
+.ponto-list { display: grid; gap: 8px; }
+.ponto-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 8px; padding: 8px; border: 1px solid var(--d-line); border-radius: 8px; background: var(--d-inset); }
+.ponto-row .ponto-name { min-width: 0; min-height: 28px; font: 700 12px var(--d-display); }
+.ponto-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.ponto-actions button, .ponto-actions a { min-height: 28px; padding: 0 10px; font-size: 11px; border-radius: 6px; display: inline-flex; align-items: center; }
+.ponto-actions a { border: 1px solid var(--d-line-2); color: var(--d-text); text-decoration: none; }
+.ponto-ret { grid-column: 1 / -1; color: var(--d-faint); font-size: 11px; }
+.ponto-pill { padding: 3px 8px; border-radius: 999px; background: var(--d-raise); color: var(--d-faint); font: 700 9.5px var(--d-mono); letter-spacing: .06em; white-space: nowrap; }
+.ponto-pill[data-tone="on"] { color: var(--d-pvw-text); }
+.ponto-pill[data-tone="wait"] { color: var(--d-amber); }
+.ponto-pill[data-tone="call"] { background: var(--d-amber); color: #1a1000; animation: ponto-call 1s ease-in-out infinite; }
+@keyframes ponto-call { 50% { opacity: .5; } }
+.ponto-notes { display: grid; gap: 6px; } .ponto-notes strong { font-size: 11.5px; color: var(--d-faint); font-weight: 700; }
+.ponto-presets { display: flex; flex-wrap: wrap; gap: 6px; } .ponto-presets button { min-height: 30px; padding: 0 10px; font-size: 11.5px; border-radius: 6px; }
+.ponto-free { display: flex; gap: 6px; } .ponto-free input { flex: 1; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .ponto-pill[data-tone="call"] { animation: none; } }
+
+/* GC · Créditos programados (dois cliques no botão GC). */
+.gcl-panel { display: grid; gap: 10px; min-width: 0; }
+.gcl-help { margin: 0; color: var(--d-faint); font-size: 12px; line-height: 1.45; } .gcl-help b { color: var(--d-amber); }
+.gcl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+.gcl-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--d-line); border-radius: 8px; background: var(--d-inset); }
+.gcl-item[data-state="cue"] { border-color: var(--d-amber); box-shadow: inset 3px 0 0 var(--d-amber); }
+.gcl-item[data-state="air"] { border-color: var(--d-pgm); box-shadow: inset 3px 0 0 var(--d-pgm); }
+.gcl-cue { min-width: 74px; min-height: 30px; padding: 0 6px; border-radius: 6px; font: 800 10px var(--d-mono); letter-spacing: .06em; }
+.gcl-item[data-state="cue"] .gcl-cue { background: var(--d-amber); border-color: var(--d-amber); color: #1a1000; }
+.gcl-item[data-state="air"] .gcl-cue { background: var(--d-pgm); border-color: var(--d-pgm); color: #fff; }
+.gcl-fields { display: grid; gap: 4px; min-width: 0; } .gcl-fields input { min-width: 0; min-height: 26px; font-size: 12px; } .gcl-title { font-weight: 700; }
+.gcl-move { display: flex; gap: 4px; } .gcl-move button { min-width: 26px; min-height: 26px; padding: 0; font-size: 11px; }
+.gcl-empty { color: var(--d-faint); font-size: 12px; padding: 6px; }
+.gcl-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; } .gcl-add input { min-width: 0; } .gcl-add-btn { grid-column: 1 / -1; min-height: 34px; }
+.gcl-auto { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--d-faint); }
+.gcl-foot { display: flex; flex-wrap: wrap; gap: 6px; } .gcl-foot button { min-height: 30px; padding: 0 10px; font-size: 11.5px; }
+
+/* Barra do topo: transmitindo, o estado vira NO AR em vermelho ao lado do tempo de transmissão. */
+.tb-stat[data-onair="on"] .tb-label { color: var(--d-pgm-text, #ff6b88); font-weight: 800; letter-spacing: .12em; }
+.tb-stat[data-onair="on"] .tb-dot { background: var(--d-pgm, #ff0033) !important; opacity: 1 !important; box-shadow: 0 0 8px var(--d-pgm, #ff0033); animation: tb-onair 1.2s ease-in-out infinite; }
+@keyframes tb-onair { 50% { opacity: .35 !important; } }
+@media (prefers-reduced-motion: reduce) { .tb-stat[data-onair="on"] .tb-dot { animation: none; } }

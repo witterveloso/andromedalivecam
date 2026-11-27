@@ -11,7 +11,7 @@
  *  - andromeda (padrão): a Rede Andrômeda dentro da própria mesa (andromeda-turn.cjs, código nosso): STUN e TURN na porta
  *    3478 UDP/TCP, porta aberta no roteador por UPnP (upnp.cjs), credenciais temporárias geradas aqui. Sem serviço de terceiros.
  *  - custom: servidor da Rede Andrômeda da empresa (o mesmo andromeda-turn.cjs, no kit cloud/) ou outro TURN próprio.
- *  - cloudflare (legado, não é mais oferecido na tela): Cloudflare Realtime TURN. A mesa guarda o ID e o token da chave TURN (segredo de longa duração,
+ *  - cloudflare (recomendado para 4G/5G em qualquer rede, sem mexer no roteador): Cloudflare Realtime TURN. A mesa guarda o ID e o token da chave TURN (segredo de longa duração,
  *    nunca vai ao navegador) e gera credenciais temporárias de 24 h, renovadas a cada 12 h.
  *  - custom: servidor próprio (coturn ou outro): URLs, usuário e senha.
  *  - off: só STUN (funciona no Wi-Fi e na mesma rede; costuma falhar no 4G/5G).
@@ -140,15 +140,19 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
         : 'Câmeras no 4G/5G: ' + (r.direct ? 'este computador está ligado direto no modem com endereço compartilhado da operadora (CGNAT ' + r.externalIP + '); de fora não há caminho' : r.error ? 'o roteador não abriu a porta (' + r.error + ')' : 'a internet desta mesa usa CGNAT (' + r.externalIP + ')') + '. Use o servidor da Rede Andrômeda' + (r.direct ? '' : ' ou encaminhe a porta ' + own.port + ' UDP/TCP para ' + own.lan) + '.');
     };
     if (!isLanIp(lanIp) && lanIp !== '127.0.0.1') { const cg = isCgnatIp(lanIp); done({ ok: !cg, reachable: !cg, direct: true, externalIP: lanIp, mapped: [], error: cg ? 'CGNAT' : '' }); return; }
+    own.probedAt = Date.now();
     openPorts({ internalClient: lanIp, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).then(done).catch(e => done({ ok: false, reachable: false, error: e.message, mapped: [] }));
   }
   async function recheck() {
     if (!own.server) return;
-    const now = await addresses(); if (!now.length || (now[0] === own.lan && now.join() === own.lans.join())) return;
+    const now = await addresses();
+    // 4G/5G ainda fechado: tenta o roteador de novo a cada minuto (o operador pode ter ligado o UPnP/NAT-PMP agora).
+    if (now[0] === own.lan && own.router && !own.router.reachable && !own.router.direct && Date.now() - (own.probedAt || 0) > 60000) { own.probedAt = Date.now(); probeRouter(); return; }
+    if (!now.length || (now[0] === own.lan && now.join() === own.lans.join())) return;
     const before = own.lan; own.lans = now; own.lan = now[0];
     if (before !== own.lan) {
       onEvent('info', 'rede-mudou', 'A rede deste computador mudou: ' + before + ' → ' + describeLan() + '. As câmeras novas e as que reconectarem já usam o endereço novo.');
-      if (own.router?.control) closePorts({ control: own.router.control, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {});
+      if (own.router?.control) closePorts({ control: own.router.control, upstream: own.router.upstream, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {});
       own.router = null; probeRouter(true);
     }
   }
@@ -161,7 +165,7 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     return [{ urls: uniq.map(h => 'stun:' + h + ':' + own.port) },
       { urls: uniq.flatMap(h => ['turn:' + h + ':' + own.port + '?transport=udp', 'turn:' + h + ':' + own.port + '?transport=tcp']), username: c.username, credential: c.credential }];
   }
-  function stopOwn() { clearInterval(watch); watch = null; own.server?.close(); own.server = null; if (own.router?.control) closePorts({ control: own.router.control, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {}); own.router = null; }
+  function stopOwn() { clearInterval(watch); watch = null; own.server?.close(); own.server = null; if (own.router?.control) closePorts({ control: own.router.control, upstream: own.router.upstream, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {}); own.router = null; }
   function schedule() {
     clearInterval(timer); timer = null;
     if (config.provider === 'cloudflare') { timer = setInterval(() => refresh(), REFRESH_MS); timer.unref?.(); }
@@ -178,7 +182,7 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     },
     status() {
       if (config.provider === 'andromeda') return { provider: 'andromeda', ready: !!own.server || !!network, network: network ? network.urls : null, error: own.server ? '' : (own.error || lastError), port: own.port, lan: own.lan,
-        lans: own.lans, router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, direct: !!own.router.direct, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null, stats: own.server?.stats() || null };
+        lans: own.lans, router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, direct: !!own.router.direct, via: own.router.via || '', levels: own.router.levels || 0, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null, stats: own.server?.stats() || null };
       return { provider: config.provider, ready: hasRelay(relay), error: lastError, expires: Number.isFinite(expires) && expires ? new Date(expires).toISOString() : null,
         keyId: config.provider === 'cloudflare' ? config.keyId : undefined, hasToken: config.provider === 'cloudflare' ? !!config.token : undefined,
         urls: config.provider === 'custom' ? config.urls : config.provider === 'cloudflare' ? relay.flatMap(s => s.urls).filter(u => /^turns?:/.test(u)) : [],
