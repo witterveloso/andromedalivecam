@@ -28,7 +28,7 @@ Este documento lista as diretrizes técnicas publicadas pelas plataformas de tra
 ## 3. Envio para várias plataformas ao mesmo tempo
 
 - **Uma codificação por formato.** Há uma codificação 16:9 e uma 9:16. A codificação de cada formato vai para todos os destinos daquele formato, sem codificar de novo para cada plataforma.
-- **Uma conexão própria por destino.** Cada destino tem sua fila de ~4 s (300 pacotes): uma trava da rede ou da plataforma de até ~4 s passa sem perder nenhum quadro nem quadro-chave (`test/fifo-stall.test.cjs`: trava de 3,5 s, 360 de 360 quadros, quadro-chave a cada 2 s). Só uma trava mais longa descarta pacotes, em vez de acumular atraso sem limite. A reconexão é automática e recomeça num quadro-chave.
+- **Uma conexão própria por destino (Saídas Andrômeda, 0.32).** O codificador entrega a imagem pronta ao distribuidor do serviço, que mantém uma conexão por destino (RTMP, RTMPS, SRT) só copiando o vídeo e o som. Cada destino tem sua fila (~20 s em 6 Mbps): uma trava da rede ou da plataforma passa sem perder quadros nem quadro-chave (`test/saidas.test.cjs`: trava de 3,5 s, 359–360 de 360 quadros, quadro-chave a cada 2 s, o outro destino com 360 de 360). Só uma trava mais longa descarta, e apenas naquele destino, até o próximo quadro-chave. A reconexão é automática (1, 2, 4, 8 e depois a cada 15 s) e recomeça num quadro-chave. Cada destino entra e sai do ar sozinho com a live rodando, e quem entra começa pelo último quadro-chave guardado.
 - **Falha isolada.** Se um destino cair, os outros continuam no ar.
 - **Formatos independentes.** O 16:9 e o 9:16 rodam em processos separados: a queda de um não derruba o outro.
 - **Painel de conformidade.** A página **Transmissão** mostra, antes de entrar no ar:

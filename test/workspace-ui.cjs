@@ -52,6 +52,19 @@ assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.verti
 assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['both','16:9','9:16']);assert.equal(q('#recFormats').value,'16:9','new configurations record only the horizontal output to avoid an unused second encoder');
 q('#recFormats').value='both';q('#recFormats').dispatchEvent(new w.Event('change'));assert.equal(vm.runInContext('andromedaBroadcast.model.recordFormats',ctx),'both','operator can still explicitly record both formats');assert.match(q('#recFormats').selectedOptions[0].textContent,/16:9 e 9:16/);
 console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing');
+// Saídas Andrômeda: cada destino começa no ar, em espera ou desligado; SRT e WHIP com campos próprios.
+for(const pf of ['srt','whip']){choose.value=pf;choose.dispatchEvent(new w.Event('change'));[...w.document.querySelectorAll('.stream-panel button')].find(b=>b.textContent==='Adicionar destino').click()}
+{const cards=[...w.document.querySelectorAll('.dest')],srt=cards.find(c=>c.dataset.platform==='srt'),wh=cards.find(c=>c.dataset.platform==='whip');
+ assert.deepEqual([...srt.querySelector('.dest-start').options].map(o=>o.value),['on','standby','off'],'start mode per destination');
+ assert.deepEqual([...srt.querySelectorAll('.dest-fields label')].map(l=>l.firstChild.textContent),['Servidor SRT','Stream ID (opcional)','Formato','Senha SRT (opcional, 10 a 79 caracteres)','Latência']);
+ assert.deepEqual([...wh.querySelectorAll('.dest-fields label')].map(l=>l.firstChild.textContent),['URL de ingestão WHIP','Token (opcional)','Formato']);
+ const [server]=srt.querySelectorAll('.dest-fields input');server.value='srt://10.0.0.5:9000';server.dispatchEvent(new w.Event('input'));
+ assert.equal(srt.querySelector('.dest-state').textContent,'PRONTO','SRT só precisa do endereço (Stream ID e senha são opcionais)');
+ const st=srt.querySelector('.dest-start');st.value='standby';st.dispatchEvent(new w.Event('change'));assert.equal(srt.querySelector('.dest-state').textContent,'EM ESPERA');
+ assert.equal(wh.querySelector('.dest-state').textContent,'FALTA URL');assert(srt.querySelector('.dest-air').hidden,'Entrar/Sair do ar só aparece com a live rodando');
+ assert.match(q('.tx-compliance, #txCompliance')?.textContent||vm.runInContext('document.body.textContent',ctx),/SRT sem senha|em espera/);
+ for(const c of [srt,wh])c.querySelector('.dest-remove').click();}
+console.log('PASS: per-destination start mode (on air / standby / off), SRT and WHIP fields');
 {const css=fs.readFileSync(root+'/workspace-custom.css','utf8');assert.match(css,/\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:sticky;top:calc\(var\(--topbar-h,56px\) \+ 12px\)/,'effects preview follows the page scroll');assert.match(css,/@media\(max-width:500px\)\{\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:static/,'stacked on phones');assert(w.document.documentElement.style.getPropertyValue('--topbar-h'),'top bar height measured for the sticky preview');console.log('PASS: effects preview stays in view while the settings scroll')}
 {const rd=vm.runInContext('window.andromedaRundown',ctx),cmd=vm.runInContext('window.andromedaCommands',ctx);
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);

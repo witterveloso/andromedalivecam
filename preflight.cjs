@@ -14,14 +14,24 @@ const net = require('node:net'), os = require('node:os'), { spawn } = require('n
 const BUDGET = .30; // fração do computador que os codificadores podem usar
 
 /* ---------- alcance dos destinos ---------- */
+// RTMP/RTMPS e WHIP (HTTPS) usam TCP: abre a conexão. SRT usa UDP, que não tem "conexão" para testar antes: confere o nome
+// do servidor (DNS) e a conexão de verdade é medida ao entrar no ar.
 function parseTarget(server) {
   let u; try { u = new URL(String(server)); } catch { return null; }
-  if (!/^rtmps?:$/.test(u.protocol)) return null;
-  return { host: u.hostname, port: Number(u.port) || (u.protocol === 'rtmps:' ? 443 : 1935) };
+  if (/^rtmps?:$/.test(u.protocol)) return { host: u.hostname, port: Number(u.port) || (u.protocol === 'rtmps:' ? 443 : 1935) };
+  if (/^https?:$/.test(u.protocol)) return { host: u.hostname.replace(/^\[|\]$/g, ''), port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80) };
+  if (u.protocol === 'srt:' && u.port) return { host: u.hostname.replace(/^\[|\]$/g, ''), port: Number(u.port), udp: true };
+  return null;
 }
 function reach(server, timeoutMs = 3000) {
   return new Promise(resolve => {
     const t = parseTarget(server); if (!t) { resolve({ ok: false, error: 'endereço inválido' }); return; }
+    if (t.udp) {
+      const start = Date.now();
+      if (net.isIP(t.host)) { resolve({ host: t.host, port: t.port, ok: true, ms: 0, udp: true }); return; }
+      require('node:dns').lookup(t.host, e => resolve(e ? { host: t.host, port: t.port, ok: false, error: e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN' ? 'nome não encontrado (sem internet ou DNS)' : e.code } : { host: t.host, port: t.port, ok: true, ms: Date.now() - start, udp: true }));
+      return;
+    }
     const start = Date.now(), socket = net.connect({ host: t.host, port: t.port });
     const done = r => { socket.destroy(); resolve({ host: t.host, port: t.port, ...r }); };
     socket.setTimeout(timeoutMs);

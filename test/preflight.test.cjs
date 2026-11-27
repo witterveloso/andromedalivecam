@@ -6,7 +6,12 @@ test('destinations: reachable, refused and malformed addresses are told apart, w
   assert.deepEqual(pf.parseTarget('rtmps://a.rtmps.youtube.com/live2'), { host: 'a.rtmps.youtube.com', port: 443 });
   assert.deepEqual(pf.parseTarget('rtmp://live.example.test/app'), { host: 'live.example.test', port: 1935 });
   assert.deepEqual(pf.parseTarget('rtmp://10.0.0.5:19350/live'), { host: '10.0.0.5', port: 19350 });
-  assert.equal(pf.parseTarget('http://x'), null); assert.equal(pf.parseTarget('nada'), null);
+  // WHIP (https/http) é testado por TCP na porta do endereço; SRT (UDP) só pelo nome do servidor.
+  assert.deepEqual(pf.parseTarget('https://whip.example.test/live'), { host: 'whip.example.test', port: 443 });
+  assert.deepEqual(pf.parseTarget('http://192.168.0.10:8889/whip'), { host: '192.168.0.10', port: 8889 });
+  assert.deepEqual(pf.parseTarget('srt://ingest.example.test:9000'), { host: 'ingest.example.test', port: 9000, udp: true });
+  assert.equal(pf.parseTarget('srt://sem-porta'), null); assert.equal(pf.parseTarget('ftp://x'), null); assert.equal(pf.parseTarget('nada'), null);
+  assert.deepEqual(await pf.reach('srt://127.0.0.1:9000'), { host: '127.0.0.1', port: 9000, ok: true, ms: 0, udp: true });
   const server = net.createServer(s => s.destroy()); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const free = net.createServer(); free.listen(0, '127.0.0.1'); await once(free, 'listening'); const closedPort = free.address().port; free.close(); await once(free, 'close');
   try {

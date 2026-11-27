@@ -490,6 +490,16 @@ dialog::backdrop { background: rgba(4, 5, 8, .78); }
 .dest-state[data-tone="on"] { background: var(--d-pgm); color: #fff; }
 .dest-state[data-tone="bad"] { background: rgba(245, 166, 35, .2); color: var(--d-amber); }
 .dest-toggle { flex: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+/* Saídas Andrômeda: cada destino entra e sai do ar no próprio cartão. */
+.dest[data-platform="srt"] .dest-badge { background: #0f766e; }
+.dest[data-platform="whip"] .dest-badge { background: #7c3aed; }
+.dest-start { flex: none; min-height: 28px; max-width: 150px; font-size: 11px; }
+.dest-air { flex: none; min-height: 30px; padding: 0 12px; border-radius: 6px; font: 800 11px var(--d-display); letter-spacing: .04em; white-space: nowrap; background: var(--d-raise); border: 1px solid var(--d-line-2); color: var(--d-text, #fff); }
+.dest-air[data-on="false"]:not(:disabled) { background: rgba(255, 0, 51, .14); border-color: var(--d-pgm); color: var(--d-pgm-text); }
+.dest-air[data-on="true"] { background: var(--d-pgm); border-color: var(--d-pgm); color: #fff; }
+.dest[data-air="on"] { border-color: var(--d-pgm); box-shadow: inset 3px 0 0 var(--d-pgm); }
+.dest-state[data-tone="off"] { color: var(--d-faint); }
+.dest > header { flex-wrap: wrap; }
 .dest-remove { flex: none; min-height: 28px; color: var(--d-faint); font-size: 11px; }
 .dest-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .dest-fields label, .record-panel label, .quality label { display: grid; gap: 5px; min-width: 0; }
