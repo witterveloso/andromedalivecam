@@ -262,6 +262,8 @@ function safeBroadcastError(stderr) {
 
 // Grade exata de 30 fps (relógio de 90 kHz, 3000 tiques por quadro) para quem guarda o tempo com precisão (MPEG-TS, MP4).
 // Arredonda cada quadro para o múltiplo de 1/30 s mais próximo: a saída já é 30 fps constantes, só o arredondamento em ms sai.
-const CFR30 = 'setts=pts=round(PTS*TB*30)*3000:dts=round(DTS*TB*30)*3000:time_base=1/90000';
+// Proteção: se o codificador da mesa entregar dois quadros muito juntos (computador atrasando), o segundo vai para o próximo
+// ponto da grade em vez de repetir o instante (o tempo de cada quadro é sempre maior que o do anterior). Visto no CI do Windows.
+const CFR30 = 'setts=pts=max(round(PTS*TB*30)*3000\\,PREV_OUTPTS+3000):dts=max(round(DTS*TB*30)*3000\\,PREV_OUTDTS+3000):time_base=1/90000';
 
 module.exports = { CFR30, FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };

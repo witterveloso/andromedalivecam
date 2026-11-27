@@ -1,5 +1,10 @@
 # Andrômeda Live 0.33 — auditoria e versão para venda por assinatura
 
+## 0.33.1 — proteção da grade de 30 fps
+- **O problema:** no Windows, quando o codificador da mesa atrasava, dois quadros podiam cair no mesmo ponto da grade de 1/30 s da gravação. Foi visto no CI: o teste exige que o tempo de cada quadro seja sempre maior que o do anterior, e falhou.
+- **A correção:** o segundo quadro vai para o próximo ponto da grade. A gravação e o SRT continuam em múltiplos exatos de 1/30 s, com tempo sempre crescente.
+- **Teste novo:** quadros tremidos na entrada.
+
 ## Transmissão: 30 fps cravados, medidos quadro a quadro
 Medição de 61 s de live na mesa real, com destino RTMP, SRT e gravação ao mesmo tempo:
 
