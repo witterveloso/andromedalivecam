@@ -1602,3 +1602,16 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .tb-stat[data-onair="on"] .tb-dot { background: var(--d-pgm, #ff0033) !important; opacity: 1 !important; box-shadow: 0 0 8px var(--d-pgm, #ff0033); animation: tb-onair 1.2s ease-in-out infinite; }
 @keyframes tb-onair { 50% { opacity: .35 !important; } }
 @media (prefers-reduced-motion: reduce) { .tb-stat[data-onair="on"] .tb-dot { animation: none; } }
+
+/* ---------- formato da produção (horizontal 16:9 / vertical 9:16) ---------- */
+.prod-format { display: grid; gap: 8px; margin-bottom: 12px; padding: 12px 14px; background: var(--d-inset); border: 1px solid var(--d-line); border-radius: 10px; }
+.prod-format > header strong { color: var(--d-text); font: 700 12px var(--d-display); letter-spacing: .14em; text-transform: uppercase; }
+.prod-format[data-vertical="true"] { border-color: var(--brand-blue); }
+.prod-note { margin: 0; color: var(--d-muted); font-size: 12px; line-height: 1.5; }
+.prod-format[data-vertical="true"] .prod-note { color: var(--d-text); }
+.prod-note[data-tone="bad"] { color: #ff8fa3; }
+/* Produção vertical: os monitores PGM e PREVIEW mostram a tela em pé inteira, centralizada no quadro do monitor. */
+/* A área dos lados é só a moldura do monitor (hachurada = fora do quadro); a imagem que vai ao ar é a parte em pé, sem bordas. */
+body.prod-vertical #monProgram > canvas, body.prod-vertical #monPreview > canvas { object-fit: contain; background: repeating-linear-gradient(135deg, #05060f 0 9px, #0d1130 9px 18px); }
+body.prod-vertical #monProgram .effects-monitor { object-fit: contain; }
+body.prod-vertical #monProgram::after, body.prod-vertical #monPreview::after { content: "VERTICAL 9:16"; position: absolute; top: 40px; left: 8px; z-index: 3; padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, .65); color: var(--brand-blue); font: 700 10px var(--d-mono); letter-spacing: .08em; pointer-events: none; }

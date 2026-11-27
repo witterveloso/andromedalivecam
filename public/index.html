@@ -638,7 +638,7 @@ let nextCamera = 0, nextPreview = 0, directProgram = false;
    Enquanto envia: PREVIEW a 10 q/s num canvas 640×360 (o tamanho do monitor na tela), miniaturas a 5 q/s, e monitores só com folga no quadro. */
 const onAirNow = () => typeof busyTx === 'function' && busyTx();
 const monitorBudget = () => onAirNow() ? 13 : 22;
-function sizePreviewForAir() { const c = $('#monPreview canvas'), [w, h] = onAirNow() ? [640, 360] : [960, 540]; if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
+function sizePreviewForAir() { const c = $('#monPreview canvas'), [w, h] = (window.andromedaOrient||(x=>x))(onAirNow() ? [640, 360] : [960, 540]); if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
 const monitorDue = new WeakMap();
 function refreshMultiview(t) {
   const cells = $$('.mv-cell canvas');

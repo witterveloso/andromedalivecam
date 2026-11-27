@@ -39,7 +39,8 @@
   const blur = document.createElement('canvas'); blur.width = 64; blur.height = 36; const blurCtx = blur.getContext('2d');
   function drawFit(ctx, el, x, y, w, h, mode) {
     const [ew, eh] = dims(el), sourceRatio = ew / eh, boxRatio = w / h;
-    const fit = mode === 'cover' || mode === 'contain' ? mode : Math.abs(sourceRatio / boxRatio - 1) < .14 ? 'cover' : 'contain';
+    // Quadro em pé (produção vertical 9:16): a imagem sempre preenche, sem bordas laterais.
+    const fit = boxRatio < 1 ? 'cover' : mode === 'cover' || mode === 'contain' ? mode : Math.abs(sourceRatio / boxRatio - 1) < .14 ? 'cover' : 'contain';
     ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
     if (fit === 'contain') {
       const s = Math.max(blur.width / ew, blur.height / eh);
@@ -91,7 +92,7 @@
     if (!members.length) { slate(ctx, 0, 0, W, H, 'Marque câmeras com o botão M', 'MOSAICO VAZIO', clean); return; }
     const ease = 1 - Math.exp(-Math.min(100, Math.max(0, t - lastPaint)) / 90);
     for (const key of [...shown.keys()]) if (!members.includes(key)) shown.delete(key);
-    for (const target of arrange(members, 1, 1 / RATIO)) {
+    for (const target of arrange(members, 1, H / W)) {
       let cell = shown.get(target.slot);
       if (!cell) { cell = { x: target.x + target.w * .2, y: target.y + target.h * .2, w: target.w * .6, h: target.h * .6, alpha: 0 }; shown.set(target.slot, cell); }
       for (const k of ['x', 'y', 'w', 'h']) cell[k] += (target[k] - cell[k]) * ease;

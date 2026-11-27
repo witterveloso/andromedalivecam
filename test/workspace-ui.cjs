@@ -52,6 +52,15 @@ assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.verti
 assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['both','16:9','9:16']);assert.equal(q('#recFormats').value,'16:9','new configurations record only the horizontal output to avoid an unused second encoder');
 q('#recFormats').value='both';q('#recFormats').dispatchEvent(new w.Event('change'));assert.equal(vm.runInContext('andromedaBroadcast.model.recordFormats',ctx),'both','operator can still explicitly record both formats');assert.match(q('#recFormats').selectedOptions[0].textContent,/16:9 e 9:16/);
 console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing');
+// Formato da produção: automático (horizontal com destinos 16:9), vertical 9:16 forçado (PGM em pé, monitores em pé, aviso dos destinos 16:9), e volta.
+{const fmt=()=>vm.runInContext('andromedaFormat.vertical',ctx),mon=()=>{const c=q('#monProgram canvas');return [c.width,c.height]};
+assert(q('.prod-format'),'production format card');assert.deepEqual([...q('.prod-modes').children].map(b=>b.dataset.production),['auto','16:9','9:16']);
+assert.equal(fmt(),false,'automatic: horizontal while 16:9 destinations are on');assert(mon()[0]>mon()[1]);
+q('.prod-modes [data-production="9:16"]').click();assert.equal(fmt(),true);assert(w.document.body.classList.contains('prod-vertical'));
+assert(mon()[0]<mon()[1],'PGM monitor stands up');const po=vm.runInContext('[programOutput.width,programOutput.height]',ctx);assert(po[0]<po[1],'program output stands up');
+assert.equal(q('.prod-note').dataset.tone,'bad');assert.match(q('.prod-note').textContent,/YouTube/);assert.match(q('.prod-note').textContent,/fora da produção vertical/);assert(q('.vertical-panel').hidden,'no crop card in vertical production');
+q('.prod-modes [data-production="auto"]').click();assert.equal(fmt(),false);assert(mon()[0]>mon()[1]);assert(!q('.vertical-panel').hidden);
+console.log('PASS: production format (automatic / horizontal / vertical 9:16): program and monitors stand up, 16:9 destinations flagged')}
 // Saídas Andrômeda: cada destino começa no ar, em espera ou desligado; SRT e WHIP com campos próprios.
 for(const pf of ['srt','whip']){choose.value=pf;choose.dispatchEvent(new w.Event('change'));[...w.document.querySelectorAll('.stream-panel button')].find(b=>b.textContent==='Adicionar destino').click()}
 {const cards=[...w.document.querySelectorAll('.dest')],srt=cards.find(c=>c.dataset.platform==='srt'),wh=cards.find(c=>c.dataset.platform==='whip');

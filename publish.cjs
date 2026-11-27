@@ -25,7 +25,7 @@ const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
 const os = require('node:os');
 const { analyze } = require('./avsync.cjs');
-const { CFR30, validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
+const { deriveArgs, pickDeriveEncoder, CFR30, validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
 const { createOutputs } = require('./saidas.cjs');
 
 const MAX_QUEUE = 8 * 1024 * 1024;
@@ -71,6 +71,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     clearInterval(watchdog); clearInterval(outputsTimer); outputs.close();
     if (shared.active === ws) shared.active = null;
     if (startedAt) audit.info('transmissao', 'fim', 'Envio encerrado', { segundos: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0, quadros: Math.max(0, ...[...runners.values()].map(r => r.lastFrame)), formatos: [...runners.keys()] });
+    const go = () => {
     const records = [...parts.values()].flat();
     const next = () => {
       const record = records.shift();
@@ -78,6 +79,44 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       finalize(record, saved => { if (calibrating) { measureCalibration(saved, next); return; } if (saved) { audit.info('gravacao', 'arquivo', 'Gravação ' + record.aspect + ' salva', { arquivo: saved.file, formato: record.aspect, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', format: record.aspect, ...saved }); } else { audit.error('gravacao', 'arquivo-vazio', 'A gravação ' + record.aspect + ' não gerou arquivo.'); send({ type: 'notice', message: 'Atenção: a gravação ' + record.aspect + ' não gerou arquivo.' }); } next(); });
     };
     next();
+    };
+    // O 9:16 criado no serviço termina logo depois da imagem principal: espera ele fechar a gravação 9:16 (até 10 s).
+    const busy = () => outputs.isRunning(DERIVED) || outputs.isRunning(REC9);
+    if (derived && busy()) { const t0 = Date.now(), t = setInterval(() => { if (!busy() || Date.now() - t0 > 12000) { clearInterval(t); go(); } }, 100); } else go();
+  }
+
+  /* ---------- Tecnologia Andrômeda Multiplataforma: o 9:16 criado no serviço a partir da imagem 16:9 ----------
+   * A mesa desenha e codifica UMA imagem (16:9). O serviço cria o 9:16 dela (recorte, fundo desfocado ou barras) com a placa
+   * de vídeo quando houver, e entrega aos destinos 9:16 e à gravação 9:16. Pode ser ligado no meio da live (Instagram/TikTok
+   * entrando depois) e o enquadramento muda ao vivo: o 9:16 é refeito e emendado na mesma conexão (as plataformas não caem)
+   * e na mesma gravação. */
+  const DERIVED = '__9x16', REC9 = '__rec9x16';
+  let derived = null;
+  function startDerived(vGroup) {
+    if (derived) return true;
+    const master = runners.get('h'); if (!master || master.failed || !master.group.feed) return false;
+    derived = { group: vGroup, starts: 0, encoder: pickDeriveEncoder(detectEncoders(ffmpeg)) };
+    outputs.group('v', { size: vGroup.size });
+    // Gravação 9:16: sai do distribuidor (mesma imagem que vai às plataformas), num arquivo só, mesmo com o enquadramento
+    // mudando no meio da live (a emenda mantém o arquivo contínuo).
+    const build = () => deriveArgs({ vertical: broadcast.vertical, encoder: derived.encoder, record: null });
+    if (vGroup.record) {
+      const file = vGroup.record.file; parts.set('v', [{ ...vGroup.record, file, aspect: '9:16' }]);
+      send({ type: 'recording', file, format: '9:16', free: broadcast.record?.space?.free });
+      outputs.add({ id: REC9, name: 'Gravação 9:16', protocol: 'derive', aspect: '9:16', internal: true,
+        args: ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-probesize', '2000000', '-analyzeduration', '1000000', '-f', 'flv', '-i', 'pipe:0', '-map', '0', '-c', 'copy', '-progress', 'pipe:3', '-stats_period', '1', '-flush_packets', '1', '-f', 'matroska', '-y', file],
+        onState: (state, reason) => { if (state === 'retrying' && !stopping) audit.warn('gravacao', 'gravacao-9x16-reiniciando', 'Gravação 9:16 reiniciando: ' + reason); } }, 'v');
+    }
+    outputs.add({ id: DERIVED, name: 'Saída 9:16', protocol: 'derive', aspect: '16:9', internal: true,
+      get args() { return build(); },
+      onStdout: d => outputs.feed('v', d),
+      // 1ª vez: começa do zero. Refeito (enquadramento novo ou queda): emenda na mesma linha do tempo, sem derrubar as plataformas 9:16.
+      onStart: () => { derived.launches = (derived.launches || 0) + 1; outputs.resetGroup('v', { splice: derived.launches > 1 }); },
+      onEnd: () => outputs.endGroup('v'),
+      onState: (state, reason) => { if (state === 'retrying' && !stopping) { audit.warn('transmissao', 'vertical-reiniciando', 'Saída 9:16 reiniciando: ' + reason); send({ type: 'notice', message: 'A saída 9:16 reiniciou sozinha (' + reason + '). Os destinos 9:16 voltam em instantes; o 16:9 seguiu normal.' }); } } }, 'h');
+    outputs.start(DERIVED); if (vGroup.record) outputs.start(REC9);
+    audit.info('transmissao', 'vertical-servico', 'Saída 9:16 criada no serviço a partir da imagem 16:9 (' + (broadcast.vertical.mode === 'crop' ? 'recorte' : broadcast.vertical.mode === 'blur' ? 'fundo desfocado' : 'barras') + ', ' + derived.encoder + ')', { codificador: derived.encoder, enquadramento: broadcast.vertical.mode });
+    return true;
   }
 
   // Calibração do sincronismo: a gravação de teste (clarões + bipes) é medida aqui e apagada em seguida.
@@ -202,7 +241,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dying: false, awaitHeader: false, dups: 0, starved: 0, warnedAt: 0, samples: [], speed: 1, prevWall: 0, prevOut: 0, curOut: NaN, warnedLoad: 0, sentHealth: 0 };
     runners.set(group.id, r);
     if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
-    const feeds = !!broadcast && group.destinations.length > 0;
+    const feeds = !!broadcast && (group.destinations.length > 0 || !!group.feed);
     if (feeds) outputs.group(group.id, { size: group.size });
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', feeds ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     // A imagem codificada vai ao distribuidor, que repassa a cada destino ligado. Se este processo for o antigo de um reinício, descarta.
@@ -290,6 +329,13 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     if (msg.type === 'resync' && everStarted) { resyncAll(String(msg.reason || 'mudança de resolução').slice(0, 160)); return; }
     if (msg.type === 'engine' && everStarted) { useStandardEngine(String(msg.reason || 'falha no navegador').slice(0, 160)); return; }
     if (msg.type === 'output') { output(msg); return; }
+    if (msg.type === 'vertical' && broadcast?.derive) {
+      const v = msg.vertical || {}, mode = ['crop', 'blur', 'bars'].includes(v.mode) ? v.mode : broadcast.vertical.mode, pos = Number.isFinite(Number(v.pos)) ? Math.min(1, Math.max(0, Number(v.pos))) : broadcast.vertical.pos;
+      if (mode === broadcast.vertical.mode && Math.abs(pos - broadcast.vertical.pos) < 0.005) return;
+      broadcast.vertical = { ...broadcast.vertical, mode, pos };
+      if (derived) { outputs.restart(DERIVED); audit.info('transmissao', 'vertical-enquadramento', 'Enquadramento 9:16 mudou ao vivo (' + mode + (mode === 'crop' ? ', posição ' + Math.round(pos * 100) + '%' : '') + ')'); }
+      return;
+    }
     if (msg.type !== 'start') { fail('Comando não suportado.'); return; }
     if (everStarted) { fail('Abra uma nova sessão para iniciar outra transmissão.'); return; }
     everStarted = true;
@@ -309,7 +355,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         if (cfg.record) cfg.record.space = storage.checkDir(cfg.record.dir);
         if (!detectEncoders(ffmpeg).includes(cfg.encoder)) cfg.encoder = 'libx264';
         groups = groupsFor(cfg);
-        if (groups.length > 1 && msg.channels !== 2) throw Error('Atualize a mesa: esta transmissão precisa das saídas 16:9 e 9:16.');
+        if (groups.filter(g => !g.derived).length > 1 && msg.channels !== 2) throw Error('Atualize a mesa: esta transmissão precisa das saídas 16:9 e 9:16.');
       } else cfg = validateConfig(msg);
     } catch (e) { fail(e.message); return; }
     dual = multi && msg.channels === 2; canRestart = multi && msg.resync === true && !calibrating;
@@ -321,7 +367,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       for (const d of cfg.destinations) if (!d.on) send({ type: 'destination', id: d.id, state: 'standby', reason: '' });
       for (const d of cfg.destinations) if (d.warning) { send({ type: 'destination', id: d.id, state: 'warning', reason: d.warning }); audit.warn('transmissao', 'destino-suspeito', d.warning); }
       for (const g of groups) if (g.record) send({ type: 'recording', file: g.record.file, format: g.aspect, free: cfg.record.space.free });
-      for (const g of groups) launch(g, argsForGroup(cfg, g));
+      for (const g of groups) if (!g.derived) launch(g, argsForGroup(cfg, g));
+      const vg = groups.find(g => g.derived); if (vg) startDerived(vg);
       for (const d of cfg.destinations) if (d.on) outputs.start(d.id);
     } else {
       launch({ id: 'h', aspect: '16:9', destinations: [], record: null }, argsFor(cfg));
@@ -349,9 +396,17 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       let d; try { d = validateDestination({ ...(msg.destination || {}), id }, id); } catch (e) { reject(e.message); return; }
       if (broadcast.destinations.length >= MAX_DESTINATIONS) { reject('Use no máximo ' + MAX_DESTINATIONS + ' destinos simultâneos.'); return; }
       if (broadcast.destinations.some(x => x.target === d.target)) { reject('Já existe um destino com o mesmo servidor e a mesma chave.'); return; }
-      const g = [...runners.values()].find(r => r.group.aspect === d.aspect && !r.failed && r.group.destinations.length);
-      if (!g) { reject('A saída ' + d.aspect + ' não foi preparada nesta live. Para entrar no meio da live, deixe o destino em espera antes de começar.'); return; }
-      broadcast.destinations.push(d); g.group.destinations.push(d); outputs.add(d, g.group.id);
+      // Formato da imagem principal (16:9): sempre disponível. 9:16 criado no serviço: liga na hora, mesmo que não estivesse rodando.
+      let gid = null, list = null;
+      const g = [...runners.values()].find(r => r.group.aspect === d.aspect && !r.failed && (r.group.destinations.length || r.group.feed));
+      if (g) { gid = g.group.id; list = g.group.destinations; }
+      else if (d.aspect === '9:16' && broadcast.derive) {
+        if (!derived && !startDerived({ id: 'v', aspect: '9:16', size: broadcast.vertical.resolution === '720p' ? '720:1280' : '1080:1920', bitrate: broadcast.vertical.bitrate, destinations: [], record: null, derived: true })) { reject('A imagem principal não está pronta para criar o 9:16. Tente de novo em instantes.'); return; }
+        gid = 'v'; list = derived.group.destinations;
+        audit.info('transmissao', 'vertical-no-meio', '9:16 ligado no meio da live para ' + d.name);
+      }
+      if (!gid) { reject('A saída ' + d.aspect + ' não foi preparada nesta live. Para entrar no meio da live, deixe o destino em espera antes de começar.'); return; }
+      broadcast.destinations.push(d); list.push(d); outputs.add(d, gid);
       if (d.warning) send({ type: 'destination', id, state: 'warning', reason: d.warning });
     }
     outputs.start(id);

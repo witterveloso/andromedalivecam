@@ -41,7 +41,7 @@
   }
   function update() {
     for (const s of slots) {
-      const i = s.index(), visible = s.canvas.getClientRects().length > 0, stream = visible && window.andromedaNativeMonitors?.enabled !== false ? streamOf(i) : null;
+      const i = s.index(), visible = s.canvas.getClientRects().length > 0, stream = visible && window.andromedaNativeMonitors?.enabled !== false && !(s.preview && window.andromedaFormat?.vertical) ? streamOf(i) : null;
       if (stream) {
         if (s.video.srcObject !== stream) { s.video.srcObject = stream; s.video.play().catch(() => {}); }
         const fit = fitOf(i); if (s.video.style.objectFit !== fit) s.video.style.objectFit = fit;

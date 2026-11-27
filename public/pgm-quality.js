@@ -9,14 +9,15 @@
 (() => {
   const KEY = 'andromeda.pgm.v1', SIZES = { hd: [1920, 1080], eco: [1280, 720] }, LIGHT = [960, 540];
   let q = 'hd'; try { const v = JSON.parse(localStorage.getItem(KEY) || '{}').q; if (SIZES[v]) q = v; } catch { /* sem armazenamento */ }
-  const size = () => SIZES[q];
+  const orient = s => (window.andromedaOrient || (x => x))(s);
+  const size = () => orient(SIZES[q]);
   const sending = () => typeof busyTx === 'function' && busyTx();
   const windowOpen = () => typeof outputWindow !== 'undefined' && !!outputWindow && !outputWindow.closed;
   function resize(list, [w, h]) { for (const c of list) if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
   function apply() {
     if (typeof programOutput === 'undefined' || typeof overlay === 'undefined' || typeof hdBase === 'undefined') return;
     if (sending()) { hdOn = true; return; } // durante o envio quem manda é a resolução da transmissão
-    const hd = windowOpen(); hdOn = hd; resize([hdBase, overlay, programOutput], hd ? size() : LIGHT);
+    const hd = windowOpen(); hdOn = hd; resize([hdBase, overlay, programOutput], hd ? size() : orient(LIGHT));
     try { if (typeof routeProgramOutput === 'function') routeProgramOutput(); } catch { /* o desenho blindado da mesa registra a falha */ }
   }
   // Ao encerrar o envio, o PGM volta ao tamanho leve (antes ficava em 1080p até fechar o programa).

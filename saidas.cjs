@@ -35,12 +35,19 @@ function createFeed() {
 }
 
 // Recebe um pedaço do codificador e devolve { data (etiquetas inteiras), firstKey } atualizando cabeçalhos e cache.
+// Instante (ms) de uma etiqueta FLV: 24 bits + 8 bits de extensão.
+const tsOf = (b, p) => ((b[p + 7] << 24) | (b[p + 4] << 16) | (b[p + 5] << 8) | b[p + 6]) >>> 0;
+
 function scan(feed, chunk) {
   let buf = feed.rest ? Buffer.concat([feed.rest, chunk]) : chunk, pos = 0;
-  if (!feed.head) {
+  if (!feed.head || feed.splice) {
     if (buf.length < FLV_HEAD) { feed.rest = Buffer.from(buf); return { data: buf.subarray(0, 0), firstKey: -1 }; }
     if (buf[0] !== 0x46 || buf[1] !== 0x4c || buf[2] !== 0x56) throw Error('saída interna do codificador não é FLV');
-    feed.head = Buffer.from(buf.subarray(0, FLV_HEAD)); pos = FLV_HEAD;
+    if (!feed.head) feed.head = Buffer.from(buf.subarray(0, FLV_HEAD));
+    // Emenda: um processo novo continuou a mesma linha do tempo (ex.: 9:16 com enquadramento novo). A assinatura dele é
+    // pulada; a configuração nova (SPS/PPS) é guardada e vai aos destinos antes do primeiro quadro-chave do processo novo.
+    if (feed.splice) { feed.splice = false; feed.spliced = true; feed.after = feed.lastTs ?? -1; feed.avc = null; feed.aac = null; feed.cache = []; feed.cacheBytes = 0; feed.cacheOk = false; }
+    pos = FLV_HEAD;
   }
   const from = pos; let firstKey = -1, lastKey = -1, media = false;
   while (pos + 11 <= buf.length) {
@@ -51,11 +58,12 @@ function scan(feed, chunk) {
     else if (type === 9 && size >= 2) {
       const frame = buf[d] >> 4, codec = buf[d] & 0x0f, packet = buf[d + 1];
       if (codec === 7 && packet === 0) feed.avc = tag();
-      else if (codec === 7 && packet === 1 && frame === 1) { if (firstKey < 0) firstKey = pos - from; lastKey = pos - from; media = true; }
+      else if (codec === 7 && packet === 1 && frame === 1 && !(feed.after >= 0 && tsOf(buf, pos) <= feed.after)) { if (firstKey < 0) firstKey = pos - from; lastKey = pos - from; media = true; feed.after = -1; }
       else media = true;
     } else if (type === 8 && size >= 2) {
       if (buf[d] >> 4 === 10 && buf[d + 1] === 0) feed.aac = tag(); else media = true;
     }
+    if (type === 9 && !(feed.after >= 0)) feed.lastTs = tsOf(buf, pos);
     pos += total;
   }
   const data = buf.subarray(from, pos);
@@ -77,6 +85,8 @@ const CFR30 = require('./encoder.cjs').CFR30;
 const INPUT = ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-probesize', '2000000', '-analyzeduration', '1000000', '-f', 'flv', '-i', 'pipe:0',
   '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-progress', 'pipe:3', '-stats_period', '1'];
 function outputArgs(dest) {
+  // Saída interna (ex.: o 9:16 criado a partir da imagem 16:9): os argumentos vêm prontos de quem a criou.
+  if (dest.protocol === 'derive') return dest.args;
   if (dest.protocol === 'srt') return [...INPUT, '-bsf:v', CFR30, '-f', 'mpegts', dest.target];
   return [...INPUT, '-f', 'flv', '-flvflags', 'no_duration_filesize', '-rtmp_flashver', FLASHVER, '-rw_timeout', '15000000', dest.target];
 }
@@ -102,7 +112,9 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
   let closing = false;
   const emit = (o, state, reason = '') => {
     if (o.state === state && o.reason === reason) return;
-    o.state = state; o.reason = reason; send({ type: 'destination', id: o.dest.id, state, reason, protocol: o.dest.protocol });
+    o.state = state; o.reason = reason;
+    if (o.dest.internal) { o.dest.onState?.(state, reason); return; } // saída interna: quem a criou decide o que mostrar
+    send({ type: 'destination', id: o.dest.id, state, reason, protocol: o.dest.protocol });
   };
 
   function group(id, { size } = {}) {
@@ -119,7 +131,9 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
   // O codificador do formato mandou mais um pedaço: guarda o necessário e repassa a cada destino ligado.
   function feed(groupId, chunk) {
     const f = feeds.get(groupId); if (!f || f.ended) return;
-    const { data, firstKey } = scan(f, chunk); if (!data.length) return;
+    const wasSplice = f.spliced; const { data, firstKey } = scan(f, chunk); if (!data.length) return;
+    if (f.spliced && !wasSplice) for (const o of outputs.values()) if (o.groupId === groupId && o.child && !o.ending) { o.mode = 'key'; o.splice = true; }
+    if (f.spliced && firstKey >= 0) f.spliced = false;
     for (const o of outputs.values()) {
       if (o.groupId !== groupId || !o.child || o.ending) continue;
       const queued = o.child.stdin.writableLength;
@@ -131,7 +145,10 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
         }
         write(o, [data]);
       } else if (o.mode === 'key' && firstKey >= 0 && queued < f.limit / 2 && header(f)) {
-        write(o, [...header(f), data.subarray(firstKey)]); o.mode = 'live';
+        // Depois de uma emenda, a conexão continua: vão só a configuração nova e a imagem a partir do quadro-chave.
+        if (o.splice) { o.splice = false; write(o, [f.avc, ...(f.aac ? [f.aac] : []), data.subarray(firstKey)]); }
+        else write(o, [...header(f), data.subarray(firstKey)]);
+        o.mode = 'live';
       }
     }
   }
@@ -139,7 +156,10 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
   function launch(o) {
     if (o.child || !o.want || closing) return;
     const f = feeds.get(o.groupId); if (!f || f.ended) return;
-    const child = spawnProcess(ffmpeg, outputArgs(o.dest), { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
+    const child = spawnProcess(ffmpeg, outputArgs(o.dest), { shell: false, windowsHide: true, stdio: ['pipe', o.dest.onStdout ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    // Saída interna que produz outra imagem (o 9:16): o que ela gera vira a entrada de outro grupo do distribuidor.
+    if (o.dest.onStdout) child.stdout.on('data', d => { if (o.child === child) o.dest.onStdout(d); });
+    o.dest.onStart?.();
     Object.assign(o, { child, ending: false, fedAt: 0, sentBytes: 0, advancedAt: 0, progress: '', stderr: '', launchedAt: now() });
     emit(o, o.everSent ? 'retrying' : 'connecting', o.everSent ? o.reason || 'reconectando' : '');
     child.stdin.on('error', () => { /* o processo saiu: o fechamento decide o que fazer */ });
@@ -170,7 +190,7 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       const wasWanted = o.want && !closing && !o.restartNow;
       clearTimeout(o.killTimer); o.child = null; o.ending = false;
       if (o.restartNow) { o.restartNow = false; if (o.want && !closing) launch(o); return; }
-      if (!wasWanted) { o.since = 0; emit(o, 'off'); return; }
+      if (!wasWanted) { o.since = 0; emit(o, 'off'); o.dest.onEnd?.(); return; }
       const reason = reasonOf(o.stderr), wait = BACKOFF[Math.min(o.retries, BACKOFF.length - 1)]; o.retries++;
       audit.warn('saidas', 'destino-reconectando', o.dest.name + ': ' + reason + '. Nova tentativa em ' + Math.round(wait / 1000) + ' s.', { codigo: code, log: o.stderr.slice(-800) });
       emit(o, 'retrying', reason);
@@ -211,6 +231,13 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       o.dest = dest; o.reason = ''; return true;
     },
     groupOf: id => outputs.get(id)?.groupId,
+    // Troca a configuração de uma saída que está no ar e reabre o processo (ex.: novo enquadramento do 9:16).
+    restart(id, dest) {
+      const o = outputs.get(id); if (!o) return false;
+      if (dest) o.dest = dest;
+      if (o.child && o.want) { o.restartNow = true; end(o, 2000); } else if (o.want) launch(o);
+      return true;
+    },
     // Liga um destino: no ar em segundos, sem tocar nos outros.
     start(id) {
       const o = outputs.get(id); if (!o || closing) return false;
@@ -228,8 +255,10 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       return true;
     },
     // O codificador do formato foi reiniciado: começa do zero (tabelas novas, tempos novos) e os destinos ligados reabrem a conexão.
-    resetGroup(groupId) {
+    resetGroup(groupId, { splice = false } = {}) {
       const f = feeds.get(groupId); if (!f) return;
+      // Emenda (mesma linha do tempo, processo novo): os destinos continuam conectados e só pulam para o quadro-chave novo.
+      if (splice && f.head) { Object.assign(f, { rest: null, splice: true, ended: false }); return; }
       Object.assign(f, createFeed(), { ended: false });
       for (const o of outputs.values()) if (o.groupId === groupId && o.child && o.want) { o.restartNow = true; end(o, 2000); }
     },
@@ -244,6 +273,7 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
     },
     status: () => [...outputs.values()].map(o => ({ id: o.dest.id, name: o.dest.name, protocol: o.dest.protocol, aspect: o.dest.aspect, state: o.state, reason: o.reason, kbps: o.state === 'sending' ? o.kbps : 0, since: o.since, dropped: o.dropped })),
     running: () => [...outputs.values()].filter(o => o.child).length,
+    isRunning: id => !!outputs.get(id)?.child,
   };
   return api;
 }

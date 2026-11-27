@@ -46,7 +46,7 @@ test('regra 1080p30: a transmissão nunca desce de 1080p a 30 fps (sem perfil ad
   assert.doesNotMatch(b, /new Option\('Adaptativo'/); assert.match(b, /if \(!\['fixed','fixed4k'\]\.includes\(model\.policy\)\) model\.policy = 'fixed';/);
   assert.doesNotMatch(b, /\[1280, 720, '720p'\]|\[960, 540, '540p'\]|\[1280,720,'720p'\]|\[960,540,'540p'\]/, 'nenhuma escada abaixo de 1080p');
   assert.match(b, /const STEPS = \[\[3840, 2160, '2160p'\], \[1920, 1080, '1080p'\]\];/); assert.match(b, /if \(width <= 1920\) \{ if \(!window\.andromedaLight\)/, 'no piso: modo leve, não reduz');
-  assert.match(b, /let \[width, height\] = outRes === '2160p' \? \[3840,2160\] : \[1920, 1080\];/); assert.match(b, /\(check\.fps \|\| 0\) >= 28\.5\) \{\s*window\.andromedaLight = true;/, 'codificador a 30: segue em 1080p30 com quadros repetidos');
+  assert.match(b, /let \[width, height\] = vprod \? \[1080, 1920\] : outRes === '2160p' \? \[3840,2160\] : \[1920, 1080\];/, 'produção vertical: 1080×1920'); assert.match(b, /\(check\.fps \|\| 0\) >= 28\.5\) \{\s*window\.andromedaLight = true;/, 'codificador a 30: segue em 1080p30 com quadros repetidos');
   assert.match(b, /Math\.min\(20, Math\.max\(6, model\.bitrate\)\)/, '1080p com no mínimo 6 Mbps');
   assert.match(enc, /if \(live && resolution !== '2160p'\) resolution = '1080p';/); assert.match(enc, /vres = live \? '1080p'/, 'vertical ao vivo em 1080×1920');
   assert.match(pub, /msg\.type === 'resync' && everStarted/); assert.match(b, /type: 'start', resolution: outRes/);
@@ -121,7 +121,7 @@ test('prioridade do AR: enquanto transmite, PREVIEW e miniaturas só usam a folg
   const h = read('public/index.html');
   assert.match(h, /const monitorBudget = \(\) => onAirNow\(\) \? 13 : 22;/); assert.match(h, /if \(performance\.now\(\) - renderAt >= monitorBudget\(\)\) break;/);
   assert.match(h, /cams\[i\]\?\.conn \? \(onAirNow\(\) \? 200 : 95\) : 995/, 'miniaturas a 5 q/s no ar'); assert.match(h, /nextPreview = t \+ \(onAirNow\(\) \? 100 : 64\)/, 'PREVIEW a 10 q/s no ar');
-  assert.match(h, /\[w, h\] = onAirNow\(\) \? \[640, 360\] : \[960, 540\]/);
+  assert.match(h, /\[w, h\] = \(window\.andromedaOrient\|\|\(x=>x\)\)\(onAirNow\(\) \? \[640, 360\] : \[960, 540\]\)/, 'no formato da produção (em pé na vertical)');
 });
 
 test('monitores nativos: PREVIEW e miniaturas de câmeras ao vivo vão por <video> (compositor), o canvas não converte o vídeo na tela principal', () => {
