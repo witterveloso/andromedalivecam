@@ -28,7 +28,11 @@ async function session(port, { resync = true, kills = [2], killAtFrames = 0, kil
         // Disco da gravação falhando: só o gravador (Gravação Andrômeda) cai; o codificador e a transmissão nem percebem.
         if (killRecorderAtFrames && !killed && m.type === 'sending' && m.frames >= killRecorderAtFrames) { killed = true; children.filter(x => x.args.includes('matroska') && x.args.includes('pipe:0')).at(-1)?.c.kill('SIGKILL'); }
         if (m.type === 'restart' && reopen) { clearInterval(timer); for (let i = 0; i < 3; i++) ws.send(bytes.subarray(40000 + i * 3000, 43000 + i * 3000)); /* restos do gravador antigo: sem cabeçalho */ ws.send(bytes.subarray(0, 1)); setTimeout(() => { timer = feed(ws, bytes, 1); }, 100); /* como o Chrome: 1º pedaço de 1 byte, o resto do cabeçalho no seguinte */ }
-        if (m.type === 'stopped' || m.type === 'error') { clearTimeout(to); setTimeout(resolve, m.type === 'error' ? 500 : 0); } }); });
+        // Depois de um erro o serviço ainda fecha e junta a gravação (Gravação Andrômeda): espera o fim da sessão ("stopped" ou a
+        // conexão fechada) antes de apagar a pasta, senão os arquivos ainda estão sendo escritos (Windows: ENOTEMPTY).
+        if (m.type === 'stopped') { clearTimeout(to); resolve(); }
+        if (m.type === 'error') { clearTimeout(to); setTimeout(resolve, 30000); } });
+      ws.on('close', () => { clearTimeout(to); setTimeout(resolve, 200); }); });
     ws.send(JSON.stringify({ type: 'start', resolution: '720p', bitrate: 3, destinations: [], record: { dir: path.join(dir, 'rec'), formats: '16:9' }, channels: 1, resync }));
     await done; return { seen, audit, dir };
   } finally { clearInterval(timer); timers.forEach(clearTimeout); ws?.terminate(); bridge.shutdown(); }
