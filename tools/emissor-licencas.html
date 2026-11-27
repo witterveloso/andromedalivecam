@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'">
+<title>Emissor de Licenças · Andrômeda Live</title>
+<!--
+  Emissor de licenças do Andrômeda Live (uso do vendedor).
+  Funciona sem internet, só no seu computador: abra este arquivo no Google Chrome ou no Edge (duplo clique).
+  A chave privada nunca sai do seu computador; esta página não se conecta a nada (veja a política de segurança acima).
+  Formato do token idêntico ao de tools/licenca.cjs: ALV1.<dados base64url>.<assinatura Ed25519 base64url>.
+-->
+<style>
+:root { --bg: #0b0c14; --panel: #141627; --line: #282b45; --text: #e8e9f4; --muted: #9aa0c0; --accent: #7c5cff; --ok: #19c37d; --bad: #ff5470; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px max(16px, env(safe-area-inset-left)) 48px; }
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { margin: 0; font-size: 24px; letter-spacing: .01em; } h1 b { color: var(--accent); }
+h2 { margin: 0 0 4px; font-size: 17px; }
+p { margin: 0; color: var(--muted); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
+.step { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; font-weight: 800; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+input, select, textarea { width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: #0d0f1d; color: var(--text); font: inherit; }
+textarea { font: 12.5px/1.45 ui-monospace, Consolas, monospace; min-height: 90px; resize: vertical; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; }
+button.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.msg { font-size: 13.5px; } .msg[data-tone="ok"] { color: var(--ok); } .msg[data-tone="bad"] { color: var(--bad); }
+.warn { border-left: 3px solid #ffb020; padding: 8px 12px; background: rgba(255,176,32,.08); color: #ffd38a; border-radius: 0 8px 8px 0; font-size: 13.5px; }
+code { font-family: ui-monospace, Consolas, monospace; color: #c9bdff; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Emissor de Licenças · <b>Andrômeda Live</b></h1>
+    <p>Para o vendedor. Funciona sem internet: nada sai deste computador.</p>
+  </header>
+
+  <section id="keys">
+    <h2><span class="step">1</span>Criar as chaves (só uma vez)</h2>
+    <p>Cria o par de chaves da sua empresa. A <b>chave privada</b> emite as licenças e fica só com você. A <b>chave pública</b> vai dentro do programa para conferir as licenças.</p>
+    <div class="warn">Guarde o arquivo <code>licenca-privada.pem</code> em lugar seguro, com cópia de segurança (pendrive, cofre de senhas). Sem ele, você não emite mais licenças; com ele, qualquer pessoa emitiria. Nunca envie a chave privada para ninguém, nem para o GitHub ou um chat.</div>
+    <div class="row"><button id="makeKeys" type="button">Criar chaves</button><span class="msg" id="keysMsg"></span></div>
+    <label hidden id="pubBox">Chave pública: envie esta (é a única que pode ser compartilhada) para ser incluída no programa como <code>license-public.pem</code>
+      <textarea id="pubPem" readonly></textarea>
+    </label>
+    <div class="row" hidden id="pubActions"><button class="secondary" id="copyPub" type="button">Copiar chave pública</button><button class="secondary" id="savePub" type="button">Salvar license-public.pem</button><button class="secondary" id="savePriv" type="button">Salvar licenca-privada.pem de novo</button></div>
+  </section>
+
+  <section id="issue">
+    <h2><span class="step">2</span>Emitir uma licença</h2>
+    <p>O cliente vê o <b>código do computador</b> na mesa: Diagnóstico → Licença. Cada licença vale só para aquele computador.</p>
+    <label>Sua chave privada (arquivo <code>licenca-privada.pem</code>)<input id="privFile" type="file" accept=".pem,text/plain"></label>
+    <div class="grid">
+      <label>Cliente<input id="customer" maxlength="120" placeholder="Nome ou empresa"></label>
+      <label>E-mail (opcional)<input id="email" maxlength="160" type="email"></label>
+      <label>Plano<select id="plan"><option value="teste">Teste · 14 dias</option><option value="mensal" selected>Mensal · 31 dias</option><option value="anual">Anual · 366 dias</option></select></label>
+      <label>Dias (opcional, muda a duração)<input id="days" type="number" min="1" max="3660" placeholder="padrão do plano"></label>
+      <label>Código do computador<input id="device" maxlength="19" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <div class="row"><button id="emit" type="button">Emitir licença</button><span class="msg" id="emitMsg"></span></div>
+    <label hidden id="tokenBox">Licença (o cliente cola em Diagnóstico → Licença → Ativar)<textarea id="token" readonly></textarea></label>
+    <div class="row" hidden id="tokenActions"><button class="secondary" id="copyToken" type="button">Copiar licença</button><button class="secondary" id="saveToken" type="button">Salvar como arquivo</button></div>
+  </section>
+
+  <section>
+    <h2>Renovar e cancelar</h2>
+    <p><b>Renovar:</b> emita uma licença nova para o mesmo código do computador e envie ao cliente. A anterior continua valendo até vencer.<br>
+    <b>Vencimento:</b> depois do vencimento o cliente tem 3 dias de tolerância. Sem renovação, a transmissão fica bloqueada até ele colar uma licença nova.<br>
+    <b>Troca de computador:</b> peça o código do computador novo e emita para ele.</p>
+  </section>
+</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const PLANS = { teste: 14, mensal: 31, anual: 366 };
+const b64url = bytes => { let s = ''; for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const utf8 = text => new TextEncoder().encode(text);
+const pem = (label, der) => '-----BEGIN ' + label + '-----\n' + btoa(String.fromCharCode(...new Uint8Array(der))).match(/.{1,64}/g).join('\n') + '\n-----END ' + label + '-----\n';
+const unpem = text => { const body = String(text).replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''); const bin = atob(body); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
+const say = (el, text, tone = '') => { el.textContent = text; el.dataset.tone = tone; };
+function save(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/x-pem-file' })); a.download = name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+const copy = async (text, el) => { try { await navigator.clipboard.writeText(text); say(el, 'Copiado.', 'ok'); } catch { say(el, 'Selecione o texto e copie com Ctrl+C.', ''); } };
+const supported = !!(window.crypto && crypto.subtle);
+let privPem = '';
+
+$('#makeKeys').onclick = async () => {
+  try {
+    const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+    privPem = pem('PRIVATE KEY', await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+    const pubPem = pem('PUBLIC KEY', await crypto.subtle.exportKey('spki', pair.publicKey));
+    $('#pubPem').value = pubPem; $('#pubBox').hidden = $('#pubActions').hidden = false;
+    save('licenca-privada.pem', privPem);
+    say($('#keysMsg'), 'Chaves criadas. O arquivo licenca-privada.pem foi salvo em Downloads: guarde-o em lugar seguro.', 'ok');
+  } catch (e) { say($('#keysMsg'), 'Este navegador não cria chaves Ed25519. Use o Google Chrome ou o Edge atualizados. (' + e.message + ')', 'bad'); }
+};
+$('#copyPub').onclick = () => copy($('#pubPem').value, $('#keysMsg'));
+$('#savePub').onclick = () => save('license-public.pem', $('#pubPem').value);
+$('#savePriv').onclick = () => privPem && save('licenca-privada.pem', privPem);
+
+$('#privFile').onchange = async () => { const f = $('#privFile').files[0]; privPem = f ? await f.text() : privPem; say($('#emitMsg'), privPem.includes('PRIVATE KEY') ? 'Chave privada carregada.' : 'Este arquivo não é uma chave privada.', privPem.includes('PRIVATE KEY') ? 'ok' : 'bad'); };
+const normCode = c => String(c || '').toUpperCase().replace(/[^0-9A-F]/g, '').replace(/(.{4})(?=.)/g, '$1-');
+$('#device').oninput = () => { const v = normCode($('#device').value); if (v !== $('#device').value) $('#device').value = v; };
+
+async function issue({ privatePem, plan, customer, email = '', days, device = '', now = Date.now() }) {
+  if (!PLANS[plan]) throw Error('Plano desconhecido.');
+  if (!String(customer || '').trim()) throw Error('Informe o nome do cliente.');
+  const length = Number(days || PLANS[plan]);
+  if (!Number.isFinite(length) || length < 1 || length > 3660) throw Error('Duração inválida (1 a 3660 dias).');
+  const d = normCode(device);
+  if (!/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/.test(d)) throw Error('Código do computador inválido (formato XXXX-XXXX-XXXX-XXXX, em Diagnóstico → Licença na mesa do cliente).');
+  const key = await crypto.subtle.importKey('pkcs8', unpem(privatePem), { name: 'Ed25519' }, false, ['sign']);
+  const payload = { v: 1, id: crypto.randomUUID(), plan, customer: String(customer).trim().slice(0, 120), email: String(email).trim().slice(0, 160), issued: new Date(now).toISOString(), expires: new Date(now + length * 86400000).toISOString(), device: d };
+  const body = b64url(utf8(JSON.stringify(payload)));
+  return { token: 'ALV1.' + body + '.' + b64url(await crypto.subtle.sign({ name: 'Ed25519' }, key, utf8('ALV1.' + body))), payload };
+}
+window.andromedaIssue = issue; // usado pelo teste automático
+
+$('#emit').onclick = async () => {
+  try {
+    if (!privPem.includes('PRIVATE KEY')) throw Error('Carregue o arquivo licenca-privada.pem (ou crie as chaves no passo 1).');
+    const { token, payload } = await issue({ privatePem: privPem, plan: $('#plan').value, customer: $('#customer').value, email: $('#email').value, days: $('#days').value, device: $('#device').value });
+    $('#token').value = token; $('#tokenBox').hidden = $('#tokenActions').hidden = false;
+    say($('#emitMsg'), 'Licença emitida para ' + payload.customer + ' · plano ' + payload.plan + ' · vence em ' + payload.expires.slice(0, 10).split('-').reverse().join('/') + ' · computador ' + payload.device + '.', 'ok');
+  } catch (e) { say($('#emitMsg'), e.message, 'bad'); }
+};
+$('#copyToken').onclick = () => copy($('#token').value, $('#emitMsg'));
+$('#saveToken').onclick = () => save('licenca-' + ($('#customer').value.trim().replace(/[^\w-]+/g, '-') || 'cliente') + '.txt', $('#token').value + '\n');
+if (!supported) say($('#keysMsg'), 'Abra este arquivo no Google Chrome ou no Edge.', 'bad');
+</script>
+</body>
+</html>

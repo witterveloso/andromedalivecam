@@ -361,7 +361,8 @@
       const session = await checkBridge(); if (epoch !== liveTx.epoch) return; liveTx.apiToken = session?.token;
       if (!session?.ffmpegReady) throw Error('Codificador indisponível. Execute INSTALAR.bat e INICIAR.bat.');
       if (session.busy) throw Error('Outra aba já está transmitindo. Encerre-a antes de continuar.');
-      if (session.license && !session.license.valid) throw Error(session.license.message);
+      // Assinatura: sem licença ativa, a mesa leva o operador direto ao lugar de ativar (Diagnóstico → Licença), com o código do computador.
+      if (session.license && !session.license.valid) { try { openWorkspace('diagnostics'); document.querySelector('#licenseToken')?.focus(); } catch { /* aba ausente */ } throw Error(session.license.message); }
       const available = session.encoders || [];
       const selectedEncoder = model.encoder === 'auto'
         ? (['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'].find(id => available.includes(id)) || 'libx264')

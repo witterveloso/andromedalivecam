@@ -25,7 +25,7 @@ const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
 const os = require('node:os');
 const { analyze } = require('./avsync.cjs');
-const { validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
+const { CFR30, validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
 const { createOutputs } = require('./saidas.cjs');
 
 const MAX_QUEUE = 8 * 1024 * 1024;
@@ -54,7 +54,9 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     let size = 0; try { size = fs.statSync(record.file).size; } catch { /* sem arquivo */ }
     if (size < 1024) { done(null); return; }
     const mp4 = record.file.replace(/\.mkv$/, '.mp4');
-    const mux = spawnProcess(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', record.file, '-c', 'copy', '-movflags', '+faststart', mp4], { shell: false, windowsHide: true, stdio: 'ignore' });
+    // 30 fps cravados no arquivo final: o MKV de segurança guarda o tempo em ms (33/34 ms); o MP4 volta cada quadro para a grade
+    // exata de 1/30 s (relógio de 90 kHz). Programas de edição leem o arquivo como 30 fps constantes, sem aviso de taxa variável.
+    const mux = spawnProcess(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', record.file, '-map', '0', '-c', 'copy', '-bsf:v', CFR30, '-video_track_timescale', '90000', '-movflags', '+faststart', mp4], { shell: false, windowsHide: true, stdio: 'ignore' });
     mux.on('error', () => done({ file: record.file, size }));
     mux.on('close', code => {
       let out = 0; try { out = fs.statSync(mp4).size; } catch { /* sem saída */ }
@@ -332,6 +334,17 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     const id = String(msg.id || '').slice(0, 40), reject = reason => send({ type: 'destination', id, state: 'error', reason });
     if (msg.action === 'stop') { outputs.stop(id); return; }
     if (msg.action !== 'start') return;
+    // Destino já conhecido, fora do ar, com configuração nova (chave, servidor, senha): vale a configuração que o operador vê agora.
+    if (outputs.has(id) && msg.destination) {
+      let d; try { d = validateDestination({ ...msg.destination, id }, id); } catch (e) { reject(e.message); return; }
+      const i = broadcast.destinations.findIndex(x => x.id === id), old = broadcast.destinations[i];
+      if (old && d.target !== old.target) {
+        const g = [...runners.values()].find(r => r.group.id === outputs.groupOf(id));
+        if (d.aspect !== old.aspect || !g) { reject('Para trocar o formato de um destino, tire-o da live e adicione de novo.'); return; }
+        if (broadcast.destinations.some(x => x.id !== id && x.target === d.target)) { reject('Já existe um destino com o mesmo servidor e a mesma chave.'); return; }
+        if (outputs.update(id, d)) { broadcast.destinations[i] = d; const j = g.group.destinations.findIndex(x => x.id === id); if (j >= 0) g.group.destinations[j] = d; audit.info('saidas', 'destino-atualizado', d.name + ': configuração nova antes de entrar no ar'); }
+      }
+    }
     if (!outputs.has(id)) {
       let d; try { d = validateDestination({ ...(msg.destination || {}), id }, id); } catch (e) { reject(e.message); return; }
       if (broadcast.destinations.length >= MAX_DESTINATIONS) { reject('Use no máximo ' + MAX_DESTINATIONS + ' destinos simultâneos.'); return; }

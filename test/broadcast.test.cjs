@@ -101,3 +101,32 @@ test('storage and audit endpoints: token required for writes, volumes listed, fo
   const exported=await fetch(base+'/api/audit/export');assert.match(exported.headers.get('content-disposition'),/andromeda-auditoria-.*\.jsonl/);assert((await exported.text()).trim().split('\n').every(line=>JSON.parse(line).seq>0));
  }finally{bridge.shutdown();try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch{/* Windows may still lock a file; never hide the test's own result */}}
 });
+
+// Destino em espera que o operador corrige antes de pôr no ar (chave nova): entra no ar com a chave nova, não a antiga.
+// E a gravação final sai em 30 fps cravados (cada quadro a 1/30 s exato), para os programas de edição lerem como taxa constante.
+test('standby destination edited before going on air uses the new key; the MP4 recording is exact 30 fps',async t=>{
+ if(!exe)return t.skip('FFmpeg ausente');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'andromeda-edit-')),recDir=path.join(dir,'rec'),source=path.join(dir,'source.webm'),c=path.join(dir,'c.flv');
+ clip(source,14);const up=listener(19413,'keyNEW999',c);await new Promise(r=>setTimeout(r,700));
+ const audit=createAudit({write:false}),port=3184,bridge=createBridge({port,ffmpeg:exe,audit});bridge.listen();await once(bridge.server,'listening');let ws,timer;
+ try{
+  const session=await(await fetch('http://localhost:'+port+'/api/session')).json();
+  ws=new WebSocket('ws://localhost:'+port+'/publish','andromeda.'+session.token,{origin:'http://localhost:'+port});const seen=[];let asked=false,stopSent=false;
+  const dest={id:'c',platform:'custom',name:'Destino C',server:'rtmp://127.0.0.1:19413/live',key:'keyOLD000'};
+  const done=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out: '+JSON.stringify(seen.map(m=>m.type+':'+(m.state||''))))),60000);ws.on('message',raw=>{const m=JSON.parse(raw);seen.push(m);
+   if(m.type==='ready')timer=feed(ws,fs.readFileSync(source),14);
+   if(m.type==='sending'&&m.frames>60&&!asked){asked=true;ws.send(JSON.stringify({type:'output',id:'c',action:'start',destination:{...dest,key:'keyNEW999',on:true}}))}
+   if(m.type==='sending'&&!stopSent&&(m.frames>300||seen.some(x=>x.type==='destination'&&x.id==='c'&&x.state==='sending')&&m.frames>200)){stopSent=true;ws.send(JSON.stringify({type:'stop'}))}
+   if(m.type==='stopped'){clearTimeout(timeout);resolve()}});ws.on('error',reject)});
+  await once(ws,'open');
+  ws.send(JSON.stringify({type:'start',...base,resolution:'1080p',destinations:[{...dest,on:false}],record:{dir:recDir}}));
+  await done;
+  assert(seen.some(m=>m.type==='destination'&&m.id==='c'&&m.state==='standby'),'starts on standby');
+  assert(seen.some(m=>m.type==='destination'&&m.id==='c'&&m.state==='sending'),'goes on air with the corrected key: '+JSON.stringify(seen.filter(m=>m.type==='destination')));
+  await new Promise(r=>setTimeout(r,1500));assert(fs.existsSync(c)&&fs.statSync(c).size>20000,'the platform received the live');
+  const recorded=seen.find(m=>m.type==='recorded');assert(recorded&&recorded.file.endsWith('.mp4'),JSON.stringify(recorded));
+  const info=spawnSync(exe,['-hide_banner','-v','info','-i',recorded.file,'-map','0:v','-vf','showinfo','-f','null','-'],{encoding:'utf8',maxBuffer:32<<20}).stderr;
+  const pts=[...info.matchAll(/pts:\s*(\d+)\s+pts_time/g)].map(m=>Number(m[1]));const steps=new Set(pts.slice(1).map((p,i)=>p-pts[i]));
+  assert(pts.length>200,'recording has frames ('+pts.length+')');assert.deepEqual([...steps],[3000],'every frame exactly 1/30 s apart (90 kHz): '+[...steps].join(','));
+ }finally{clearInterval(timer);ws?.terminate();up.kill('SIGKILL');bridge.shutdown();try{fs.rmSync(dir,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch{/* Windows */}}
+});
