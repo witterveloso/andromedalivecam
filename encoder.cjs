@@ -276,11 +276,16 @@ const CFR30 = 'setts=pts=max(round(PTS*TB*30)*3000\\,PREV_OUTPTS+3000):dts=max(r
  * A mesa desenha e codifica uma imagem só. O serviço recorta (ou encaixa com fundo desfocado / barras) o 9:16 da imagem
  * que já está saindo, codifica com a placa de vídeo quando houver (Quick Sync, NVENC, AMF) e entrega ao distribuidor e à
  * gravação 9:16. O enquadramento é o mesmo da prévia vertical da mesa (recorte com posição, desfocado ou barras). */
+const SAFE_WIDTH = 0.8; // parte da largura do 9:16 que aparece em qualquer celular (as laterais são cortadas nos mais altos)
 function verticalFilter({ mode = 'crop', pos = 0.5 } = {}, [W, H] = [1080, 1920]) {
   const p = Math.min(1, Math.max(0, Number(pos) || 0)).toFixed(3), cw = 'trunc(ih*' + W + '/' + H + '/2)*2';
   const tail = ',fps=30,setsar=1,format=yuv420p[v]';
-  if (mode === 'blur') return '[0:v:0]split[a][b];[a]crop=' + cw + ':ih:(iw-' + cw + ')/2:0,scale=36:64,scale=' + W + ':' + H + ':flags=bilinear,colorlevels=romax=0.65:gomax=0.65:bomax=0.65[bg];[b]scale=' + W + ':-2:flags=bicubic[fg];[bg][fg]overlay=0:(H-h)/2' + tail;
-  if (mode === 'bars') return '[0:v:0]scale=' + W + ':-2:flags=bicubic,pad=' + W + ':' + H + ':0:(oh-ih)/2:black' + tail;
+  // Quadro inteiro (fundo desfocado ou barras): o Instagram/TikTok enche a tela de celulares mais altos que 9:16 cortando as laterais
+  // (~9% de cada lado num 19,5:9). O 16:9 fica em 80% da largura, dentro do que aparece em qualquer celular.
+  // Fundo: média de 4×7 pontos ampliada e suavizada, escurecida: só cor, sem manchas de letras ou do relógio.
+  const SW = Math.round(W * SAFE_WIDTH / 2) * 2;
+  if (mode === 'blur') return '[0:v:0]split[a][b];[a]crop=' + cw + ':ih:(iw-' + cw + ')/2:0,scale=4:7:flags=area,scale=' + W + ':' + H + ':flags=bilinear,boxblur=90:3,colorlevels=romax=0.45:gomax=0.45:bomax=0.45[bg];[b]scale=' + SW + ':-2:flags=bicubic[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2' + tail;
+  if (mode === 'bars') return '[0:v:0]scale=' + SW + ':-2:flags=bicubic,pad=' + W + ':' + H + ':(ow-iw)/2:(oh-ih)/2:black' + tail;
   return '[0:v:0]crop=' + cw + ':ih:(iw-' + cw + ')*' + p + ':0,scale=' + W + ':' + H + ':flags=bicubic' + tail;
 }
 // Codificador do 9:16: placa de vídeo primeiro (não pesa no processador), senão x264 rápido.

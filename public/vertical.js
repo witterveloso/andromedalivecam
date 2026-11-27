@@ -17,7 +17,8 @@
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify(s)); } catch { /* sem armazenamento */ } };
 
   const canvas = make('canvas'); canvas.id = 'programVertical'; canvas.setAttribute('aria-label', 'Prévia da saída vertical 9:16');
-  const small = make('canvas'); small.width = 36; small.height = 64;
+  const small = make('canvas'); small.width = 4; small.height = 7;
+  const SAFE_WIDTH = 0.8; // parte da largura que aparece em qualquer celular
   const size = () => s.resolution === '1080p' ? [1080, 1920] : [720, 1280];
   const fit = () => { const [w, h] = size(); if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } };
   fit();
@@ -31,11 +32,13 @@
     if (s.mode === 'crop') { ctx.drawImage(src, (sw - cw) * s.pos, 0, cw, sh, 0, 0, W, H); return; }
     if (s.mode === 'blur') {
       // Fundo desfocado barato: o recorte central em 36×64 e ampliado de volta.
-      const sc = small.getContext('2d'); sc.drawImage(src, (sw - cw) / 2, 0, cw, sh, 0, 0, small.width, small.height);
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low'; ctx.drawImage(small, 0, 0, W, H);
-      ctx.fillStyle = 'rgba(0, 0, 0, .35)'; ctx.fillRect(0, 0, W, H);
+      // Fundo: média de 4×7 pontos ampliada com suavização: só cor, sem manchas de letras ou do relógio.
+      const sc = small.getContext('2d'); sc.imageSmoothingQuality = 'high'; sc.drawImage(src, (sw - cw) / 2, 0, cw, sh, 0, 0, small.width, small.height);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(small, 0, 0, W, H);
+      ctx.fillStyle = 'rgba(0, 0, 0, .55)'; ctx.fillRect(0, 0, W, H);
     } else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
-    const h = W * sh / sw; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, 0, (H - h) / 2, W, h);
+    // O Instagram/TikTok corta as laterais em celulares mais altos que 9:16: o quadro inteiro fica em 80% da largura.
+    const fw = W * SAFE_WIDTH, h = fw * sh / sw; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, (W - fw) / 2, (H - h) / 2, fw, h);
   }
   // Desenha junto com o PROGRAM: só quando a saída vertical está no ar ou a prévia está à vista.
   let preview = null;
@@ -54,7 +57,7 @@
     const hint = make('span', 'vertical-hint', 'Arraste para escolher o que aparece'); preview.append(hint);
     const controls = make('div', 'vertical-controls');
     const modes = make('div', 'vertical-modes'); modes.setAttribute('role', 'radiogroup'); modes.setAttribute('aria-label', 'Enquadramento vertical');
-    const MODES = [['crop', 'Recortar', 'Ocupa a tela toda; você escolhe a parte do 16:9.'], ['blur', 'Inteira · fundo desfocado', 'Mostra o quadro todo, sem cortar GC nem laterais.'], ['bars', 'Inteira · barras pretas', 'Quadro todo com barras em cima e embaixo.']];
+    const MODES = [['crop', 'Recortar', 'Ocupa a tela toda; você escolhe a parte do 16:9.'], ['blur', 'Inteira · fundo desfocado', 'Mostra o quadro todo, dentro da área que aparece em qualquer celular.'], ['bars', 'Inteira · barras pretas', 'Quadro todo, com fundo preto.']];
     const modeButtons = MODES.map(([id, label, tip]) => { const b = make('button', '', label); b.type = 'button'; b.title = tip; b.setAttribute('role', 'radio'); b.onclick = () => { s.mode = id; save(); paint(); draw(); }; modes.append(b); return b; });
     const posLabel = make('label', 'vertical-pos'), posHead = make('span', 'vertical-pos-head'), posOut = make('output'), pos = make('input');
     posHead.append(make('span', '', 'Posição do recorte'), posOut);

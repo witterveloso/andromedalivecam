@@ -27,6 +27,11 @@ Na produção vertical:
 - **A gravação sai em 9:16.**
 - **O formato fica travado durante a live.** Para trocar, encerre a live.
 
+## Instagram e TikTok: nada cortado, fundo sem manchas
+- **O 16:9 inteiro aparece em qualquer celular.** Em celulares mais altos que 9:16 (a maioria dos iPhones e Androids atuais), o Instagram e o TikTok enchem a tela cortando as laterais da live, cerca de 9% de cada lado. Nos modos "Inteira · fundo desfocado" e "Inteira · barras pretas", o quadro 16:9 agora ocupa 80% da largura, dentro da área que aparece em qualquer aparelho. Antes, as pontas eram cortadas (por exemplo, as letras das bordas do logotipo).
+- **Fundo desfocado sem pontos brancos.** O fundo agora é só cor difusa e escurecida. Antes, letras e relógio claros apareciam no fundo como manchas brancas.
+- **GC, logotipo e janela na tela em pé** ficam dentro da área segura: longe das laterais cortadas, abaixo do cabeçalho do Instagram (nome e "Ao vivo") e acima dos comentários.
+
 ## Testado
 - **Mesa real, horizontal:** live iniciada com o Instagram. YouTube conta 1 e conta 2 entraram no meio, em 1920×1080 (409 quadros cada). O recorte 9:16 mudou ao vivo sem reconectar o Instagram. Saíram duas gravações: 16:9 em 1920×1080 e 9:16 em 1080×1920, cada uma num arquivo só.
 - **Mesa real, vertical:** live só com o Instagram e câmera deitada no PGM. Saída e gravação em 1080×1920, com a imagem chegando até as duas laterais, sem bordas pretas.

@@ -94,3 +94,12 @@ for (const [first, later] of [['ig', 'yt'], ['yt', 'ig']]) test('formato ligado 
     assert(y.frames > 150 && i.frames > 150, 'as duas plataformas no ar (YouTube ' + y.frames + ', Instagram ' + i.frames + ')');
   } finally { clearInterval(timer); ws?.terminate(); for (const r of rx) r.kill('SIGKILL'); bridge.shutdown(); try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Windows */ } }
 });
+
+test('9:16 com o quadro inteiro: 16:9 dentro da área que aparece em qualquer celular e fundo desfocado só de cor (sem manchas)', () => {
+  const { verticalFilter } = require('../encoder.cjs');
+  const blur = verticalFilter({ mode: 'blur' }), bars = verticalFilter({ mode: 'bars' });
+  assert.match(blur, /\[b\]scale=864:-2/); assert.match(blur, /overlay=\(W-w\)\/2:\(H-h\)\/2/); assert.match(blur, /scale=4:7:flags=area/); assert.match(blur, /boxblur=/);
+  assert.doesNotMatch(blur, /scale=36:64/, 'miniatura 36×64 deixava manchas brancas de letras e relógio');
+  assert.match(bars, /scale=864:-2/); assert.match(bars, /pad=1080:1920:\(ow-iw\)\/2:\(oh-ih\)\/2/);
+  assert.match(verticalFilter({ mode: 'crop', pos: 0.5 }), /crop=trunc\(ih\*1080\/1920\/2\)\*2:ih/, 'recorte continua ocupando a tela toda');
+});

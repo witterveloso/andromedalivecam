@@ -9,3 +9,5 @@ const layer={on:true,title:'Maria Silva',subtitle:'Repórter',size:40,width:72,c
 C.compose(ctx,1080,1920,{pip:{on:false},layers:[layer],logo:{on:false}});const [x,y,w,h]=rects[0];
 assert(x>=0&&x+w<=1080,'GC dentro da largura');assert(y+h<=1920*.8+1e-6,'GC acima da área de comentários');assert.match(fonts[0],/^700 40px/,'mesmo tamanho de letra do 16:9 em pixels');
 rects.length=0;fonts.length=0;C.compose(ctx,1920,1080,{pip:{on:false},layers:[layer],logo:{on:false}});assert.match(fonts[0],/^700 40px/,'16:9 sem mudança');assert(Math.abs(rects[0][2]-1920*.72)<1e-6,'largura do GC no 16:9 sem mudança')});
+test('tela em pé: GC, logotipo e janela dentro da área que aparece no Instagram/TikTok (laterais cortadas, cabeçalho e comentários)',()=>{for(const corner of ['top-left','top-right','bottom-left','bottom-right']){const b=C.anchored(1080,1920,300,200,corner);assert(b.x>=1080*.11-1e-6&&b.x+b.width<=1080*.89+1e-6,'fora das laterais cortadas');assert(b.y>=1920*.11-1e-6&&b.y+b.height<=1920*.8+1e-6,'fora do cabeçalho e dos comentários')}
+const big=C.anchored(1080,1920,2000,200,'bottom-left');assert(big.width<=1080*.78+1e-6,'largura limitada à área segura')});
