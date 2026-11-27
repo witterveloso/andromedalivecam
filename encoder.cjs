@@ -260,4 +260,8 @@ function safeBroadcastError(stderr) {
   return 'O codificador foi interrompido. Confira a conexão e os destinos e inicie novamente.';
 }
 
-module.exports = { FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };
+// Grade exata de 30 fps (relógio de 90 kHz, 3000 tiques por quadro) para quem guarda o tempo com precisão (MPEG-TS, MP4).
+// Arredonda cada quadro para o múltiplo de 1/30 s mais próximo: a saída já é 30 fps constantes, só o arredondamento em ms sai.
+const CFR30 = 'setts=pts=round(PTS*TB*30)*3000:dts=round(DTS*TB*30)*3000:time_base=1/90000';
+
+module.exports = { CFR30, FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };

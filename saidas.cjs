@@ -70,10 +70,14 @@ const header = feed => feed.head && feed.avc ? [feed.head, ...(feed.meta ? [feed
 
 /* ---------- argumentos do processo de cada destino (só copia, não codifica) ---------- */
 
+// 30 fps cravados: o FLV interno (como todo RTMP) guarda o tempo em milissegundos, então os quadros chegam a 33/34 ms.
+// No SRT (MPEG-TS, relógio de 90 kHz) cada quadro volta para a grade exata de 1/30 s (33,333 ms), sem recodificar.
+const CFR30 = require('./encoder.cjs').CFR30;
+
 const INPUT = ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-probesize', '2000000', '-analyzeduration', '1000000', '-f', 'flv', '-i', 'pipe:0',
   '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-progress', 'pipe:3', '-stats_period', '1'];
 function outputArgs(dest) {
-  if (dest.protocol === 'srt') return [...INPUT, '-f', 'mpegts', dest.target];
+  if (dest.protocol === 'srt') return [...INPUT, '-bsf:v', CFR30, '-f', 'mpegts', dest.target];
   return [...INPUT, '-f', 'flv', '-flvflags', 'no_duration_filesize', '-rtmp_flashver', FLASHVER, '-rw_timeout', '15000000', dest.target];
 }
 
@@ -201,6 +205,12 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       outputs.set(dest.id, o); return o;
     },
     has: id => outputs.has(id),
+    // Configuração nova de um destino fora do ar (o operador trocou a chave ou o servidor antes de pô-lo no ar).
+    update(id, dest) {
+      const o = outputs.get(id); if (!o || o.child || o.want) return false;
+      o.dest = dest; o.reason = ''; return true;
+    },
+    groupOf: id => outputs.get(id)?.groupId,
     // Liga um destino: no ar em segundos, sem tocar nos outros.
     start(id) {
       const o = outputs.get(id); if (!o || closing) return false;
