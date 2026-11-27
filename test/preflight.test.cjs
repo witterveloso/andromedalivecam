@@ -51,7 +51,7 @@ test('encoder load: a computer that falls behind is reported once, with the spee
   // usamos relógio real: cada bloco a cada 100 ms, produzindo 100 ms (saudável) ou 45 ms (sobrecarregado) de imagem.
   async function scenario(outPerBlockMs, blocks) {
     const spawnProcess = () => {
-      const child = new EventEmitter(); child.stdin = new Writable({ write(_c, _e, cb) { cb(); }, final(cb) { cb(); } }); child.stderr = new EventEmitter(); child.stdio = [null, null, child.stderr, new EventEmitter()]; child.kill = () => child.emit('close', 0);
+      const child = new EventEmitter(); child.stdin = new Writable({ write(_c, _e, cb) { cb(); }, final(cb) { cb(); } }); child.stderr = new EventEmitter(); child.stdout = new EventEmitter(); child.stdio = [null, child.stdout, child.stderr, new EventEmitter()]; child.kill = () => child.emit('close', 0);
       setImmediate(() => child.emit('spawn'));
       let n = 0, out = 0, last = Date.now(); const timer = setInterval(() => { if (n++ >= blocks) { clearInterval(timer); return; } const now = Date.now(); out += (now - last) * (outPerBlockMs / 100) * 1000; last = now; /* proporcional ao relógio real: o intervalo do Windows oscila (~15 ms) e não pode virar "lentidão" */ child.stdio[3].emit('data', Buffer.from('frame=' + (n * 20 + 100) + '\nout_time_us=' + out + '\nprogress=continue\n')); }, 100);
       child.stdin.on('finish', () => clearInterval(timer)); return child;

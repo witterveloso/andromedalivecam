@@ -70,6 +70,39 @@
   const active = () => model.destinations.filter(d => d.enabled && complete(d));
   const pending = () => model.destinations.filter(d => d.enabled && !complete(d));
   const onAtStart = () => active().filter(d => d.start !== 'standby');
+
+  /* ---------- formato da produção: horizontal 16:9 ou vertical 9:16 ----------
+   * Live só para Instagram/TikTok é produzida na vertical: o PGM inteiro passa a 1080×1920, as câmeras preenchem a tela
+   * (sem bordas laterais), GC e logotipo se ajustam à tela em pé e sai uma única imagem, já em 9:16.
+   * Automático: vertical quando todos os destinos da live são 9:16, contando os que entram depois (em espera ou desligados,
+   * mas prontos); em "Só gravar", quando a gravação é só 9:16. Basta um YouTube pronto para a live ser horizontal. */
+  const liveCandidates = () => model.destinations.filter(d => d.enabled || complete(d)); // podem ir ao ar nesta live
+  const PRODUCTION = { auto: 'Automático', '16:9': 'Horizontal 16:9', '9:16': 'Vertical 9:16' };
+  if (!PRODUCTION[model.production]) model.production = 'auto';
+  function wantsVertical() {
+    if (model.production !== 'auto') return model.production === '9:16';
+    const dests = streaming() ? liveCandidates() : [];
+    if (!dests.length) return model.record && model.recordFormats === '9:16';
+    return dests.every(d => d.aspect === '9:16');
+  }
+  // Na live vale o formato com que ela começou; fora dela, o escolhido.
+  const productionVertical = () => busyTx() ? !!liveTx.vertical : wantsVertical();
+  const orient = ([w, h]) => productionVertical() ? [Math.min(w, h), Math.max(w, h)] : [Math.max(w, h), Math.min(w, h)];
+  window.andromedaOrient = orient;
+  window.andromedaFormat = { get vertical() { return productionVertical(); }, get mode() { return model.production; }, wantsVertical };
+  // Saída 9:16 da mesa: na produção vertical é o próprio PGM; na horizontal, a versão 9:16 montada do PGM (vertical.js).
+  const vOut = () => liveTx.vertical ? programOutput : window.andromedaVertical?.canvas;
+  const vSize = () => liveTx.vertical ? [1080, 1920] : window.andromedaVertical.size();
+  let shownVertical = null;
+  function applyProduction() {
+    const v = productionVertical(), first = shownVertical === null; if (v === shownVertical) return; shownVertical = v;
+    document.body.classList.toggle('prod-vertical', v);
+    for (const c of [$('#monProgram canvas'), $('#monPreview canvas')]) if (c) { const [w, h] = orient([c.width, c.height]); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
+    if (!busyTx()) for (const c of [hdBase, overlay, programOutput]) { const [w, h] = orient([c.width, c.height]); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
+    try { window.andromedaPgm?.apply(); } catch { /* aplicado no próximo ciclo */ }
+    if (!first) { log(v ? 'Produção vertical 9:16: PGM em 1080×1920, câmeras preenchendo a tela (sem bordas laterais).' : 'Produção horizontal 16:9.'); window.andromedaAudit?.('info', 'formato-producao', v ? 'Produção vertical 9:16' : 'Produção horizontal 16:9'); }
+    window.dispatchEvent(new CustomEvent('andromeda-format', { detail: { vertical: v } }));
+  }
   // O que vai ao serviço para um destino RTMP/SRT (WHIP fica na mesa).
   const payload = d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9', on: d.start !== 'standby', passphrase: (d.passphrase || '').trim(), latency: d.latency || 2000 });
 
@@ -77,6 +110,24 @@
 
   const panel = $('.stream-panel'), row = $('.stream-row');
   row.className = 'stream-row broadcast'; row.replaceChildren();
+  const prod = make('section', 'prod-format'); prod.setAttribute('aria-label', 'Formato da produção');
+  const prodHead = make('header'); prodHead.append(make('strong', '', 'Formato da produção'));
+  const prodBox = make('div', 'tx-mode prod-modes'); prodBox.setAttribute('role', 'radiogroup'); prodBox.setAttribute('aria-label', 'Formato da produção');
+  const PROD_TIPS = { auto: 'Vertical quando todos os destinos ligados são 9:16 (Instagram, TikTok); senão horizontal.', '16:9': 'PGM deitado (YouTube, Facebook…). Destinos 9:16 recebem um recorte do PGM.', '9:16': 'PGM em pé, 1080×1920, para live só no Instagram/TikTok. Câmeras preenchem a tela, sem bordas laterais.' };
+  const prodButtons = Object.entries(PRODUCTION).map(([id, label]) => { const b = make('button', '', label); b.type = 'button'; b.dataset.production = id; b.title = PROD_TIPS[id]; b.setAttribute('role', 'radio'); b.onclick = () => { if (busyTx()) return; model.production = id; save(); summary(); }; prodBox.append(b); return b; });
+  const prodNote = make('p', 'prod-note');
+  prod.append(prodHead, prodBox, prodNote);
+  row.before(prod);
+  function paintProduction() {
+    const v = productionVertical(), busy = busyTx();
+    for (const b of prodButtons) { const sel = b.dataset.production === model.production; b.setAttribute('aria-checked', String(sel)); b.setAttribute('aria-pressed', String(sel)); b.disabled = busy; }
+    const wrong = v && streaming() ? liveCandidates().filter(d => d.aspect !== '9:16') : [];
+    prod.dataset.vertical = String(v);
+    prodNote.dataset.tone = wrong.length ? 'bad' : '';
+    prodNote.textContent = (v ? 'Agora: VERTICAL 9:16 · PGM 1080×1920 · as câmeras preenchem a tela, sem bordas laterais · uma imagem só para todos os destinos 9:16' + (model.record ? ' e a gravação 9:16' : '') + '.' : 'Agora: HORIZONTAL 16:9 · PGM 1920×1080' + (liveCandidates().some(d => d.aspect === '9:16') ? ' · os destinos 9:16 recebem o recorte vertical do PGM.' : '.'))
+      + (wrong.length ? ' Atenção: ' + wrong.map(d => d.name).join(', ') + (wrong.length === 1 ? ' é 16:9 e fica' : ' são 16:9 e ficam') + ' fora da produção vertical. Desligue ou mude o formato para Horizontal.' : '')
+      + (busy ? ' (vale até o fim desta live)' : '');
+  }
   const list = make('div', 'dest-list'), adder = make('div', 'dest-add'), quality = make('div', 'quality');
   row.append(list, adder, quality);
   const choose = make('select'); choose.id = 'destPlatform'; choose.setAttribute('aria-label', 'Plataforma do novo destino');
@@ -112,7 +163,7 @@
         case 'warning': return ['CONECTANDO', 'wait', state.reason];
       }
     }
-    if (busyTx() && d.enabled && complete(d)) return ['FORA DO AR', 'off', 'Pode entrar no ar agora.'];
+    if (busyTx() && complete(d)) return ['FORA DO AR', 'off', 'Pode entrar no ar agora.'];
     if (!d.enabled) return ['DESLIGADO', 'off', ''];
     if (!complete(d)) return ['FALTA ' + (!d.server.trim() ? (protocolOf(d) === 'whip' ? 'URL' : 'SERVIDOR') : 'CHAVE'), 'wait', ''];
     return [d.start === 'standby' ? 'EM ESPERA' : 'PRONTO', 'ready', state?.state === 'warning' ? state.reason : ''];
@@ -287,6 +338,8 @@
 
   const lastFiles = () => 'Última gravação: ' + (live.files.length ? live.files : [live.recorded]).map(f => (f.format ? f.format + ' → ' : '') + f.file + ' (' + gb(f.size) + ')').join(' · ');
   function summary() {
+    applyProduction(); paintProduction();
+    { const vc = document.querySelector('.vertical-panel'); if (vc) vc.hidden = productionVertical(); } // na produção vertical não há recorte: o PGM já é 9:16
     const on = streaming() ? onAtStart().length : 0, vert = streaming() ? onAtStart().filter(d => d.aspect === '9:16') : [], vbit = vRate();
     const total = model.bitrate * (on - vert.length) + vbit * vert.length;
     window.andromedaVertical?.setUses(model.destinations.filter(d => streaming() && d.enabled && d.aspect === '9:16').map(d => d.name).concat(model.record && model.recordFormats !== '16:9' ? ['gravação'] : []));
@@ -302,7 +355,7 @@
     paintButtons();
   }
   function paintCompliance() {
-    const list = streaming() ? active() : [], res = model.resolution === '2160p' ? '3840×2160' : '1920×1080';
+    const list = streaming() ? active() : [], vprod = productionVertical(), res = vprod ? '1080×1920 (vertical)' : model.resolution === '2160p' ? '3840×2160' : '1920×1080';
     const rows = [
       ['ok', 'Vídeo', res + ' · 30 fps constantes (regra Andrômeda: nunca abaixo de 1080p30)'],
       ['ok', 'Codificação', 'H.264 High@' + (model.resolution === '2160p' ? '5.1' : '4.1') + ' · bitrate constante (CBR) · quadro-chave a cada 2 s'],
@@ -314,7 +367,8 @@
     const rateH = model.resolution === '1080p' ? Math.min(capH, model.bitrate) : model.bitrate, rateV = Math.min(capList(v), vRate());
     const limiter = h.filter(d => PLATFORM_CAP_MBPS[d.platform] === capH).map(d => d.name).join(', ');
     if (h.length) rows.push(['ok', 'Saída 16:9', res + ' · ' + rateH + ' Mbps · uma codificação para ' + h.length + (h.length === 1 ? ' destino' : ' destinos') + (rateH < model.bitrate ? ' (ajustado ao limite de ' + limiter + ')' : '')]);
-    if (v.length) rows.push(['ok', 'Saída 9:16', '1080×1920 · ' + rateV + ' Mbps · uma codificação para ' + v.length + (v.length === 1 ? ' destino' : ' destinos')]);
+    if (v.length) rows.push(['ok', 'Saída 9:16', '1080×1920 · ' + rateV + ' Mbps · uma codificação para ' + v.length + (v.length === 1 ? ' destino' : ' destinos') + (vprod ? ' · produção vertical: o próprio PGM, sem recorte e sem bordas' : ' · recorte do PGM 16:9')]);
+    if (vprod && h.length) rows.push(['warn', 'Formato', h.map(d => d.name).join(', ') + ': 16:9 não entra na produção vertical.']);
     for (const d of list) {
       const proto = protocolOf(d), secure = proto === 'srt' ? !!(d.passphrase || '').trim() : proto === 'whip' ? true : /^rtmps:/i.test(d.server.trim());
       const how = proto === 'srt' ? (secure ? 'SRT com senha (AES)' : 'SRT sem senha: defina uma senha se o servidor aceitar') + ' · latência ' + (d.latency || 2000) + ' ms'
@@ -356,6 +410,7 @@
     if (!window.MediaRecorder || !programOutput.captureStream) { txStatus('Use Chrome ou Edge atualizado para transmitir.'); return; }
     const captureTypes = ['video/x-matroska;codecs=avc1,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus'].filter(t => MediaRecorder.isTypeSupported(t));
     if (!captureTypes.length) { txStatus('Este navegador não oferece o formato de captura necessário. Use Chrome ou Edge.'); return; }
+    liveTx.vertical = wantsVertical(); // formato desta live (fixo até ela terminar)
     const epoch = ++liveTx.epoch; liveTx.phase = 'preparing'; live.states.clear(); live.recording = null; live.recorded = null; sync(); txStatus('Preparando saída PROGRAM…');
     try {
       const session = await checkBridge(); if (epoch !== liveTx.epoch) return; liveTx.apiToken = session?.token;
@@ -381,24 +436,34 @@
       // Saída: 1080p30 (ou 4K30). Regra do produto: nunca abaixo de 1080p a 30 fps.
       const fixed = ['fixed','fixed4k'].includes(model.policy) && !liveTx.calibrating; let outRes = fixed ? (model.policy==='fixed4k'?'2160p':'1080p') : (model.resolution === '2160p' ? '2160p' : '1080p'); clearCap(); // regra: nunca abaixo de 1080p30
       const requestedRes=outRes;let outBitrate=model.bitrate;
-      let [width, height] = outRes === '2160p' ? [3840,2160] : [1920, 1080];
+      const vprod = liveTx.vertical; if (vprod && outRes === '2160p') { log('Produção vertical: saída em 1080×1920 a 30 fps.'); outRes = '1080p'; }
+      let [width, height] = vprod ? [1080, 1920] : outRes === '2160p' ? [3840,2160] : [1920, 1080];
       for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = width; canvas.height = height; } hdOn = true; // o monitor da tela continua em 960×540
       routeProgramOutput();
       // Formatos desta transmissão: 16:9 para YouTube/Facebook…, 9:16 para Instagram/TikTok, e os da gravação.
       const vTargets = targets.filter(d => d.aspect === '9:16'), hTargets = targets.filter(d => d.aspect !== '9:16');
+      if (vprod && hTargets.length) throw Error('Produção vertical 9:16: ' + hTargets.map(d => d.name).join(', ') + (hTargets.length === 1 ? ' é 16:9' : ' são 16:9') + '. Desligue ' + (hTargets.length === 1 ? 'esse destino' : 'esses destinos') + ' ou mude o Formato da produção para Horizontal ou Automático.');
       // Uma codificação vai para todos os destinos: o bitrate precisa caber no limite de cada plataforma ligada (diretrizes publicadas
       // para 1080p30: Facebook, Twitch, LinkedIn, Instagram e TikTok até 6 Mbps; Kick até 8; YouTube recomenda 5 a 14). O piso é 6 Mbps.
       const capOf = list => Math.min(Infinity, ...list.map(d => PLATFORM_CAP_MBPS[d.platform] || Infinity));
       const capH = capOf(hTargets); if (outRes === '1080p' && capH < outBitrate) { log('Bitrate 16:9 ajustado para ' + capH + ' Mbps: limite de ' + hTargets.filter(d => PLATFORM_CAP_MBPS[d.platform] === capH).map(d => d.name).join(', ') + ' em 1080p30.'); outBitrate = capH; }
       liveTx.vCap = capOf(vTargets);
-      let recFormats = model.recordFormats || '16:9'; const recordH = model.record && recFormats !== '9:16', recordV = model.record && recFormats !== '16:9';
-      let needV = !!window.andromedaVertical && (vTargets.length > 0 || recordV), needH = hTargets.length > 0 || recordH || !needV;
-      if (!window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
+      let recFormats = model.recordFormats || '16:9'; const recordH = !vprod && model.record && recFormats !== '9:16', recordV = model.record && (vprod || recFormats !== '16:9');
+      if (vprod && model.record && recFormats !== '9:16') log('Produção vertical: a gravação sai em 9:16 (um arquivo, a mesma imagem do ar).');
+      if (vprod) recFormats = '9:16';
+      // Tecnologia Andrômeda Multiplataforma: a mesa desenha e codifica UMA imagem (16:9). O serviço cria o 9:16 dela (destinos
+      // verticais e gravação 9:16) e liga qualquer formato no meio da live. Só o WHIP 9:16 (que sai direto da mesa) ainda
+      // precisa da imagem vertical montada aqui.
+      const serverVertical = !vprod && !!session.derive && !targets.some(d => protocolOf(d) === 'whip' && d.aspect === '9:16');
+      liveTx.serverVertical = serverVertical;
+      // Produção vertical: o PGM já é 9:16 e é a única saída (destinos 9:16 e gravação 9:16).
+      let needV = vprod || (!!window.andromedaVertical && (vTargets.length > 0 || recordV) && !serverVertical), needH = !vprod && (serverVertical || hTargets.length > 0 || recordH || !needV);
+      if (!vprod && !window.andromedaVertical && targets.some(d => d.aspect === '9:16')) throw Error('Saída vertical indisponível nesta mesa. Atualize o programa.');
       // Motor de envio: o próprio (WebCodecs: uma só codificação, no navegador) ou o padrão (MediaRecorder → FFmpeg). O padrão é sempre o plano B.
       if (fixed) log('Perfil '+outRes+'30: preparando saída dedicada');
       let engine = 'webm', nativeSession = null, nativeDown = 0;
       if ((fixed || (model.engine || 'auto') !== 'standard') && window.AndromedaEngine) {
-        const wanted = [needH && [width, height, model.bitrate * 1e6], needV && [window.andromedaVertical.size()[0], window.andromedaVertical.size()[1], vRate() * 1e6]].filter(Boolean);
+        const wanted = [needH && [width, height, model.bitrate * 1e6], needV && [vSize()[0], vSize()[1], vRate() * 1e6]].filter(Boolean);
         const probes = await Promise.all(wanted.map(([w, h, b]) => AndromedaEngine.probe({ width: w, height: h, bitrate: b }))); if (epoch !== liveTx.epoch) return;
         const bad = probes.find(p => !p.ok);
         if (!bad) { engine = 'native'; liveTx.hardware = probes.every(p => p.hardware); } else log('Motor Andrômeda indisponível neste computador: ' + bad.reason + ' Usando o codificador padrão.');
@@ -419,7 +484,7 @@
       // sai a pelo menos 26 quadros por segundo, com a mesa desenhando junto. O resultado vale por 7 dias; escolher a resolução na lista refaz o teste.
       let sizeNote = '';
       if (!fixed && engine === 'native' && !liveTx.calibrating && window.AndromedaEngine?.benchmark && !readBench(outRes)) {
-        const ladder = [[1920, 1080, '1080p']]; let chosen = null; /* só mede: a saída fica em 1080p de qualquer jeito */ const tried = [];
+        const ladder = [vprod ? [1080, 1920, '1080p'] : [1920, 1080, '1080p']]; let chosen = null; /* só mede: a saída fica em 1080p de qualquer jeito */ const tried = [];
         for (const [w, h, label] of ladder) {
           txStatus('Testando o computador em ' + label + '…'); for (const canvas of [hdBase, overlay, programOutput]) { canvas.width = w; canvas.height = h; } await new Promise(r => setTimeout(r, 500)); if (epoch !== liveTx.epoch) return;
           const rf0 = window.andromedaProgramFrames || 0, t0 = performance.now(), r = await AndromedaEngine.benchmark({ canvas: programOutput, width: w, height: h, bitrate: model.bitrate * 1e6 }); if (epoch !== liveTx.epoch) return;
@@ -437,7 +502,7 @@
         const testOutput = (capture = liveTx.capture) => {
           const outputs = [];
           if (needH) outputs.push({ id:'h', canvas:programOutput, width, height, bitrate:outBitrate * 1e6 });
-          if (needV) { const c=window.andromedaVertical.canvas; outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:vRate() * 1e6 }); }
+          if (needV) { const c=vOut(); outputs.push({ id:'v', canvas:c, width:c.width, height:c.height, bitrate:vRate() * 1e6 }); }
           return AndromedaEngine.qualify({ audioTrack:destination.stream.getAudioTracks()[0], outputs, avSyncMs:avSyncFor('native'), capture, cancelled:()=>epoch !== liveTx.epoch });
         };
         let check = await testOutput();
@@ -499,12 +564,12 @@
         stream = new MediaStream([...video.getVideoTracks(), ...destination.stream.getAudioTracks()]);
         recorder = makeRecorder(stream, hBits); liveTx.recorder = recorder;
         if (needV) {
-          const vVideo = window.andromedaVertical.canvas.captureStream(30); liveTx.verticalStream = vVideo;
+          const vVideo = vOut().captureStream(30); liveTx.verticalStream = vVideo;
           vStream = new MediaStream([...vVideo.getVideoTracks(), ...destination.stream.getAudioTracks()]); recorderV = makeRecorder(vStream, vBits);
           liveTx.recorderV = recorderV;
         }
       };
-      if (needV) window.andromedaVertical.setLive(true);
+      if (needV && !vprod) window.andromedaVertical.setLive(true);
       if (engine === 'webm') buildStandard();
       const dual = needV;
       const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = sizeNote; liveTx.phase = 'connecting';
@@ -565,7 +630,7 @@
       const startNative = async groups => {
         groupsReady = groups; const outputs = [];
         if (groups.includes('h') || !dual) outputs.push({ id: 'h', canvas: programOutput, width, height, bitrate: outBitrate * 1e6, onChunk: sendNative(0) });
-        if (needV && groups.includes('v')) { const c = window.andromedaVertical.canvas; outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: vRate() * 1e6, onChunk: sendNative(1) }); }
+        if (needV && groups.includes('v')) { const c = vOut(); outputs.push({ id: 'v', canvas: c, width: c.width, height: c.height, bitrate: vRate() * 1e6, onChunk: sendNative(1) }); }
         nativeSession = (fixed ? AndromedaEngine.createDedicated : AndromedaEngine.create)({
           audioTrack: destination.stream.getAudioTracks()[0], outputs, avSyncMs: liveTx.calibrating ? 0 : avSyncFor('native'), capture: liveTx.capture || 'stream',
           onError: e => fallbackToStandard(e.message),
@@ -590,7 +655,7 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: serverTargets.map(payload), whip: { h: whipTargets.filter(d => d.aspect !== '9:16').length, v: whipTargets.filter(d => d.aspect === '9:16').length }, record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: planBPreset || model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: serverTargets.map(payload), whip: { h: whipTargets.filter(d => d.aspect !== '9:16').length, v: whipTargets.filter(d => d.aspect === '9:16').length }, record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate(), mode: window.andromedaVertical?.settings.mode, pos: window.andromedaVertical?.settings.pos }, derive: !!liveTx.serverVertical, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: planBPreset || model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');
@@ -599,6 +664,8 @@
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
         else if (msg.type === 'avsync') window.andromedaSync?.onResult(msg);
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
+        // Gravação Andrômeda: estado de cada gravador (retomando depois de uma falha do disco, gravando de novo).
+        else if (msg.type === 'recording-state') { recStatus.dataset.tone = msg.state === 'retrying' ? 'bad' : ''; recStatus.textContent = 'Gravação ' + msg.format + (msg.state === 'retrying' ? ': retomando sozinha (' + msg.reason + '). A transmissão segue normal.' : ': gravando' + (msg.part > 1 ? ' (parte ' + msg.part + '; no fim vira um arquivo só)' : '') + '.'); if (msg.state === 'retrying') window.andromedaAudit?.('warn', 'gravacao-falhou', 'Gravação ' + msg.format + ': ' + msg.reason); }
         else if (msg.type === 'recorded') { live.recorded = msg; live.files.push(msg); log('Gravação ' + (msg.format || '') + ' salva: ' + msg.file); summary(); }
         else if (msg.type === 'destination') {
           const before = live.states.get(msg.id)?.state;
@@ -635,11 +702,21 @@
     } catch (e) { if (epoch === liveTx.epoch) finishTransport(e.name === 'NotAllowedError' ? 'Permissão de microfone negada. Autorize o navegador ou use somente o mixer das fontes.' : e.message); }
   }
   window.startBroadcast = startBroadcast;
+  // Enquadramento 9:16 mudado com a live no ar (recorte arrastado, modo trocado): o serviço refaz o 9:16 em ~2 s.
+  let lastVertical = '';
+  setInterval(() => {
+    if (!busyTx() || !liveTx.serverVertical || liveTx.socket?.readyState !== WebSocket.OPEN) { lastVertical = ''; return; }
+    const v = window.andromedaVertical?.settings; if (!v) return;
+    const key = v.mode + ':' + Number(v.pos).toFixed(3);
+    if (!lastVertical) { lastVertical = key; return; }
+    if (key !== lastVertical) { lastVertical = key; liveTx.socket.send(JSON.stringify({ type: 'vertical', vertical: { mode: v.mode, pos: v.pos } })); log('Enquadramento 9:16 atualizado ao vivo.'); }
+  }, 800);
 
   /* ---------- cada destino entra e sai do ar sozinho, com a live rodando ---------- */
 
   function enterAir(d) {
     if (liveTx.phase !== 'sending' || !complete(d)) return;
+    if (liveTx.vertical && (d.aspect || '16:9') !== '9:16') { live.states.set(d.id, { state: 'error', reason: 'Esta live é vertical 9:16 e este destino é 16:9. Ele entra numa live horizontal.' }); log(d.name + ': 16:9 não entra numa live vertical.'); paintStatus(); paintButtons(); return; }
     if (protocolOf(d) === 'whip') { startWhip(d); return; }
     const socket = liveTx.socket; if (socket?.readyState !== WebSocket.OPEN) return;
     live.states.set(d.id, { state: 'connecting', reason: '' }); live.sent.add(d.id);
@@ -659,7 +736,7 @@
     liveTx.whipTracks = liveTx.whipTracks || {};
     const current = liveTx.whipTracks[aspect];
     if (current && current.readyState === 'live') return current;
-    const canvas = aspect === '9:16' ? window.andromedaVertical?.canvas : programOutput;
+    const canvas = aspect === '9:16' ? vOut() : programOutput;
     if (!canvas?.captureStream) return null;
     return (liveTx.whipTracks[aspect] = canvas.captureStream(30).getVideoTracks()[0]);
   }

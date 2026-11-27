@@ -638,7 +638,7 @@ let nextCamera = 0, nextPreview = 0, directProgram = false;
    Enquanto envia: PREVIEW a 10 q/s num canvas 640×360 (o tamanho do monitor na tela), miniaturas a 5 q/s, e monitores só com folga no quadro. */
 const onAirNow = () => typeof busyTx === 'function' && busyTx();
 const monitorBudget = () => onAirNow() ? 13 : 22;
-function sizePreviewForAir() { const c = $('#monPreview canvas'), [w, h] = onAirNow() ? [640, 360] : [960, 540]; if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
+function sizePreviewForAir() { const c = $('#monPreview canvas'), [w, h] = (window.andromedaOrient||(x=>x))(onAirNow() ? [640, 360] : [960, 540]); if (c && (c.width !== w || c.height !== h)) { c.width = w; c.height = h; } }
 const monitorDue = new WeakMap();
 function refreshMultiview(t) {
   const cells = $$('.mv-cell canvas');
@@ -743,7 +743,7 @@ log('Saída fixada no PROGRAM (AR). Preview reservado à preparação.');
 <script src="/trilha.js"></script>
 <script src="/camctl.js"></script><script src="/tracking-core.js"></script><script src="/tracking.js"></script><link rel="stylesheet" href="/workspace-custom.css"><script src="/cam/relay.js"></script><script src="/remote-desk.js"></script><script src="/workspace-custom.js"></script>
 <script src="/stage.js"></script><script src="/native-monitors.js"></script><script src="/marks.js"></script>
-<script src="/ponto-desk.js"></script><script src="/gc-playlist.js"></script><script src="/commands.js"></script><script src="/arrange.js"></script><script src="/vertical.js"></script><script src="/whip.js"></script><script src="/broadcast.js"></script><script src="/pgm-quality.js"></script>
+<script src="/ponto-desk.js"></script><script src="/gc-playlist.js"></script><script src="/gc-modelos.js"></script><script src="/commands.js"></script><script src="/arrange.js"></script><script src="/vertical.js"></script><script src="/whip.js"></script><script src="/broadcast.js"></script><script src="/pgm-quality.js"></script>
 <script src="/mkvmux.js"></script><script src="/engine.js"></script><script src="/syncprobe.js"></script>
 <script src="/preflight.js"></script><script src="/diagnostics.js"></script>
 <link rel="stylesheet" href="/andromeda-ui.css"><script src="/vendor/qrcode.js"></script><script src="/andromeda-ui.js"></script><script src="/cam-connect.js"></script>

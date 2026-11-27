@@ -52,6 +52,15 @@ assert.match(q('.vertical-uses').textContent,/Instagram/);assert.match(q('.verti
 assert.deepEqual([...q('#recFormats').options].map(o=>o.value),['both','16:9','9:16']);assert.equal(q('#recFormats').value,'16:9','new configurations record only the horizontal output to avoid an unused second encoder');
 q('#recFormats').value='both';q('#recFormats').dispatchEvent(new w.Event('change'));assert.equal(vm.runInContext('andromedaBroadcast.model.recordFormats',ctx),'both','operator can still explicitly record both formats');assert.match(q('#recFormats').selectedOptions[0].textContent,/16:9 e 9:16/);
 console.log('PASS: per-platform screen format (16:9 / 9:16) and vertical framing');
+// Formato da produção: automático (horizontal com destinos 16:9), vertical 9:16 forçado (PGM em pé, monitores em pé, aviso dos destinos 16:9), e volta.
+{const fmt=()=>vm.runInContext('andromedaFormat.vertical',ctx),mon=()=>{const c=q('#monProgram canvas');return [c.width,c.height]};
+assert(q('.prod-format'),'production format card');assert.deepEqual([...q('.prod-modes').children].map(b=>b.dataset.production),['auto','16:9','9:16']);
+assert.equal(fmt(),false,'automatic: horizontal while 16:9 destinations are on');assert(mon()[0]>mon()[1]);
+q('.prod-modes [data-production="9:16"]').click();assert.equal(fmt(),true);assert(w.document.body.classList.contains('prod-vertical'));
+assert(mon()[0]<mon()[1],'PGM monitor stands up');const po=vm.runInContext('[programOutput.width,programOutput.height]',ctx);assert(po[0]<po[1],'program output stands up');
+assert.equal(q('.prod-note').dataset.tone,'bad');assert.match(q('.prod-note').textContent,/YouTube/);assert.match(q('.prod-note').textContent,/fora da produção vertical/);assert(q('.vertical-panel').hidden,'no crop card in vertical production');
+q('.prod-modes [data-production="auto"]').click();assert.equal(fmt(),false);assert(mon()[0]>mon()[1]);assert(!q('.vertical-panel').hidden);
+console.log('PASS: production format (automatic / horizontal / vertical 9:16): program and monitors stand up, 16:9 destinations flagged')}
 // Saídas Andrômeda: cada destino começa no ar, em espera ou desligado; SRT e WHIP com campos próprios.
 for(const pf of ['srt','whip']){choose.value=pf;choose.dispatchEvent(new w.Event('change'));[...w.document.querySelectorAll('.stream-panel button')].find(b=>b.textContent==='Adicionar destino').click()}
 {const cards=[...w.document.querySelectorAll('.dest')],srt=cards.find(c=>c.dataset.platform==='srt'),wh=cards.find(c=>c.dataset.platform==='whip');
@@ -73,6 +82,17 @@ console.log('PASS: per-destination start mode (on air / standby / off), SRT and 
  G.run();assert.equal(vm.runInContext('fx.live.layers[0].on',ctx),false);assert.equal(G.state.cue,1,'saiu do AR e o próximo ficou no ponto');assert.match(G.label(),/ponto 2\/2 · João Souza/);
  panel.remove();const P=vm.runInContext('window.andromedaPonto',ctx);assert(P&&typeof P.toggle==='function'&&/toque para ativar/.test(P.label()),'PONTO pronto nos Comandos');}
 console.log('PASS: GC credits playlist (on cue → on air → next on cue) and the PONTO command');
+// Pacote de GCs: 12 modelos na galeria; um clique aplica o modelo e as cores dele; o selo entra no rascunho; "meus modelos" guarda a personalização.
+// PONTO: cada ponto escolhe o canal da própria voz que sai do retorno (mix-minus).
+{const M=vm.runInContext('window.andromedaGcModels',ctx);assert(M&&M.templates.length===12,'12 modelos de GC');
+ assert.equal(q('.gc-models-grid').querySelectorAll('.gc-model').length,12);
+ [...q('.gc-models-grid').querySelectorAll('.gc-model')].find(b=>/Plantão/.test(b.textContent)).click();
+ assert.equal(vm.runInContext('fx.draft.layers[0].style',ctx),'plantao');assert.equal(q('#gcTag').value,'URGENTE');assert.equal(q('#gcAccent').value,'#e10600');
+ q('.gc-models-save input').value='Meu plantão';q('.gc-models-save button').click();assert.equal(w.document.querySelectorAll('.gc-models-grid')[1].querySelectorAll('.gc-model').length,1,'my model saved');
+ const P=vm.runInContext('window.andromedaPonto',ctx),panel=P.panel();w.document.body.append(panel);const sel=panel.querySelector('.ponto-row .ponto-minus select');
+ assert(sel&&[...sel.options].some(o=>o.value==='mic')&&sel.options.length>=3,'mix-minus channel list');sel.value='1';sel.dispatchEvent(new w.Event('change'));
+ assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('andromedaPonto.state.minus',ctx)))['0'],['1'],'the presenter return leaves out CAM 2');panel.remove();
+ console.log('PASS: GC model pack (12 models, apply, tag, my models) and PONTO return without the own voice (mix-minus)')}
 {const css=fs.readFileSync(root+'/workspace-custom.css','utf8');assert.match(css,/\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:sticky;top:calc\(var\(--topbar-h,56px\) \+ 12px\)/,'effects preview follows the page scroll');assert.match(css,/@media\(max-width:500px\)\{\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:static/,'stacked on phones');assert(w.document.documentElement.style.getPropertyValue('--topbar-h'),'top bar height measured for the sticky preview');console.log('PASS: effects preview stays in view while the settings scroll')}
 {const rd=vm.runInContext('window.andromedaRundown',ctx),cmd=vm.runInContext('window.andromedaCommands',ctx);
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);

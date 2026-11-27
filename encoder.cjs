@@ -89,7 +89,10 @@ function validateBroadcast(input) {
   let bitrate = Number(input.bitrate); if (live && resolution === '1080p' && Number.isFinite(bitrate)) bitrate = Math.max(6, bitrate); if (!Number.isFinite(bitrate) || bitrate < (resolution === '2160p' ? 30 : 3) || bitrate > (resolution === '2160p' ? 60 : 20)) fail('Bitrate fora do limite da resolução escolhida.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
   // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
-  return { destinations, record, whip, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
+  // Tecnologia Andrômeda Multiplataforma: a mesa manda uma imagem só (16:9) e o serviço cria o 9:16 a partir dela.
+  const derive = input.derive === true;
+  const vmode = ['crop', 'blur', 'bars'].includes(v.mode) ? v.mode : 'crop', vpos = Number.isFinite(Number(v.pos)) ? Math.min(1, Math.max(0, Number(v.pos))) : 0.5;
+  return { destinations, record, whip, derive, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit, mode: vmode, pos: vpos } };
 }
 
 // Grupos de codificação: cada formato com seus destinos e sua gravação. Só existe o grupo que tiver uso.
@@ -98,8 +101,13 @@ function groupsFor(cfg) {
   const formats = cfg.record?.formats || '16:9', recH = !!cfg.record && formats !== '9:16', recV = !!cfg.record && formats !== '16:9';
   const groups = [];
   const wh = cfg.whip?.h > 0, wv = cfg.whip?.v > 0;
-  if (h.length || recH || wh) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '2160p' ? '3840:2160' : cfg.resolution === '540p' ? '960:540' : cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
-  if (v.length || recV || wv) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null });
+  const vNeeded = v.length > 0 || recV || wv;
+  if (h.length || recH || wh || (cfg.derive && vNeeded)) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '2160p' ? '3840:2160' : cfg.resolution === '540p' ? '960:540' : cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
+  if (vNeeded) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null, derived: !!cfg.derive });
+  // A imagem principal alimenta o distribuidor sempre que o 9:16 é criado a partir dela (inclusive se ele for ligado no meio da live).
+  if (cfg.derive && groups[0]?.id === 'h') groups[0].feed = true;
+  // Toda gravação sai do distribuidor (Gravação Andrômeda): o formato gravado sempre o alimenta.
+  for (const g of groups) if (g.record && !g.derived) g.feed = true;
   return groups;
 }
 
@@ -171,10 +179,9 @@ const RECORD_FIFO = "f=fifo:fifo_format=matroska:format_opts='flush_packets=1':q
 const FEED = '[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]pipe:1';
 function outputArgs(group) {
   const outputs = [];
-  if (group.destinations.length) outputs.push(FEED);
-  // A gravação também tem fila própria: se o disco engasgar (HD externo, antivírus, disco lento), a live segue sem parar
-  // e a gravação alcança depois. Sem a fila, o tee esperava o disco e a transmissão parava junto (test/record-stall.test.cjs).
-  if (group.record) outputs.push('[' + RECORD_FIFO + ']' + teeEscape(group.record.file));
+  if (group.destinations.length || group.feed) outputs.push(FEED);
+  // A gravação não sai daqui: o distribuidor grava a mesma imagem que vai aos destinos (Gravação Andrômeda, publish.cjs), com
+  // fila e vigia próprias. Se o disco falhar, ela recomeça sozinha numa parte nova sem tocar no codificador nem na transmissão.
   // Só destinos WHIP neste formato (saem direto da mesa): o codificador roda sem saída, para a sessão e os relatórios seguirem iguais.
   if (!outputs.length) return ['-f', 'null', '-'];
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
@@ -266,4 +273,34 @@ function safeBroadcastError(stderr) {
 // ponto da grade em vez de repetir o instante (o tempo de cada quadro é sempre maior que o do anterior). Visto no CI do Windows.
 const CFR30 = 'setts=pts=max(round(PTS*TB*30)*3000\\,PREV_OUTPTS+3000):dts=max(round(DTS*TB*30)*3000\\,PREV_OUTDTS+3000):time_base=1/90000';
 
-module.exports = { CFR30, FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };
+/* ---------- Saída 9:16 criada no serviço a partir da imagem 16:9 (Tecnologia Andrômeda Multiplataforma) ----------
+ * A mesa desenha e codifica uma imagem só. O serviço recorta (ou encaixa com fundo desfocado / barras) o 9:16 da imagem
+ * que já está saindo, codifica com a placa de vídeo quando houver (Quick Sync, NVENC, AMF) e entrega ao distribuidor e à
+ * gravação 9:16. O enquadramento é o mesmo da prévia vertical da mesa (recorte com posição, desfocado ou barras). */
+const SAFE_WIDTH = 0.8; // parte da largura do 9:16 que aparece em qualquer celular (as laterais são cortadas nos mais altos)
+function verticalFilter({ mode = 'crop', pos = 0.5 } = {}, [W, H] = [1080, 1920]) {
+  const p = Math.min(1, Math.max(0, Number(pos) || 0)).toFixed(3), cw = 'trunc(ih*' + W + '/' + H + '/2)*2';
+  const tail = ',fps=30,setsar=1,format=yuv420p[v]';
+  // Quadro inteiro (fundo desfocado ou barras): o Instagram/TikTok enche a tela de celulares mais altos que 9:16 cortando as laterais
+  // (~9% de cada lado num 19,5:9). O 16:9 fica em 80% da largura, dentro do que aparece em qualquer celular.
+  // Fundo: média de 4×7 pontos ampliada e suavizada, escurecida: só cor, sem manchas de letras ou do relógio. A suavização é
+  // feita em 1/4 do tamanho (16× menos pontos) e ampliada depois: mesmo visual, 6× mais leve (cabe num processador sem placa de vídeo).
+  const SW = Math.round(W * SAFE_WIDTH / 2) * 2;
+  if (mode === 'blur') return '[0:v:0]split[a][b];[a]crop=' + cw + ':ih:(iw-' + cw + ')/2:0,scale=4:7:flags=area,scale=' + Math.round(W / 4) + ':' + Math.round(H / 4) + ':flags=bilinear,boxblur=24:2,colorlevels=romax=0.45:gomax=0.45:bomax=0.45,scale=' + W + ':' + H + ':flags=bilinear[bg];[b]scale=' + SW + ':-2:flags=bicubic[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2' + tail;
+  if (mode === 'bars') return '[0:v:0]scale=' + SW + ':-2:flags=bicubic,pad=' + W + ':' + H + ':(ow-iw)/2:(oh-ih)/2:black' + tail;
+  return '[0:v:0]crop=' + cw + ':ih:(iw-' + cw + ')*' + p + ':0,scale=' + W + ':' + H + ':flags=bicubic' + tail;
+}
+// Codificador do 9:16: placa de vídeo primeiro (não pesa no processador), senão x264 rápido.
+const pickDeriveEncoder = (available = []) => ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox'].find(e => available.includes(e)) || 'libx264';
+function deriveArgs({ vertical = {}, encoder = 'libx264', record = null }) {
+  const [W, H] = vertical.resolution === '720p' ? [720, 1280] : [1080, 1920], kb = Math.round((vertical.bitrate || 6) * 1000);
+  const outs = [FEED]; if (record) outs.push('[' + RECORD_FIFO + ']' + teeEscape(record.file));
+  // -copyts: o 9:16 segue o relógio da imagem principal. Refeito no meio da live (enquadramento novo), continua na mesma linha do
+  // tempo, e o distribuidor emenda sem derrubar a conexão com as plataformas.
+  return ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-copyts', '-probesize', '2000000', '-analyzeduration', '1000000', '-f', 'flv', '-i', 'pipe:0',
+    '-filter_complex', verticalFilter(vertical, [W, H]), '-map', '[v]', '-map', '0:a:0?', '-r', '30',
+    ...ENCODERS[ENCODERS[encoder] ? encoder : 'libx264'](kb, 'superfast'), '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
+    '-c:a', 'copy', '-progress', 'pipe:3', '-stats_period', '1', '-flags', '+global_header', '-f', 'tee', outs.join('|')];
+}
+
+module.exports = { verticalFilter, deriveArgs, pickDeriveEncoder, CFR30, FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };

@@ -6,6 +6,9 @@
  * O que vai no fone de cada ponto (uma mistura por ponto, feita aqui na mesa):
  *   voz da direção (só quando a direção fala com aquele ponto)
  * + retorno do programa (se o apresentador ligar), que abaixa sozinho enquanto a direção fala.
+ *   Retorno sem a própria voz (mix-minus / N-1): a direção escolhe por qual canal a voz daquela pessoa entra no programa
+ *   (a câmera dela, o microfone…) e o retorno desse ponto é o programa MENOS esse canal, subtraído na própria mistura
+ *   (exato, amostra a amostra). Quem está no ar ouve a programação, mas não ouve a si mesmo com atraso.
  * Avisos escritos aparecem grandes na tela do ponto ("30 s", "chama o VT"…). O apresentador pode chamar a direção.
  *
  * Na mesa: botão PONTO no quadro Comandos (toque liga/desliga a fala; a engrenagem abre convites, avisos e destino).
@@ -15,9 +18,9 @@
   const PRESETS = ['30 segundos', '1 minuto', 'Encerra', 'Chama o VT', 'Olha a câmera', 'Estica', 'Intervalo'];
   const STORE = 'andromeda.ponto.v1';
   const P = { socket: null, ice: [], peers: new Map(), online: new Map(), links: new Map(), mic: null, micSource: null, talking: false, target: 'all', ready: false, retry: null, panelEl: null };
-  try { Object.assign(P, { names: JSON.parse(localStorage.getItem(STORE) || '{}').names || {} }); } catch { P.names = {}; }
+  try { const saved = JSON.parse(localStorage.getItem(STORE) || '{}'); Object.assign(P, { names: saved.names || {}, minus: saved.minus || {} }); } catch { P.names = {}; P.minus = {}; }
   const nameOf = slot => P.online.get(slot)?.name || P.names[slot] || DEFAULT_NAMES[slot];
-  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ names: P.names })); } catch { /* sem armazenamento */ } };
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ names: P.names, minus: P.minus })); } catch { /* sem armazenamento */ } };
   const send = m => { if (P.socket?.readyState === WebSocket.OPEN) P.socket.send(JSON.stringify(m)); };
   const audit = (level, code, message, data) => window.andromedaAudit?.(level, code, message, data);
   const say = text => { const el = P.panelEl?.querySelector('.ponto-status'); if (el) el.textContent = text; };
@@ -50,6 +53,31 @@
     p.voice.gain.setTargetAtTime(talkingHere && P.mic ? 1 : 0, now, 0.02);
     p.pgm.gain.setTargetAtTime(p.returnOn ? (talkingHere ? 0.2 : 0.8) : 0, now, 0.08);
   }
+  /* ---------- retorno sem a própria voz (mix-minus) ----------
+   * O sinal de um canal entra no master multiplicado pelo volume do master. O mesmo sinal, multiplicado por −(volume do
+   * master), entra no retorno do ponto: os dois se anulam e sobra o programa sem aquele canal. */
+  const MIC = 'mic';
+  function nodeOf(key) {
+    if (key === MIC) return typeof liveTx !== 'undefined' ? liveTx.analyser || null : null; // microfone da transmissão (mesa)
+    const i = Number(key); if (!(i >= 0 && i < 10)) return null;
+    const m = window.audioMixer, remote = typeof bm !== 'undefined' && bm.inputs?.[i]?.bound;
+    return (remote ? m.remotes?.get(i) : m.nodes?.get(i))?.analyser || null;
+  }
+  function syncMinus() {
+    const m = window.audioMixer, ac = m?.context; if (!ac || !m.master) return;
+    const g = m.master.gain.value;
+    for (const [slot, p] of P.peers) {
+      if (!p.pgm) continue;
+      p.minusNodes = p.minusNodes || new Map();
+      const want = new Map(); for (const key of [].concat(P.minus[slot] || [])) { const n = nodeOf(key); if (n) want.set(String(key), n); }
+      for (const [key, e] of p.minusNodes) if (want.get(key) !== e.src) { try { e.src.disconnect(e.inv); } catch { /* já solto */ } e.inv.disconnect(); p.minusNodes.delete(key); }
+      for (const [key, src] of want) if (!p.minusNodes.has(key)) { const inv = ac.createGain(); inv.gain.value = -g; src.connect(inv); inv.connect(p.pgm); p.minusNodes.set(key, { src, inv }); }
+      for (const e of p.minusNodes.values()) if (e.inv.gain.value !== -g) e.inv.gain.setValueAtTime(-g, ac.currentTime);
+    }
+  }
+  setInterval(syncMinus, 100);
+  const minusLabel = key => key === MIC ? 'Microfone da transmissão' : typeof sources !== 'undefined' ? String(sources[Number(key)] || 'CAM ' + (Number(key) + 1)) : 'CAM ' + (Number(key) + 1);
+
   async function enable() {
     const ac = await audio(); await ac.resume();
     if (!P.mic) {
@@ -149,9 +177,18 @@
     const r = document.createElement('div'); r.className = 'ponto-row'; r.dataset.slot = slot;
     const online = P.online.get(slot), p = P.peers.get(slot) || {}, link = P.links.get(slot);
     const st = online ? (p.talkback ? 'CHAMANDO' : p.state === 'connected' ? 'NO PONTO' : 'CONECTANDO') + (online.background ? ' · app fora da tela' : '') : link ? 'AGUARDANDO' : 'SEM LINK';
-    r.innerHTML = '<span class="ponto-pill"></span><input class="ponto-name" maxlength="40"><span class="ponto-actions"><button type="button" class="ponto-invite">Gerar link</button><button type="button" class="ponto-copy" hidden>Copiar</button><a class="ponto-wa" target="_blank" rel="noopener noreferrer" hidden>WhatsApp</a><button type="button" class="ponto-revoke">Revogar</button></span><small class="ponto-ret"></small>';
+    r.innerHTML = '<span class="ponto-pill"></span><input class="ponto-name" maxlength="40"><span class="ponto-actions"><button type="button" class="ponto-invite">Gerar link</button><button type="button" class="ponto-copy" hidden>Copiar</button><a class="ponto-wa" target="_blank" rel="noopener noreferrer" hidden>WhatsApp</a><button type="button" class="ponto-revoke">Revogar</button></span><label class="ponto-minus">Retorno sem a voz de <select></select></label><small class="ponto-ret"></small>';
     r.querySelector('.ponto-pill').textContent = st; r.querySelector('.ponto-pill').dataset.tone = p.talkback ? 'call' : online ? (p.state === 'connected' ? 'on' : 'wait') : 'off';
     const name = r.querySelector('.ponto-name'); name.value = nameOf(slot); name.setAttribute('aria-label', 'Nome do ponto ' + (slot + 1)); name.onchange = () => { P.names[slot] = name.value.trim() || DEFAULT_NAMES[slot]; save(); };
+    // Mix-minus: o canal por onde a voz desta pessoa entra no programa sai do retorno dela.
+    const minus = r.querySelector('.ponto-minus select'), limit = typeof config !== 'undefined' && config?.limit || 10;
+    minus.setAttribute('aria-label', 'Canal com a voz de ' + nameOf(slot) + ', que sai do retorno dela');
+    minus.title = 'Escolha por onde a voz desta pessoa entra no programa (a câmera dela ou o microfone). O retorno dela fica sem esse canal: ela ouve a programação, mas não se ouve com atraso.';
+    minus.add(new Option('— ninguém (retorno completo)', ''));
+    for (let i = 0; i < limit; i++) minus.add(new Option(minusLabel(i), String(i)));
+    minus.add(new Option(minusLabel(MIC), MIC));
+    minus.value = String([].concat(P.minus[slot] || [])[0] ?? '');
+    minus.onchange = () => { if (minus.value === '') delete P.minus[slot]; else P.minus[slot] = [minus.value]; save(); syncMinus(); log('PONTO ' + nameOf(slot) + ': retorno ' + (minus.value === '' ? 'completo' : 'sem ' + minusLabel(minus.value) + ' (não ouve a própria voz)')); };
     r.querySelector('.ponto-ret').textContent = online ? 'Retorno do programa ' + (p.returnOn ? 'ligado pelo apresentador' : 'desligado') : '';
     const copy = r.querySelector('.ponto-copy'), wa = r.querySelector('.ponto-wa');
     if (link) { copy.hidden = false; wa.hidden = false; wa.href = 'https://wa.me/?text=' + encodeURIComponent('PONTO da direção (Andrômeda Live): coloque o fone, abra o link e toque em Entrar no ponto: ' + link); }
@@ -188,6 +225,6 @@
   window.addEventListener('blur', () => { /* fala fixa pelo botão de comando continua; a de segurar é liberada pelo próprio botão */ });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && P.talking) setTalk(false); });
   window.addEventListener('pagehide', () => { try { P.socket?.close(); } catch { /* fechado */ } P.mic?.getTracks().forEach(t => t.stop()); });
-  window.andromedaPonto = { toggle, label, panel, setTalk, enable, note, isTalking: () => P.talking, isReady: () => !!P.mic, calling: () => [...P.peers.values()].some(p => p.talkback), state: P };
+  window.andromedaPonto = { toggle, label, panel, setTalk, enable, note, syncMinus, mixFor, isTalking: () => P.talking, isReady: () => !!P.mic, calling: () => [...P.peers.values()].some(p => p.talkback), state: P };
   connect();
 })();

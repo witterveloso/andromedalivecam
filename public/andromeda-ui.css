@@ -1570,6 +1570,8 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .ponto-actions button, .ponto-actions a { min-height: 28px; padding: 0 10px; font-size: 11px; border-radius: 6px; display: inline-flex; align-items: center; }
 .ponto-actions a { border: 1px solid var(--d-line-2); color: var(--d-text); text-decoration: none; }
 .ponto-ret { grid-column: 1 / -1; color: var(--d-faint); font-size: 11px; }
+.ponto-minus { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--d-muted); font-size: 11px; }
+.ponto-minus select { min-height: 26px; max-width: 100%; font-size: 11px; }
 .ponto-pill { padding: 3px 8px; border-radius: 999px; background: var(--d-raise); color: var(--d-faint); font: 700 9.5px var(--d-mono); letter-spacing: .06em; white-space: nowrap; }
 .ponto-pill[data-tone="on"] { color: var(--d-pvw-text); }
 .ponto-pill[data-tone="wait"] { color: var(--d-amber); }
@@ -1602,3 +1604,32 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .tb-stat[data-onair="on"] .tb-dot { background: var(--d-pgm, #ff0033) !important; opacity: 1 !important; box-shadow: 0 0 8px var(--d-pgm, #ff0033); animation: tb-onair 1.2s ease-in-out infinite; }
 @keyframes tb-onair { 50% { opacity: .35 !important; } }
 @media (prefers-reduced-motion: reduce) { .tb-stat[data-onair="on"] .tb-dot { animation: none; } }
+
+/* ---------- formato da produção (horizontal 16:9 / vertical 9:16) ---------- */
+.prod-format { display: grid; gap: 8px; margin-bottom: 12px; padding: 12px 14px; background: var(--d-inset); border: 1px solid var(--d-line); border-radius: 10px; }
+.prod-format > header strong { color: var(--d-text); font: 700 12px var(--d-display); letter-spacing: .14em; text-transform: uppercase; }
+.prod-format[data-vertical="true"] { border-color: var(--brand-blue); }
+.prod-note { margin: 0; color: var(--d-muted); font-size: 12px; line-height: 1.5; }
+.prod-format[data-vertical="true"] .prod-note { color: var(--d-text); }
+.prod-note[data-tone="bad"] { color: #ff8fa3; }
+/* Produção vertical: os monitores PGM e PREVIEW mostram a tela em pé inteira, centralizada no quadro do monitor. */
+/* A área dos lados é só a moldura do monitor (hachurada = fora do quadro); a imagem que vai ao ar é a parte em pé, sem bordas. */
+body.prod-vertical #monProgram > canvas, body.prod-vertical #monPreview > canvas { object-fit: contain; background: repeating-linear-gradient(135deg, #05060f 0 9px, #0d1130 9px 18px); }
+body.prod-vertical #monProgram .effects-monitor { object-fit: contain; }
+body.prod-vertical #monProgram::after, body.prod-vertical #monPreview::after { content: "VERTICAL 9:16"; position: absolute; top: 40px; left: 8px; z-index: 3; padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, .65); color: var(--brand-blue); font: 700 10px var(--d-mono); letter-spacing: .08em; pointer-events: none; }
+
+/* ---------- pacote de GCs: galeria de modelos ---------- */
+.gc-models { display: grid; gap: 8px; padding: 10px; background: var(--d-inset); border: 1px solid var(--d-line); border-radius: 10px; }
+.gc-models-head { display: grid; gap: 2px; }
+.gc-models-head strong, .gc-models-mine { color: var(--d-text); font: 700 11px var(--d-display); letter-spacing: .12em; text-transform: uppercase; }
+.gc-models-head span { color: var(--d-muted); font-size: 11px; }
+.gc-models-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+.gc-model-wrap { position: relative; min-width: 0; }
+.gc-model { display: grid; gap: 4px; width: 100%; padding: 4px; background: var(--d-raise); border: 1px solid var(--d-line-2); border-radius: 8px; color: var(--d-text); font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.gc-model canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 5px; }
+.gc-model span { padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-model:hover { border-color: var(--brand-blue); }
+.gc-model[aria-pressed="true"] { border-color: var(--brand-blue); box-shadow: 0 0 0 2px var(--brand-blue) inset; }
+.gc-model-del { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 50%; background: rgba(0, 0, 0, .7); color: #fff; font-size: 14px; line-height: 1; }
+.gc-models-save { display: flex; flex-wrap: wrap; gap: 6px; }
+.gc-models-save input { flex: 1 1 180px; min-width: 0; }

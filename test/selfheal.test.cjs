@@ -11,7 +11,7 @@ const feed = (ws, bytes, from = 0) => { const step = Math.ceil(bytes.length / 90
 const duration = f => { const p = spawnSync(exe, ['-hide_banner', '-i', f], { encoding: 'utf8' }), m = /Duration: (\d+):(\d+):([\d.]+)/.exec(p.stderr); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : 0; };
 
 // Sessão só de gravação; "kills" diz em que segundos matar o codificador. O navegador simulado reabre o gravador ao receber "restart".
-async function session(port, { resync = true, kills = [2], killAtFrames = 0, reopen = true, durationMs = 7000 }) {
+async function session(port, { resync = true, kills = [2], killAtFrames = 0, killRecorderAtFrames = 0, reopen = true, durationMs = 7000 }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-heal-')), source = path.join(dir, 'source.webm'); makeWebm(source); const bytes = fs.readFileSync(source);
   const children = [], spawnProcess = (cmd, args, opts) => { const c = spawn(cmd, args, opts); children.push({ c, args }); return c; };
   const audit = createAudit({ write: false }), bridge = createBridge({ port, ffmpeg: exe, spawnProcess, audit }); bridge.listen(); await once(bridge.server, 'listening');
@@ -25,6 +25,8 @@ async function session(port, { resync = true, kills = [2], killAtFrames = 0, reo
         if (m.type === 'ready' && !seen.slice(0, -1).some(x => x.type === 'ready')) { timer = feed(ws, bytes); if (!killAtFrames) kills.forEach(sec => timers.push(setTimeout(killEncoder, sec * 1000))); timers.push(setTimeout(() => ws.send(JSON.stringify({ type: 'stop' })), durationMs)); }
         // Em computadores lentos (Windows no CI) o FFmpeg demora a gravar; matar só depois de haver imagem evita testar um arquivo vazio.
         if (killAtFrames && !killed && m.type === 'sending' && m.frames >= killAtFrames) { killed = true; killEncoder(); }
+        // Disco da gravação falhando: só o gravador (Gravação Andrômeda) cai; o codificador e a transmissão nem percebem.
+        if (killRecorderAtFrames && !killed && m.type === 'sending' && m.frames >= killRecorderAtFrames) { killed = true; children.filter(x => x.args.includes('matroska') && x.args.includes('pipe:0')).at(-1)?.c.kill('SIGKILL'); }
         if (m.type === 'restart' && reopen) { clearInterval(timer); for (let i = 0; i < 3; i++) ws.send(bytes.subarray(40000 + i * 3000, 43000 + i * 3000)); /* restos do gravador antigo: sem cabeçalho */ ws.send(bytes.subarray(0, 1)); setTimeout(() => { timer = feed(ws, bytes, 1); }, 100); /* como o Chrome: 1º pedaço de 1 byte, o resto do cabeçalho no seguinte */ }
         if (m.type === 'stopped' || m.type === 'error') { clearTimeout(to); setTimeout(resolve, m.type === 'error' ? 500 : 0); } }); });
     ws.send(JSON.stringify({ type: 'start', resolution: '720p', bitrate: 3, destinations: [], record: { dir: path.join(dir, 'rec'), formats: '16:9' }, channels: 1, resync }));
@@ -32,17 +34,34 @@ async function session(port, { resync = true, kills = [2], killAtFrames = 0, reo
   } finally { clearInterval(timer); timers.forEach(clearTimeout); ws?.terminate(); bridge.shutdown(); }
 }
 
-test('self-healing: the encoder is killed mid-session, restarts by itself, and both recordings are kept', async t => {
+test('self-healing: the encoder is killed mid-session, restarts by itself, and the recording keeps both parts in one file', async t => {
   if (!exe) return t.skip('FFmpeg ausente');
   const { seen, audit, dir } = await session(3300, { killAtFrames: 45, durationMs: 9000 });
   try {
     assert(!seen.some(m => m.type === 'error'), JSON.stringify(seen.filter(m => m.type === 'error')));
     const restart = seen.filter(m => m.type === 'restart'); assert.equal(restart.length, 1); assert.match(restart[0].message, /reiniciado sozinho \(tentativa 1 de 3\)/);
     assert(audit.since(0).some(e => e.code === 'reinicio') && audit.since(0).some(e => e.code === 'codificador-encerrou'));
-    const files = seen.filter(m => m.type === 'recorded').map(m => path.basename(m.file)); assert.equal(files.length, 2, JSON.stringify(files));
-    assert(files.some(f => /_16x9\.mp4$/.test(f)) && files.some(f => /_16x9_p2\.mp4$/.test(f)), 'second part never overwrites the first: ' + files);
-    for (const m of seen.filter(m => m.type === 'recorded')) assert(duration(m.file) > 1, path.basename(m.file) + ' is playable: ' + duration(m.file) + ' s');
+    // Gravação Andrômeda: a parte de antes e a de depois do reinício viram um arquivo só (nenhuma escreve por cima da outra).
+    const recs = seen.filter(m => m.type === 'recorded'), files = recs.map(m => path.basename(m.file)); assert.equal(files.length, 1, JSON.stringify(files));
+    assert.match(files[0], /_16x9\.mp4$/); assert(audit.since(0).some(e => e.code === 'partes-juntadas'), 'parts joined into one file');
+    assert(duration(recs[0].file) > 3, 'the joined file holds both parts: ' + duration(recs[0].file) + ' s');
+    assert.deepEqual(fs.readdirSync(path.dirname(recs[0].file)).filter(f => /_p\d|\.juntando|\.partes/.test(f)), [], 'no leftover parts');
     const after = seen.filter(m => m.type === 'sending').at(-1); assert(after.frames > 60, 'frames kept flowing after the restart: ' + after.frames);
+  } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+});
+
+test('Gravação Andrômeda: o gravador cai no meio da live (disco), volta sozinho numa parte nova sem tocar na transmissão, e no fim sai um arquivo só', async t => {
+  if (!exe) return t.skip('FFmpeg ausente');
+  const { seen, audit, dir } = await session(3303, { killRecorderAtFrames: 60, kills: [], durationMs: 9000 });
+  try {
+    assert(!seen.some(m => m.type === 'error' || m.type === 'restart'), 'o codificador não foi reiniciado: ' + JSON.stringify(seen.filter(m => m.type === 'error' || m.type === 'restart')));
+    assert(audit.since(0).some(e => e.code === 'gravacao-reiniciando'), 'falha da gravação registrada');
+    assert(seen.some(m => m.type === 'notice' && /Gravação 16:9 falhou .* retomada sozinha/.test(m.message)), 'a mesa foi avisada');
+    assert(seen.some(m => m.type === 'recording-state' && m.state === 'recording' && m.part === 2), 'voltou a gravar na parte 2');
+    const recs = seen.filter(m => m.type === 'recorded'); assert.equal(recs.length, 1, JSON.stringify(recs.map(m => path.basename(m.file))));
+    assert(audit.since(0).some(e => e.code === 'partes-juntadas'), 'as duas partes viraram um arquivo');
+    assert(duration(recs[0].file) > 4, 'arquivo com as duas partes: ' + duration(recs[0].file) + ' s');
+    assert.deepEqual(fs.readdirSync(path.dirname(recs[0].file)).filter(f => /_p\d|\.juntando|\.partes/.test(f)), [], 'sem sobras');
   } finally { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
 });
 

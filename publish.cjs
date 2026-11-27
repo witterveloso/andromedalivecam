@@ -25,8 +25,29 @@ const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
 const os = require('node:os');
 const { analyze } = require('./avsync.cjs');
-const { CFR30, validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
+const { deriveArgs, pickDeriveEncoder, CFR30, validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
 const { createOutputs } = require('./saidas.cjs');
+const { space } = require('./storage.cjs');
+
+/* ---------- Gravação Andrômeda ----------
+ * A gravação é feita junto com a transmissão, da MESMA imagem que vai às plataformas, mas por um caminho próprio:
+ *  - cada formato gravado (16:9 e 9:16) é um gravador do distribuidor, um processo à parte que só copia (não codifica);
+ *  - fila de 256 MB (minutos de disco travado, HD externo lento ou antivírus) sem perder nada e sem segurar a live;
+ *  - se o disco falhar (cheio, desconectado, sem permissão), o gravador recomeça sozinho numa parte nova (_p2, _p3…), sem
+ *    nunca escrever por cima da anterior, e a mesa é avisada; a transmissão não percebe;
+ *  - espaço livre vigiado durante a live, com aviso antes de acabar;
+ *  - no fim, as partes viram um arquivo só (MP4 a 30 fps exatos). */
+const RECORD_QUEUE = 256 * 1024 * 1024, RECORD_QUEUE_4K = 640 * 1024 * 1024;
+const recordArgs = file => ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-probesize', '2000000', '-analyzeduration', '1000000', '-f', 'flv', '-i', 'pipe:0',
+  '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-progress', 'pipe:3', '-stats_period', '1', '-flush_packets', '1', '-f', 'matroska', '-y', file];
+function recordReason(stderr) {
+  const s = String(stderr);
+  if (/No space left|ENOSPC|disk full/i.test(s)) return 'disco cheio';
+  if (/Permission denied|EACCES|EPERM|Read-only/i.test(s)) return 'sem permissão para gravar na pasta';
+  if (/No such file or directory|ENOENT|No such device|Input\/output error|EIO/i.test(s)) return 'pasta ou unidade indisponível (HD desconectado?)';
+  if (/timed out/i.test(s)) return 'o disco parou de responder';
+  return 'falha ao gravar no disco';
+}
 
 const MAX_QUEUE = 8 * 1024 * 1024;
 const EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]); // assinatura do início de um arquivo WebM/Matroska
@@ -71,13 +92,121 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     clearInterval(watchdog); clearInterval(outputsTimer); outputs.close();
     if (shared.active === ws) shared.active = null;
     if (startedAt) audit.info('transmissao', 'fim', 'Envio encerrado', { segundos: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0, quadros: Math.max(0, ...[...runners.values()].map(r => r.lastFrame)), formatos: [...runners.keys()] });
-    const records = [...parts.values()].flat();
+    const go = () => {
+    const groups = [...parts.values()], records = [];
+    const joinAll = () => { const g = groups.shift(); if (!g) { next(); return; } joinParts(g, list => { records.push(...list); joinAll(); }); };
     const next = () => {
       const record = records.shift();
       if (!record) { send({ type: 'stopped' }); ws.close(); return; }
       finalize(record, saved => { if (calibrating) { measureCalibration(saved, next); return; } if (saved) { audit.info('gravacao', 'arquivo', 'Gravação ' + record.aspect + ' salva', { arquivo: saved.file, formato: record.aspect, MB: Math.round(saved.size / 1e6) }); send({ type: 'recorded', format: record.aspect, ...saved }); } else { audit.error('gravacao', 'arquivo-vazio', 'A gravação ' + record.aspect + ' não gerou arquivo.'); send({ type: 'notice', message: 'Atenção: a gravação ' + record.aspect + ' não gerou arquivo.' }); } next(); });
     };
-    next();
+    joinAll();
+    };
+    // Os gravadores (e o 9:16 criado no serviço) terminam logo depois da imagem principal: espera fecharem os arquivos (até 15 s).
+    const busy = () => outputs.isRunning(DERIVED) || [...recorders.values()].some(r => outputs.isRunning(r.id));
+    clearInterval(diskTimer);
+    if (busy()) { const t0 = Date.now(), t = setInterval(() => { if (!busy() || Date.now() - t0 > 15000) { clearInterval(t); go(); } }, 100); } else go();
+  }
+
+  /* ---------- Tecnologia Andrômeda Multiplataforma: o 9:16 criado no serviço a partir da imagem 16:9 ----------
+   * A mesa desenha e codifica UMA imagem (16:9). O serviço cria o 9:16 dela (recorte, fundo desfocado ou barras) com a placa
+   * de vídeo quando houver, e entrega aos destinos 9:16 e à gravação 9:16. Pode ser ligado no meio da live (Instagram/TikTok
+   * entrando depois) e o enquadramento muda ao vivo: o 9:16 é refeito e emendado na mesma conexão (as plataformas não caem)
+   * e na mesma gravação. */
+  const DERIVED = '__9x16';
+
+  // Gravador de um formato (Gravação Andrômeda): uma saída interna do distribuidor, com parte nova a cada recomeço.
+  const recorders = new Map(); let recNoticeAt = 0;
+  function addRecorder(group, start = true) {
+    if (!group.record || recorders.has(group.id)) return;
+    const rec = { id: '__rec_' + group.id, group, n: 0, failed: false };
+    recorders.set(group.id, rec); parts.set(group.id, []);
+    const label = 'Gravação ' + group.aspect, tell = message => { if (Date.now() - recNoticeAt > 20000) { recNoticeAt = Date.now(); send({ type: 'notice', message }); } };
+    outputs.add({ id: rec.id, name: label, protocol: 'derive', aspect: group.aspect, internal: true,
+      limit: group.size === '3840:2160' ? RECORD_QUEUE_4K : RECORD_QUEUE, stallMs: 45000, reasonOf: recordReason,
+      get args() { return recordArgs(nextPart(rec)); },
+      onSlow: () => { audit.warn('gravacao', 'disco-lento', label + ': o disco não acompanhou por minutos; alguns segundos ficam fora da gravação.'); tell(label + ': o disco não está acompanhando e alguns segundos podem faltar na gravação. A transmissão segue normal.'); },
+      onState: (state, reason) => {
+        if (stopping) return;
+        if (state === 'retrying') { rec.failed = true; audit.warn('gravacao', 'gravacao-reiniciando', label + ': ' + reason + '. Retomando numa parte nova.', { formato: group.aspect, parte: rec.n }); send({ type: 'recording-state', format: group.aspect, state: 'retrying', reason }); tell(label + ' falhou (' + reason + ') e está sendo retomada sozinha. A transmissão segue normal; no fim, as partes viram um arquivo só.'); }
+        else if (state === 'sending') { send({ type: 'recording-state', format: group.aspect, state: 'recording', part: rec.n }); if (rec.failed) { rec.failed = false; audit.info('gravacao', 'gravacao-retomada', label + ' voltou a gravar (parte ' + rec.n + ')'); tell(label + ' voltou a gravar.'); } }
+      } }, group.id);
+    if (start) outputs.start(rec.id);
+  }
+  // Nome da próxima parte: nunca escreve por cima de um arquivo que já existe.
+  function nextPart(rec) {
+    const base = rec.group.record.file; let file;
+    do { rec.n++; file = rec.n === 1 ? base : base.replace(/\.mkv$/, '_p' + rec.n + '.mkv'); } while (fs.existsSync(file));
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { /* unidade fora: o gravador tenta de novo */ }
+    parts.get(rec.group.id).push({ ...rec.group.record, file, aspect: rec.group.aspect });
+    return file;
+  }
+
+  // Espaço livre durante a live: avisa com ~20 min de gravação restante e de novo com ~5 min.
+  let diskWarned = 0;
+  const diskTimer = setInterval(() => {
+    if (!broadcast?.record || stopping || !recorders.size) return;
+    const { free } = space(broadcast.record.dir); if (free == null) return;
+    const bytesPerSec = [...recorders.values()].reduce((sum, r) => sum + ((r.group.bitrate || broadcast.bitrate || 6) * 1e6 + 160e3) / 8, 0), minutes = free / bytesPerSec / 60;
+    const level = minutes < 5 ? 2 : minutes < 20 ? 1 : 0;
+    if (level > diskWarned) { const m = 'Disco da gravação quase cheio: cerca de ' + Math.max(0, Math.floor(minutes)) + ' min de gravação restantes (' + (free / 1e9).toFixed(1) + ' GB livres). A transmissão não para; libere espaço para a gravação continuar.'; audit.warn('gravacao', 'disco-quase-cheio', m, { livresGB: +(free / 1e9).toFixed(2), minutos: Math.floor(minutes) }); send({ type: 'notice', message: m }); }
+    diskWarned = Math.max(diskWarned, level);
+  }, 15000); diskTimer.unref?.();
+
+  // Fim da live: as partes de cada formato (recomeços do gravador ou do codificador) viram um arquivo só, se forem do mesmo
+  // formato de vídeo e som. Partes diferentes (ex.: a resolução mudou no meio) ficam em arquivos separados.
+  function signature(file, done) {
+    let err = ''; const p = spawnProcess(ffmpeg, ['-hide_banner', '-nostdin', '-i', file], { shell: false, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    p.stderr.on('data', d => { err += d; }); p.on('error', () => done(null));
+    p.on('close', () => { const v = err.match(/Video: (\w+)[^\n]*?(\d{2,5})x(\d{2,5})/), a = err.match(/Audio: (\w+), (\d+) Hz/); done(v ? [v[1], v[2], v[3], a ? a[1] + a[2] : '-'].join(':') : null); });
+  }
+  function joinParts(list, done) {
+    const sizeOf = f => { try { return fs.statSync(f).size; } catch { return 0; } };
+    const usable = list.filter(p => sizeOf(p.file) >= 1024);
+    if (usable.length < 2) { done(usable.length ? usable : list.slice(0, 1)); return; }
+    const sigs = []; let i = 0;
+    const probe = () => { if (i < usable.length) { signature(usable[i].file, s => { sigs.push(s); i++; probe(); }); return; } group(); };
+    const group = () => {
+      const runs = []; usable.forEach((p, k) => { if (k && sigs[k] && sigs[k] === sigs[k - 1]) runs.at(-1).push(p); else runs.push([p]); });
+      const out = []; const next = () => { const run = runs.shift(); if (!run) { done(out); return; } if (run.length === 1) { out.push(run[0]); next(); return; } concat(run, rec => { out.push(...rec); next(); }); };
+      next();
+    };
+    const concat = (run, cb) => {
+      const first = run[0].file, list = first.replace(/\.mkv$/, '.partes.txt'), tmp = first.replace(/\.mkv$/, '.juntando.mkv'), total = run.reduce((s, p) => s + sizeOf(p.file), 0);
+      try { fs.writeFileSync(list, run.map(p => "file '" + p.file.replace(/'/g, "'\\''") + "'").join('\n') + '\n'); } catch { cb(run); return; }
+      const j = spawnProcess(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', '-f', 'matroska', tmp], { shell: false, windowsHide: true, stdio: 'ignore' });
+      const end = ok => {
+        try { fs.rmSync(list, { force: true }); } catch { /* arquivo de lista preso: inofensivo */ }
+        if (!ok) { try { fs.rmSync(tmp, { force: true }); } catch { /* sem arquivo */ } audit.warn('gravacao', 'partes-separadas', 'As partes da gravação ' + run[0].aspect + ' ficaram em arquivos separados.'); cb(run); return; }
+        for (const p of run) try { fs.rmSync(p.file, { force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* preso: fica a parte */ }
+        try { fs.renameSync(tmp, first); } catch { cb([{ ...run[0], file: tmp }]); return; }
+        audit.info('gravacao', 'partes-juntadas', 'Gravação ' + run[0].aspect + ': ' + run.length + ' partes juntadas num arquivo só');
+        cb([run[0]]);
+      };
+      j.on('error', () => end(false)); j.on('close', code => end(code === 0 && sizeOf(tmp) > total * 0.9));
+    };
+    probe();
+  }
+  let derived = null;
+  function startDerived(vGroup) {
+    if (derived) return true;
+    const master = runners.get('h'); if (!master || master.failed || !master.group.feed) return false;
+    derived = { group: vGroup, starts: 0, encoder: pickDeriveEncoder(detectEncoders(ffmpeg)) };
+    outputs.group('v', { size: vGroup.size });
+    // Gravação 9:16: sai do distribuidor (mesma imagem que vai às plataformas), num arquivo só, mesmo com o enquadramento
+    // mudando no meio da live (a emenda mantém o arquivo contínuo).
+    const build = () => deriveArgs({ vertical: broadcast.vertical, encoder: derived.encoder, record: null });
+    if (vGroup.record) addRecorder(vGroup, false);
+    outputs.add({ id: DERIVED, name: 'Saída 9:16', protocol: 'derive', aspect: '16:9', internal: true,
+      get args() { return build(); },
+      onStdout: d => outputs.feed('v', d),
+      // 1ª vez: começa do zero. Refeito (enquadramento novo ou queda): emenda na mesma linha do tempo, sem derrubar as plataformas 9:16.
+      onStart: () => { derived.launches = (derived.launches || 0) + 1; outputs.resetGroup('v', { splice: derived.launches > 1 }); },
+      onEnd: () => outputs.endGroup('v'),
+      onState: (state, reason) => { if (state === 'retrying' && !stopping) { audit.warn('transmissao', 'vertical-reiniciando', 'Saída 9:16 reiniciando: ' + reason); send({ type: 'notice', message: 'A saída 9:16 reiniciou sozinha (' + reason + '). Os destinos 9:16 voltam em instantes; o 16:9 seguiu normal.' }); } } }, 'h');
+    outputs.start(DERIVED); if (vGroup.record) outputs.start(recorders.get('v').id);
+    audit.info('transmissao', 'vertical-servico', 'Saída 9:16 criada no serviço a partir da imagem 16:9 (' + (broadcast.vertical.mode === 'crop' ? 'recorte' : broadcast.vertical.mode === 'blur' ? 'fundo desfocado' : 'barras') + ', ' + derived.encoder + ')', { codificador: derived.encoder, enquadramento: broadcast.vertical.mode });
+    return true;
   }
 
   // Calibração do sincronismo: a gravação de teste (clarões + bipes) é medida aqui e apagada em seguida.
@@ -156,10 +285,10 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     return true;
   }
 
-  // Sobe um FFmpeg novo para o formato, numa gravação nova (_p2, _p3…), e espera o cabeçalho novo do navegador.
+  // Sobe um FFmpeg novo para o formato e espera o cabeçalho novo do navegador. A gravação continua numa parte nova (_p2…),
+  // juntada às outras no fim.
   function relaunch(r) {
-    const group = { ...r.group }, n = (parts.get(group.id) || []).length + 1;
-    if (group.record) group.record = { ...group.record, file: group.record.file.replace(/(_p\d+)?\.mkv$/, '_p' + n + '.mkv') };
+    const group = { ...r.group };
     outputs.resetGroup(group.id); // tempos novos: os destinos ligados reabrem a conexão a partir do primeiro quadro-chave novo
     launch(group, argsForGroup(broadcast, group), true);
     runners.get(group.id).awaitHeader = true; // descarta o que o gravador antigo ainda mandar até chegar o cabeçalho novo
@@ -201,8 +330,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
   function launch(group, args, restarted = false) {
     const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dying: false, awaitHeader: false, dups: 0, starved: 0, warnedAt: 0, samples: [], speed: 1, prevWall: 0, prevOut: 0, curOut: NaN, warnedLoad: 0, sentHealth: 0 };
     runners.set(group.id, r);
-    if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
-    const feeds = !!broadcast && group.destinations.length > 0;
+    const feeds = !!broadcast && (group.destinations.length > 0 || !!group.feed);
     if (feeds) outputs.group(group.id, { size: group.size });
     const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', feeds ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     // A imagem codificada vai ao distribuidor, que repassa a cada destino ligado. Se este processo for o antigo de um reinício, descarta.
@@ -290,6 +418,13 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     if (msg.type === 'resync' && everStarted) { resyncAll(String(msg.reason || 'mudança de resolução').slice(0, 160)); return; }
     if (msg.type === 'engine' && everStarted) { useStandardEngine(String(msg.reason || 'falha no navegador').slice(0, 160)); return; }
     if (msg.type === 'output') { output(msg); return; }
+    if (msg.type === 'vertical' && broadcast?.derive) {
+      const v = msg.vertical || {}, mode = ['crop', 'blur', 'bars'].includes(v.mode) ? v.mode : broadcast.vertical.mode, pos = Number.isFinite(Number(v.pos)) ? Math.min(1, Math.max(0, Number(v.pos))) : broadcast.vertical.pos;
+      if (mode === broadcast.vertical.mode && Math.abs(pos - broadcast.vertical.pos) < 0.005) return;
+      broadcast.vertical = { ...broadcast.vertical, mode, pos };
+      if (derived) { outputs.restart(DERIVED); audit.info('transmissao', 'vertical-enquadramento', 'Enquadramento 9:16 mudou ao vivo (' + mode + (mode === 'crop' ? ', posição ' + Math.round(pos * 100) + '%' : '') + ')'); }
+      return;
+    }
     if (msg.type !== 'start') { fail('Comando não suportado.'); return; }
     if (everStarted) { fail('Abra uma nova sessão para iniciar outra transmissão.'); return; }
     everStarted = true;
@@ -309,7 +444,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
         if (cfg.record) cfg.record.space = storage.checkDir(cfg.record.dir);
         if (!detectEncoders(ffmpeg).includes(cfg.encoder)) cfg.encoder = 'libx264';
         groups = groupsFor(cfg);
-        if (groups.length > 1 && msg.channels !== 2) throw Error('Atualize a mesa: esta transmissão precisa das saídas 16:9 e 9:16.');
+        if (groups.filter(g => !g.derived).length > 1 && msg.channels !== 2) throw Error('Atualize a mesa: esta transmissão precisa das saídas 16:9 e 9:16.');
       } else cfg = validateConfig(msg);
     } catch (e) { fail(e.message); return; }
     dual = multi && msg.channels === 2; canRestart = multi && msg.resync === true && !calibrating;
@@ -321,7 +456,8 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       for (const d of cfg.destinations) if (!d.on) send({ type: 'destination', id: d.id, state: 'standby', reason: '' });
       for (const d of cfg.destinations) if (d.warning) { send({ type: 'destination', id: d.id, state: 'warning', reason: d.warning }); audit.warn('transmissao', 'destino-suspeito', d.warning); }
       for (const g of groups) if (g.record) send({ type: 'recording', file: g.record.file, format: g.aspect, free: cfg.record.space.free });
-      for (const g of groups) launch(g, argsForGroup(cfg, g));
+      for (const g of groups) if (!g.derived) { launch(g, argsForGroup(cfg, g)); addRecorder(g); }
+      const vg = groups.find(g => g.derived); if (vg) startDerived(vg);
       for (const d of cfg.destinations) if (d.on) outputs.start(d.id);
     } else {
       launch({ id: 'h', aspect: '16:9', destinations: [], record: null }, argsFor(cfg));
@@ -349,9 +485,17 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       let d; try { d = validateDestination({ ...(msg.destination || {}), id }, id); } catch (e) { reject(e.message); return; }
       if (broadcast.destinations.length >= MAX_DESTINATIONS) { reject('Use no máximo ' + MAX_DESTINATIONS + ' destinos simultâneos.'); return; }
       if (broadcast.destinations.some(x => x.target === d.target)) { reject('Já existe um destino com o mesmo servidor e a mesma chave.'); return; }
-      const g = [...runners.values()].find(r => r.group.aspect === d.aspect && !r.failed && r.group.destinations.length);
-      if (!g) { reject('A saída ' + d.aspect + ' não foi preparada nesta live. Para entrar no meio da live, deixe o destino em espera antes de começar.'); return; }
-      broadcast.destinations.push(d); g.group.destinations.push(d); outputs.add(d, g.group.id);
+      // Formato da imagem principal (16:9): sempre disponível. 9:16 criado no serviço: liga na hora, mesmo que não estivesse rodando.
+      let gid = null, list = null;
+      const g = [...runners.values()].find(r => r.group.aspect === d.aspect && !r.failed && (r.group.destinations.length || r.group.feed));
+      if (g) { gid = g.group.id; list = g.group.destinations; }
+      else if (d.aspect === '9:16' && broadcast.derive) {
+        if (!derived && !startDerived({ id: 'v', aspect: '9:16', size: broadcast.vertical.resolution === '720p' ? '720:1280' : '1080:1920', bitrate: broadcast.vertical.bitrate, destinations: [], record: null, derived: true })) { reject('A imagem principal não está pronta para criar o 9:16. Tente de novo em instantes.'); return; }
+        gid = 'v'; list = derived.group.destinations;
+        audit.info('transmissao', 'vertical-no-meio', '9:16 ligado no meio da live para ' + d.name);
+      }
+      if (!gid) { reject('A saída ' + d.aspect + ' não foi preparada nesta live. Para entrar no meio da live, deixe o destino em espera antes de começar.'); return; }
+      broadcast.destinations.push(d); list.push(d); outputs.add(d, gid);
       if (d.warning) send({ type: 'destination', id, state: 'warning', reason: d.warning });
     }
     outputs.start(id);
