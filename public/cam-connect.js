@@ -90,9 +90,10 @@
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const box = make('details', 'turn-box'); box.id = 'turnBox';
   // Rede móvel (4G/5G): a câmera precisa de uma retransmissão na internet para chegar à mesa pelos dados móveis.
-  // Cloudflare (recomendado): funciona em qualquer rede, sem mexer no roteador. As outras opções ficam para quem precisa.
+  // Rede Andrômeda nesta mesa (recomendado): retransmissão própria; a mesa abre a porta no roteador sozinha (UPnP, NAT-PMP,
+  // inclusive Mesh atrás do modem). Cloudflare e o servidor da empresa ficam como alternativas.
   box.innerHTML = '<summary><strong>Rede móvel (4G/5G)</strong><span id="turnState" class="turn-state">verificando…</span></summary>' +
-    '<label>Retransmissão<select id="turnProvider"><option value="cloudflare">Cloudflare · funciona em qualquer rede (recomendado)</option><option value="andromeda">Nesta mesa · precisa do roteador com UPnP</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada · só Wi-Fi</option></select></label>' +
+    '<label>Retransmissão<select id="turnProvider"><option value="andromeda">Rede Andrômeda nesta mesa (recomendado)</option><option value="cloudflare">Cloudflare</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada · só Wi-Fi</option></select></label>' +
     '<div class="turn-fw" hidden><p class="link-note" id="turnFirewall" role="status"></p><button type="button" id="fwFix">Liberar no firewall do Windows</button></div><div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p></div>' +
     '<div class="turn-cf" hidden><p class="link-note">Cloudflare → Realtime → TURN Server → Create: copie o <b>Key ID</b> e o <b>API token</b>.</p><label>Key ID<input id="turnKeyId" autocomplete="off" spellcheck="false"></label><label>API token<input id="turnToken" type="password" autocomplete="off" spellcheck="false"></label></div>' +
     '<div class="turn-own"><label>Endereços do servidor (um por linha)<textarea id="turnUrls" rows="2" spellcheck="false" placeholder="turn:rede.suaempresa.com.br:3478\nturn:rede.suaempresa.com.br:3478?transport=tcp"></textarea></label><label>Usuário<input id="turnUser" autocomplete="off" spellcheck="false"></label><label>Senha<input id="turnPass" type="password" autocomplete="off"></label></div>' +
@@ -111,7 +112,8 @@
     // Uma linha, só o que muda a decisão do operador.
     if (own) q('#turnOwnInfo').textContent = !s.ready ? 'Não iniciou: ' + (s.error || 'porta ocupada') + '.'
       : open5g ? 'Funcionando no 4G/5G.' : !s.router ? 'Conferindo o roteador…'
-      : 'O roteador desta rede não deixa o 4G/5G chegar. Use a opção Cloudflare.';
+      : s.router?.levels === 2 || /dois roteadores/.test(s.router?.error || '') ? 'Há dois roteadores (Mesh + modem): ative o UPnP no modem da operadora ou ponha o Mesh em modo ponte. A mesa tenta de novo sozinha.'
+      : 'O roteador não liberou o 4G/5G: ative o UPnP (ou NAT-PMP) no roteador. A mesa tenta de novo sozinha a cada minuto.';
     if (document.activeElement?.closest('#turnBox')) return;
     q('#turnProvider').value = s.provider;
     if (s.keyId) q('#turnKeyId').value = s.keyId;

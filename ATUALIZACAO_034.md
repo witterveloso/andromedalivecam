@@ -30,12 +30,19 @@ Caminho próprio, separado do intercom dos operadores de câmera: convites, cana
 - **Mesmo link:** a câmera volta pelo mesmo link quando o celular reconecta ou a página é reaberta, mesmo com a conexão antiga ainda aberta (antes, a mesa recusava). Se o link for aberto em outro aparelho, o anterior é avisado e não fica disputando a câmera.
 - **Convites guardados:** continuam valendo depois de fechar e abrir o Andrômeda Live, por 7 dias desde o último uso (antes valiam 12 h e se perdiam ao fechar o programa).
 
-## Câmera no 4G/5G de novo, em qualquer rede
-- **O que tinha acontecido.** Até a 0.28, a câmera chegava no 4G/5G pela retransmissão Cloudflare. Na 0.29, a retransmissão passou a rodar dentro da própria mesa e a opção Cloudflare saiu da tela. Essa retransmissão só funciona no 4G/5G quando o roteador abre a porta (UPnP), o que muitos roteadores não fazem. Por isso parou.
-- **Agora:**
-  - a opção **Cloudflare · funciona em qualquer rede (recomendado)** está de volta, com os campos Key ID e API token;
-  - as outras opções continuam: Nesta mesa (precisa de UPnP), Servidor da Rede Andrômeda (empresa) e Desligada.
-- **Tela de convites mais simples:** uma frase só ("Pronto: o link funciona no Wi-Fi e no 4G/5G" ou "Pronto no Wi-Fi. Para o 4G/5G, configure…"). O aviso do firewall só aparece quando ele está bloqueando.
+## Câmera no 4G/5G pela Rede Andrômeda (o nosso sistema), mais forte
+A Rede Andrômeda continua sendo a retransmissão padrão e recomendada. Para o celular no 4G/5G chegar à mesa, o roteador
+precisa liberar a porta, e a mesa pede isso sozinha. Esse pedido falhava em algumas redes ("nenhum roteador com UPnP
+respondeu"), principalmente em redes Mesh. Agora a mesa tenta três caminhos:
+- **Busca do roteador em todas as placas de rede e direto no endereço do roteador.** Num computador com placa virtual (Hyper-V, WSL, VirtualBox, VPN), a busca saía pela placa errada e o roteador não ouvia.
+- **NAT-PMP:** muitos roteadores Mesh e Apple liberam a porta por NAT-PMP, e não por UPnP. A mesa tenta os dois.
+- **Dois roteadores (Mesh atrás do modem da operadora):** a mesa libera a porta no Mesh e também no modem, apontando para o Mesh.
+- **Nova tentativa sozinha:** enquanto o 4G/5G estiver fechado, a mesa tenta de novo a cada minuto. Basta ligar o UPnP no roteador, sem reiniciar o programa.
+- **Na tela, uma frase só:**
+  - "Pronto: o link funciona no Wi-Fi e no 4G/5G";
+  - ou o que fazer: "ative o UPnP (ou NAT-PMP) no roteador" ou, com dois roteadores, "ative o UPnP no modem da operadora ou ponha o Mesh em modo ponte".
+  - O aviso do firewall só aparece quando ele está bloqueando.
+- **Opções da tela:** a Cloudflare continua disponível como alternativa, ao lado do servidor da Rede Andrômeda da empresa.
 
 ## Gravação 16:9 e 9:16 ao mesmo tempo
 - **Antes:** com o computador no limite, a mesa desligava a gravação 9:16 sozinha, e o arquivo vertical não aparecia.
@@ -56,11 +63,13 @@ Caminho próprio, separado do intercom dos operadores de câmera: convites, cana
 - **Testes automáticos do serviço:**
   - PONTO: sinalização e avisos só para o ponto certo, mesmo link, revogação e convites guardados;
   - câmera: reconexão pelo mesmo link e convite que sobrevive a reabrir o programa.
+- **Rede Andrômeda:**
+  - NAT-PMP com um roteador de verdade (UDP);
+  - NAT duplo com dois roteadores simulados (Mesh → modem);
+  - roteador achado pela tabela de rotas do Windows e do Linux;
+  - simulação de 5G com rede de verdade (celular atrás de CGNAT, mesa atrás de roteador): a imagem chegou.
 - **Teste da mesa:** playlist do GC (ponto → no ar → próximo no ponto) e botão PONTO nos Comandos.
 
 ## O que fica com você
-- **Para o 4G/5G voltar no seu computador:**
-  1. Vá em Convites → Rede móvel (4G/5G) e escolha **Cloudflare**.
-  2. Cole o Key ID e o API token da chave TURN da Cloudflare (painel da Cloudflare → Realtime → TURN Server). Se você não tiver mais o token, crie uma chave nova lá.
-  3. Clique em **Salvar e testar**.
+- **4G/5G pela Rede Andrômeda:** deixe "Rede Andrômeda nesta mesa" escolhido. Se a tela pedir, ligue o UPnP (ou NAT-PMP) no roteador. Com Mesh atrás do modem da operadora, ligue o UPnP também no modem ou ponha o Mesh em modo ponte. A mesa tenta de novo sozinha.
 - **Nos celulares do PONTO:** use fones. O microfone só abre enquanto a pessoa segura o botão.
