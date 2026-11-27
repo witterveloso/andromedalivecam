@@ -103,3 +103,10 @@ test('9:16 com o quadro inteiro: 16:9 dentro da área que aparece em qualquer ce
   assert.match(bars, /scale=864:-2/); assert.match(bars, /pad=1080:1920:\(ow-iw\)\/2:\(oh-ih\)\/2/);
   assert.match(verticalFilter({ mode: 'crop', pos: 0.5 }), /crop=trunc\(ih\*1080\/1920\/2\)\*2:ih/, 'recorte continua ocupando a tela toda');
 });
+
+test('9:16 com fundo desfocado roda bem mais rápido que o tempo real no processador (sem placa de vídeo)', { timeout: 60000, skip: !exe && 'FFmpeg ausente' }, () => {
+  const { verticalFilter } = require('../encoder.cjs'), t0 = Date.now();
+  const r = spawnSync(exe, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=1920x1080:r=30:d=6', '-filter_complex', verticalFilter({ mode: 'blur' }), '-map', '[v]', '-c:v', 'libx264', '-preset', 'superfast', '-f', 'null', '-'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr); const secs = (Date.now() - t0) / 1000;
+  assert(secs < 6 * (process.platform === 'win32' ? 1.2 : 0.8), '6 s de vídeo processados em ' + secs.toFixed(1) + ' s');
+});

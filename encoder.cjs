@@ -283,9 +283,10 @@ function verticalFilter({ mode = 'crop', pos = 0.5 } = {}, [W, H] = [1080, 1920]
   const tail = ',fps=30,setsar=1,format=yuv420p[v]';
   // Quadro inteiro (fundo desfocado ou barras): o Instagram/TikTok enche a tela de celulares mais altos que 9:16 cortando as laterais
   // (~9% de cada lado num 19,5:9). O 16:9 fica em 80% da largura, dentro do que aparece em qualquer celular.
-  // Fundo: média de 4×7 pontos ampliada e suavizada, escurecida: só cor, sem manchas de letras ou do relógio.
+  // Fundo: média de 4×7 pontos ampliada e suavizada, escurecida: só cor, sem manchas de letras ou do relógio. A suavização é
+  // feita em 1/4 do tamanho (16× menos pontos) e ampliada depois: mesmo visual, 6× mais leve (cabe num processador sem placa de vídeo).
   const SW = Math.round(W * SAFE_WIDTH / 2) * 2;
-  if (mode === 'blur') return '[0:v:0]split[a][b];[a]crop=' + cw + ':ih:(iw-' + cw + ')/2:0,scale=4:7:flags=area,scale=' + W + ':' + H + ':flags=bilinear,boxblur=90:3,colorlevels=romax=0.45:gomax=0.45:bomax=0.45[bg];[b]scale=' + SW + ':-2:flags=bicubic[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2' + tail;
+  if (mode === 'blur') return '[0:v:0]split[a][b];[a]crop=' + cw + ':ih:(iw-' + cw + ')/2:0,scale=4:7:flags=area,scale=' + Math.round(W / 4) + ':' + Math.round(H / 4) + ':flags=bilinear,boxblur=24:2,colorlevels=romax=0.45:gomax=0.45:bomax=0.45,scale=' + W + ':' + H + ':flags=bilinear[bg];[b]scale=' + SW + ':-2:flags=bicubic[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2' + tail;
   if (mode === 'bars') return '[0:v:0]scale=' + SW + ':-2:flags=bicubic,pad=' + W + ':' + H + ':(ow-iw)/2:(oh-ih)/2:black' + tail;
   return '[0:v:0]crop=' + cw + ':ih:(iw-' + cw + ')*' + p + ':0,scale=' + W + ':' + H + ':flags=bicubic' + tail;
 }

@@ -47,7 +47,8 @@
   }
   function paintThumb(t) {
     const ctx = t.canvas.getContext('2d'), W = 1920, H = 1080, l = layer();
-    ctx.save(); ctx.scale(t.canvas.width / W, t.canvas.height / H);
+    // Mostra de perto a parte de baixo, à esquerda, onde a tarja aparece (o quadro inteiro deixava o GC pequeno demais).
+    const k = t.canvas.width / (W * .58); ctx.save(); ctx.setTransform(k, 0, 0, k, 0, -(H - t.canvas.height / k) * k);
     const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#4b6475'); g.addColorStop(1, '#253323'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
     const s = t.settings, demo = { on: true, title: l.title.trim() || (s.style === 'redes' ? '@seuperfil' : 'Nome da Pessoa'), subtitle: l.subtitle.trim() || (s.style === 'redes' ? 'Siga e ative as notificações' : 'Cargo ou função'),
       corner: 'bottom-left', width: 70, size: 60, tag: '', ...s.defaults, ...(s.custom || {}), style: s.style };
