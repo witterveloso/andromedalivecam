@@ -18,6 +18,8 @@ function encoder(seconds, cfg) {
     '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '4M', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-map', '0:v', '-map', '1:a', ...tail], { stdio: ['ignore', 'pipe', 'ignore'] });
 }
 const rtmpServer = (port, file) => spawn(ffmpeg, ['-y', '-hide_banner', '-loglevel', 'error', '-listen', '1', '-i', 'rtmp://127.0.0.1:' + port + '/live/chave-teste-123', '-c', 'copy', file], { stdio: 'ignore' });
+// Espera um evento (no Windows, conexões recusadas e encerramentos demoram alguns segundos a mais).
+const until = async (cond, ms) => { const end = Date.now() + ms; while (!cond() && Date.now() < end) await wait(100); return cond(); };
 const exited = child => new Promise(r => { if (child.exitCode != null || child.signalCode != null) r(); else child.once('exit', r); });
 // Leitor para conferir o que o servidor SRT recebeu (MPEG-TS). O FFmpeg empacotado falha ao LER MPEG-TS em alguns processadores
 // (gerar funciona, e é só isso que o Andrômeda Live faz no SRT); a conferência usa o primeiro FFmpeg que lê MPEG-TS nesta máquina.
@@ -79,7 +81,7 @@ test('destino liga no meio da live, outro sai do ar, e ninguém atrapalha ningu�
     await wait(4000); outputs.start('b');            // B entra no meio da live
     await wait(4000); outputs.stop('a');             // A sai do ar; B continua
     await exited(enc); outputs.endGroup(g.id);
-    await Promise.race([Promise.all([exited(sa), exited(sb)]), wait(10000)]);
+    await Promise.race([Promise.all([exited(sa), exited(sb)]), wait(10000)]); await until(() => events.includes('b:off'), 10000);
     const a = inspect(fa), b = inspect(fb);
     assert(a.frames >= 200 && a.frames <= 280, 'A ficou no ar ~8 s (' + a.frames + ' quadros)');
     assert(b.frames >= 200 && b.frames <= 280, 'B entrou no meio e ficou ~8 s (' + b.frames + ' quadros)');
@@ -88,6 +90,7 @@ test('destino liga no meio da live, outro sai do ar, e ninguém atrapalha ningu�
     assert(b.keyGap <= 2.1 && a.keyGap <= 2.1, 'quadro-chave a cada 2 s nos dois (' + a.keyGap + ' / ' + b.keyGap + ')');
     for (const e of ['a:connecting', 'a:sending', 'a:stopping', 'a:off', 'b:connecting', 'b:sending', 'b:off']) assert(events.includes(e), 'evento ' + e + ' em ' + events.join(' '));
     assert(events.indexOf('a:off') < events.indexOf('b:off'), 'A saiu do ar antes do fim, B só no fim');
+    assert(!events.slice(events.indexOf('a:stopping')).includes('a:sending'), 'saindo do ar, A não volta a aparecer como no ar (' + events.join(' ') + ')');
   } finally { enc.kill(); sa.kill(); sb.kill(); outputs.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -115,9 +118,9 @@ test('destino fora do ar reconecta sozinho quando o servidor volta', { timeout: 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-volta-')), file = path.join(dir, 'r.flv'), events = [];
   const cfg = validateBroadcast({ destinations: [dest('r', 19485)], resolution: '1080p', bitrate: 6 });
   const outputs = hub(events), g = groupsFor(cfg)[0]; outputs.add(cfg.destinations[0], g.id); outputs.group(g.id, { size: g.size });
-  const enc = encoder(14, cfg); enc.stdout.on('data', d => outputs.feed(g.id, d)); let server;
+  const enc = encoder(20, cfg); enc.stdout.on('data', d => outputs.feed(g.id, d)); let server;
   try {
-    outputs.start('r'); await wait(3500);
+    outputs.start('r'); await until(() => events.includes('r:retrying'), 15000);
     assert(events.includes('r:retrying'), 'sem servidor: tentando de novo (' + events.join(' ') + ')');
     assert.match(outputs.status()[0].reason, /conexão recusada/);
     server = rtmpServer(19485, file);

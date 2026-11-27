@@ -144,6 +144,8 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       while ((i = o.progress.indexOf('\n')) >= 0) {
         const line = o.progress.slice(0, i).trim(); o.progress = o.progress.slice(i + 1);
         if (!line.startsWith('total_size=')) continue;
+        if (o.ending || !o.want || o.child !== child) continue; // saindo do ar: o último relatório do processo não conta como "no ar"
+
         const total = Number(line.slice(11)); if (!(total > o.sentBytes)) continue;
         const t = now();
         if (o.advancedAt) o.kbps = Math.round((total - o.sentBytes) * 8 / Math.max(1, t - o.advancedAt));
