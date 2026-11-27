@@ -1,6 +1,7 @@
 'use strict';
 // Gravar e transmitir ao mesmo tempo: se o disco da gravação engasgar (HD externo, antivírus, disco lento), a live NÃO pode
-// parar. A gravação sai do mesmo processo que os destinos (tee); sem fila própria, um disco parado segura a transmissão junto.
+// parar. Gravação Andrômeda: a gravação é uma saída do distribuidor (como um destino), com fila própria de minutos; o
+// codificador nunca escreve no disco.
 // Aqui o "disco" é um pipe que para de ler por 3,5 s no meio do envio; medimos o maior buraco na chegada à "plataforma".
 const { test } = require('node:test'), assert = require('node:assert/strict'), net = require('node:net');
 const { spawn, spawnSync, execFileSync } = require('node:child_process'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
@@ -23,11 +24,14 @@ test('disco da gravação travado 3,5 s não trava a transmissão, e a gravaçã
   const proxy = net.createServer(c => { const up = net.connect(recvPort, '127.0.0.1'); socks.add(c); socks.add(up); c.on('data', d => { arrivals.push(Date.now()); up.write(d); }); up.pipe(c); c.on('error', () => up.destroy()); up.on('error', () => c.destroy()); });
   await new Promise(r => proxy.listen(proxyPort, '127.0.0.1', r)); await wait(700);
   const cfg = validateBroadcast({ destinations: [{ platform: 'custom', server: 'rtmp://127.0.0.1:' + proxyPort + '/live', key: 'test-stream-key-123' }], record: { dir, formats: '16:9' }, resolution: '1080p', bitrate: 6 });
-  cfg.record.file = path.join(dir, 'disco.mkv'); // o tee grava em disco_16x9.mkv = o pipe
-  const tee = argsForBroadcast(cfg).slice(-5); assert.match(tee[4], /disco_16x9\.mkv/); assert.match(tee[4], /pipe:1/);
+  const tee = argsForBroadcast(cfg).slice(-5); assert.match(tee[4], /pipe:1/); assert.doesNotMatch(tee[4], /\.mkv/, 'o codificador não grava: só alimenta o distribuidor');
   // O destino sai pelo distribuidor (saidas.cjs), alimentado pela saída do codificador, como no programa.
   const g = groupsFor(cfg)[0], outputs = createOutputs({ ffmpeg, spawnProcess: spawn });
   outputs.group(g.id, { size: g.size }); outputs.add(cfg.destinations[0], g.id); outputs.start(cfg.destinations[0].id);
+  // Gravador como na sessão real (publish.cjs): fila grande e vigia tolerante; o "disco" é o pipe.
+  outputs.add({ id: '__rec_h', name: 'Gravação 16:9', protocol: 'derive', internal: true, limit: 256 * 1024 * 1024, stallMs: 45000,
+    args: ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-nostats', '-f', 'flv', '-i', 'pipe:0', '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-progress', 'pipe:3', '-stats_period', '1', '-flush_packets', '1', '-f', 'matroska', '-y', pipe] }, g.id);
+  outputs.start('__rec_h');
   const sender = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=s=1280x720:r=30', '-f', 'lavfi', '-i', 'sine=r=48000', '-t', '10',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '6M', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-map', '0:v', '-map', '1:a', ...tee], { stdio: ['ignore', 'pipe', 'ignore'] });
   sender.stdout.on('data', d => outputs.feed(g.id, d));

@@ -106,6 +106,8 @@ function groupsFor(cfg) {
   if (vNeeded) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null, derived: !!cfg.derive });
   // A imagem principal alimenta o distribuidor sempre que o 9:16 é criado a partir dela (inclusive se ele for ligado no meio da live).
   if (cfg.derive && groups[0]?.id === 'h') groups[0].feed = true;
+  // Toda gravação sai do distribuidor (Gravação Andrômeda): o formato gravado sempre o alimenta.
+  for (const g of groups) if (g.record && !g.derived) g.feed = true;
   return groups;
 }
 
@@ -178,9 +180,8 @@ const FEED = '[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]
 function outputArgs(group) {
   const outputs = [];
   if (group.destinations.length || group.feed) outputs.push(FEED);
-  // A gravação também tem fila própria: se o disco engasgar (HD externo, antivírus, disco lento), a live segue sem parar
-  // e a gravação alcança depois. Sem a fila, o tee esperava o disco e a transmissão parava junto (test/record-stall.test.cjs).
-  if (group.record) outputs.push('[' + RECORD_FIFO + ']' + teeEscape(group.record.file));
+  // A gravação não sai daqui: o distribuidor grava a mesma imagem que vai aos destinos (Gravação Andrômeda, publish.cjs), com
+  // fila e vigia próprias. Se o disco falhar, ela recomeça sozinha numa parte nova sem tocar no codificador nem na transmissão.
   // Só destinos WHIP neste formato (saem direto da mesa): o codificador roda sem saída, para a sessão e os relatórios seguirem iguais.
   if (!outputs.length) return ['-f', 'null', '-'];
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];

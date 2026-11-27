@@ -82,6 +82,17 @@ console.log('PASS: per-destination start mode (on air / standby / off), SRT and 
  G.run();assert.equal(vm.runInContext('fx.live.layers[0].on',ctx),false);assert.equal(G.state.cue,1,'saiu do AR e o próximo ficou no ponto');assert.match(G.label(),/ponto 2\/2 · João Souza/);
  panel.remove();const P=vm.runInContext('window.andromedaPonto',ctx);assert(P&&typeof P.toggle==='function'&&/toque para ativar/.test(P.label()),'PONTO pronto nos Comandos');}
 console.log('PASS: GC credits playlist (on cue → on air → next on cue) and the PONTO command');
+// Pacote de GCs: 12 modelos na galeria; um clique aplica o modelo e as cores dele; o selo entra no rascunho; "meus modelos" guarda a personalização.
+// PONTO: cada ponto escolhe o canal da própria voz que sai do retorno (mix-minus).
+{const M=vm.runInContext('window.andromedaGcModels',ctx);assert(M&&M.templates.length===12,'12 modelos de GC');
+ assert.equal(q('.gc-models-grid').querySelectorAll('.gc-model').length,12);
+ [...q('.gc-models-grid').querySelectorAll('.gc-model')].find(b=>/Plantão/.test(b.textContent)).click();
+ assert.equal(vm.runInContext('fx.draft.layers[0].style',ctx),'plantao');assert.equal(q('#gcTag').value,'URGENTE');assert.equal(q('#gcAccent').value,'#e10600');
+ q('.gc-models-save input').value='Meu plantão';q('.gc-models-save button').click();assert.equal(w.document.querySelectorAll('.gc-models-grid')[1].querySelectorAll('.gc-model').length,1,'my model saved');
+ const P=vm.runInContext('window.andromedaPonto',ctx),panel=P.panel();w.document.body.append(panel);const sel=panel.querySelector('.ponto-row .ponto-minus select');
+ assert(sel&&[...sel.options].some(o=>o.value==='mic')&&sel.options.length>=3,'mix-minus channel list');sel.value='1';sel.dispatchEvent(new w.Event('change'));
+ assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('andromedaPonto.state.minus',ctx)))['0'],['1'],'the presenter return leaves out CAM 2');panel.remove();
+ console.log('PASS: GC model pack (12 models, apply, tag, my models) and PONTO return without the own voice (mix-minus)')}
 {const css=fs.readFileSync(root+'/workspace-custom.css','utf8');assert.match(css,/\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:sticky;top:calc\(var\(--topbar-h,56px\) \+ 12px\)/,'effects preview follows the page scroll');assert.match(css,/@media\(max-width:500px\)\{\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:static/,'stacked on phones');assert(w.document.documentElement.style.getPropertyValue('--topbar-h'),'top bar height measured for the sticky preview');console.log('PASS: effects preview stays in view while the settings scroll')}
 {const rd=vm.runInContext('window.andromedaRundown',ctx),cmd=vm.runInContext('window.andromedaCommands',ctx);
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);

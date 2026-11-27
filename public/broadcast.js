@@ -664,6 +664,8 @@
         else if (msg.type === 'ack') liveTx.pending = Math.max(0, liveTx.pending - msg.bytes);
         else if (msg.type === 'avsync') window.andromedaSync?.onResult(msg);
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
+        // Gravação Andrômeda: estado de cada gravador (retomando depois de uma falha do disco, gravando de novo).
+        else if (msg.type === 'recording-state') { recStatus.dataset.tone = msg.state === 'retrying' ? 'bad' : ''; recStatus.textContent = 'Gravação ' + msg.format + (msg.state === 'retrying' ? ': retomando sozinha (' + msg.reason + '). A transmissão segue normal.' : ': gravando' + (msg.part > 1 ? ' (parte ' + msg.part + '; no fim vira um arquivo só)' : '') + '.'); if (msg.state === 'retrying') window.andromedaAudit?.('warn', 'gravacao-falhou', 'Gravação ' + msg.format + ': ' + msg.reason); }
         else if (msg.type === 'recorded') { live.recorded = msg; live.files.push(msg); log('Gravação ' + (msg.format || '') + ' salva: ' + msg.file); summary(); }
         else if (msg.type === 'destination') {
           const before = live.states.get(msg.id)?.state;

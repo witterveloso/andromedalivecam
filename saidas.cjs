@@ -16,6 +16,8 @@
  * - Queda de um destino: ele reconecta sozinho (1, 2, 4, 8 e depois a cada 15 s), recomeçando de um quadro-chave.
  * - Destino lento: cada um tem a própria fila (~16 MB, cerca de 20 s em 6 Mbps). Se a fila encher, só ele descarta até o
  *   próximo quadro-chave; o codificador, a gravação e os outros destinos seguem sem esperar ninguém.
+ * - Gravação Andrômeda: cada gravação (16:9 e 9:16) é uma saída daqui, como um destino, com fila grande (minutos de disco
+ *   travado sem perder nada), vigia própria e reinício sozinho em parte nova, sem tocar na transmissão (publish.cjs).
  */
 const { FLASHVER, redact } = require('./encoder.cjs');
 
@@ -136,15 +138,16 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
     if (f.spliced && firstKey >= 0) f.spliced = false;
     for (const o of outputs.values()) {
       if (o.groupId !== groupId || !o.child || o.ending) continue;
-      const queued = o.child.stdin.writableLength;
+      const queued = o.child.stdin.writableLength, limit = o.dest.limit || f.limit;
       if (o.mode === 'live') {
-        if (queued > f.limit) {
+        if (queued > limit) {
           o.mode = 'key'; o.dropped++;
-          if (now() - o.slowAt > 30000) { o.slowAt = now(); const m = o.dest.name + ': a conexão não está acompanhando. Este destino pula alguns segundos; os outros seguem normais.'; audit.warn('saidas', 'destino-lento', m, { destino: o.dest.name }); send({ type: 'notice', message: m }); }
+          if (now() - o.slowAt > 30000 && o.dest.onSlow) { o.slowAt = now(); o.dest.onSlow(); }
+          else if (now() - o.slowAt > 30000) { o.slowAt = now(); const m = o.dest.name + ': a conexão não está acompanhando. Este destino pula alguns segundos; os outros seguem normais.'; audit.warn('saidas', 'destino-lento', m, { destino: o.dest.name }); send({ type: 'notice', message: m }); }
           continue;
         }
         write(o, [data]);
-      } else if (o.mode === 'key' && firstKey >= 0 && queued < f.limit / 2 && header(f)) {
+      } else if (o.mode === 'key' && firstKey >= 0 && queued < limit / 2 && header(f)) {
         // Depois de uma emenda, a conexão continua: vão só a configuração nova e a imagem a partir do quadro-chave.
         if (o.splice) { o.splice = false; write(o, [f.avc, ...(f.aac ? [f.aac] : []), data.subarray(firstKey)]); }
         else write(o, [...header(f), data.subarray(firstKey)]);
@@ -191,7 +194,7 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
       clearTimeout(o.killTimer); o.child = null; o.ending = false;
       if (o.restartNow) { o.restartNow = false; if (o.want && !closing) launch(o); return; }
       if (!wasWanted) { o.since = 0; emit(o, 'off'); o.dest.onEnd?.(); return; }
-      const reason = reasonOf(o.stderr), wait = BACKOFF[Math.min(o.retries, BACKOFF.length - 1)]; o.retries++;
+      const reason = (o.dest.reasonOf || reasonOf)(o.stderr), wait = BACKOFF[Math.min(o.retries, BACKOFF.length - 1)]; o.retries++;
       audit.warn('saidas', 'destino-reconectando', o.dest.name + ': ' + reason + '. Nova tentativa em ' + Math.round(wait / 1000) + ' s.', { codigo: code, log: o.stderr.slice(-800) });
       emit(o, 'retrying', reason);
       o.retryTimer = setTimeout(() => launch(o), wait); o.retryTimer.unref?.();
@@ -210,7 +213,7 @@ function createOutputs({ ffmpeg, spawnProcess, send = () => {}, audit = { info()
     const t = now();
     for (const o of outputs.values()) {
       if (!o.child || o.ending || !o.want) continue;
-      const stuck = o.state === 'sending' ? o.advancedAt && t - o.advancedAt > STALL_MS : o.fedAt && t - o.fedAt > CONNECT_MS;
+      const stuck = o.state === 'sending' ? o.advancedAt && t - o.advancedAt > (o.dest.stallMs || STALL_MS) : o.fedAt && t - o.fedAt > (o.dest.stallMs || CONNECT_MS);
       if (stuck) { o.stderr += o.state === 'sending' ? ' timed out (parou de enviar)' : ' timed out (sem resposta)'; try { o.child.kill('SIGKILL'); } catch { /* já saiu */ } }
     }
   }, tickMs);

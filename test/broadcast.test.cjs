@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{once}=require('node:events');
 const {spawn,spawnSync}=require('node:child_process');const {WebSocket}=require('ws');
 const {createBridge}=require('../server.cjs');const {createAudit}=require('../audit.cjs');
-const {validateBroadcast,argsForBroadcast,destinationEvents,redact,findFFmpeg,PLATFORMS}=require('../encoder.cjs');
+const {validateBroadcast,argsForBroadcast,groupsFor,destinationEvents,redact,findFFmpeg,PLATFORMS}=require('../encoder.cjs');
 
 const base={resolution:'720p',bitrate:6};
 const yt={platform:'youtube',server:'rtmps://a.rtmps.youtube.com:443/live2',key:'aaaa-bbbb-cccc-dddd'};
@@ -28,13 +28,13 @@ test('one encode feeds the Andromeda output distributor and the recording, each 
  const cfg=validateBroadcast({...base,destinations:[yt,fb],record:{dir:path.join(os.tmpdir(),"Lives [2026] d'agua")}});
  const args=argsForBroadcast(cfg),spec=args.at(-1);
  assert.equal(args.filter(a=>a==='libx264').length,1);assert.equal(args[args.lastIndexOf('-f')+1],'tee');
- const outputs=spec.split('|');assert.equal(outputs.length,2,'one feed for all destinations + the recording');
- assert.equal(outputs[0],'[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]pipe:1','destinations are fed through the distributor (saidas.cjs), never directly by the encoder');
+ const outputs=spec.split('|');assert.equal(outputs.length,1,'one feed for all destinations and the recording (Gravação Andrômeda)');
+ assert.equal(outputs[0],'[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]pipe:1','destinations and the recording are fed through the distributor (saidas.cjs), never directly by the encoder');
  assert(!spec.includes(cfg.destinations[0].target)&&!spec.includes('FB-123456'),'no destination key in the encoder command');
- assert(outputs[1].startsWith("[f=fifo:fifo_format=matroska:format_opts='flush_packets=1':queue_size=2400:drop_pkts_on_overflow=1:onfail=ignore]"),'recording has its own queue: a slow disk never holds the live')
- assert(true&&outputs[1].includes("Lives \\[2026\\] d\\'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d_16x9\.mkv$/.test(outputs[1]));
+ assert(!spec.includes('.mkv'),'the encoder never writes the recording itself: a failing disk never touches the transmission');
+ const g=groupsFor(cfg)[0];assert(g.feed&&g.record&&g.record.file.includes("Lives [2026] d'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d_16x9\.mkv$/.test(g.record.file),'recording group feeds the distributor');
  assert.equal(validateBroadcast({...base,record:{dir:os.tmpdir()}}).destinations.length,0,'recording alone is allowed');
- assert(!argsForBroadcast(validateBroadcast({...base,record:{dir:os.tmpdir()}})).at(-1).includes('pipe:1'),'recording alone: no feed');
+ assert(argsForBroadcast(validateBroadcast({...base,record:{dir:os.tmpdir()}})).at(-1).includes('pipe:1'),'recording alone: the distributor records it');
  assert.equal(validateBroadcast({...base,destinations:[{...yt,on:false}]}).destinations[0].on,false,'a destination can start on standby');
 });
 
