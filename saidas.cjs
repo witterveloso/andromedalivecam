@@ -80,11 +80,13 @@ function outputArgs(dest) {
 // Motivo legível da queda de um destino, a partir do que o processo escreveu.
 function reasonOf(stderr) {
   const s = String(stderr);
-  if (/Connection refused|ECONNREFUSED/i.test(s)) return 'conexão recusada';
+  // No Windows o FFmpeg descreve a recusa pelo número do erro (WSAECONNREFUSED = 10061; ECONNREFUSED do runtime = 107 ou 138).
+  if (/Connection refused|ECONNREFUSED|actively refused|10061|Error number -(107|111|138) occurred/i.test(s)) return 'conexão recusada';
   if (/Failed to resolve|Name or service not known|getaddrinfo|No such host/i.test(s)) return 'endereço não encontrado';
   if (/timed out|timeout|Operation timed out/i.test(s)) return 'tempo esgotado';
   if (/Server error|NetStream|40[13]|Unauthorized|Forbidden|not authorized|Authentication|rejected|REJ_/i.test(s)) return 'recusado pelo servidor (confira a chave, o stream ID ou a senha)';
   if (/Protocol not found|Unknown protocol/i.test(s)) return 'protocolo indisponível neste computador';
+  if (/Connection to tcp:\/\/\S+ failed|Cannot open connection/i.test(s)) return 'sem conexão com o servidor';
   if (/Broken pipe|reset by peer|End of file|I\/O error/i.test(s)) return 'conexão interrompida';
   return 'conexão interrompida';
 }

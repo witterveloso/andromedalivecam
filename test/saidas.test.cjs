@@ -64,6 +64,8 @@ test('argumentos: só copia (sem nova codificação), RTMP com marca e versão, 
   assert.equal(ra[ra.lastIndexOf('-f') + 1], 'flv'); assert(ra.includes('-rtmp_flashver'));
   assert.equal(sa[sa.lastIndexOf('-f') + 1], 'mpegts'); assert.match(sa.at(-1), /^srt:\/\/10\.0\.0\.5:9000\?mode=caller&transtype=live&latency=2000000&pkt_size=1316&streamid=live%2Fabc&passphrase=senha-segura-123&pbkeylen=16$/);
   assert.equal(reasonOf('Connection refused'), 'conexão recusada');
+  assert.equal(reasonOf('[tcp @ 0] Connection to tcp://127.0.0.1:1935?tcp_nodelay=0 failed: Error number -138 occurred'), 'conexão recusada', 'mensagem do FFmpeg no Windows');
+  assert.equal(reasonOf('[tcp @ 0] Connection to tcp://127.0.0.1:1935 failed: Unknown error'), 'sem conexão com o servidor');
   assert.match(reasonOf('[rtmp] Server error: NetStream.Publish.BadName'), /recusado pelo servidor/);
 });
 
@@ -122,7 +124,7 @@ test('destino fora do ar reconecta sozinho quando o servidor volta', { timeout: 
   try {
     outputs.start('r'); await until(() => events.includes('r:retrying'), 15000);
     assert(events.includes('r:retrying'), 'sem servidor: tentando de novo (' + events.join(' ') + ')');
-    assert.match(outputs.status()[0].reason, /conexão recusada/);
+    assert.match(outputs.status()[0].reason, /conexão recusada|sem conexão com o servidor/);
     server = rtmpServer(19485, file);
     await exited(enc); outputs.endGroup(g.id); await Promise.race([exited(server), wait(8000)]);
     const r = inspect(file);
