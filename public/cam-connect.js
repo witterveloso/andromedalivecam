@@ -10,7 +10,7 @@
   if (!flow || !step) return;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const MODES = [
-    ['internet', 'Internet', 'Wi-Fi, 4G ou 5G, de qualquer lugar. O computador precisa de internet; para 4G/5G, o roteador precisa abrir a porta (automático com UPnP) ou a empresa usa o servidor da Rede Andrômeda.'],
+    ['internet', 'Internet', 'Wi-Fi, 4G ou 5G, de qualquer lugar. Recomendado.'],
     ['lan', 'Rede local (IP)', 'Celular no mesmo Wi-Fi do computador. Funciona sem internet.'],
     ['gateway', 'Endereço próprio', 'Gateway na nuvem ou Tailscale, já configurados por você.'],
   ];
@@ -47,11 +47,11 @@
     if (cloud) internet.textContent = 'Gateway público configurado (mesa-cloud.env). Os convites usam esse endereço.';
     else if (state.mode === 'internet') {
       const r = state.relay || {};
-      const t = state.turn || {}, mobile = t.provider === 'env' || (t.provider === 'andromeda' ? !!(t.router?.reachable || t.network) : t.provider === 'custom' && t.ready);
+      const t = state.turn || {}, mobile = t.provider === 'env' || (t.provider === 'andromeda' ? !!(t.router?.reachable || t.network) : ['custom', 'cloudflare'].includes(t.provider) && t.ready);
       const checking = t.provider === 'andromeda' && t.ready && !t.router && !t.network;
-      const reach = mobile ? 'O link abre a câmera em qualquer rede: Wi-Fi, 4G ou 5G.' : checking ? 'Conferindo se o 4G/5G alcança esta mesa…'
-        : 'Atenção: por enquanto o convite só funciona com o celular no mesmo Wi-Fi desta mesa. No 4G/5G a imagem não chega até o roteador abrir a porta — veja "Rede móvel (4G/5G)" logo abaixo.';
-      internet.textContent = r.invites && !r.brokersUp ? 'Procurando o ponto de encontro… confira a internet deste computador.' : (r.invites ? 'Ponto de encontro conectado (' + r.brokersUp + ' de ' + r.brokers + '). Convites ativos: ' + r.invites + '. ' : 'Pronto para gerar o convite. ') + reach;
+      // Uma frase só: o que o operador precisa saber para mandar o link.
+      const reach = mobile ? 'Pronto: o link funciona no Wi-Fi e no 4G/5G.' : checking ? 'Pronto no Wi-Fi. Conferindo o 4G/5G…' : 'Pronto no Wi-Fi. Para o 4G/5G, configure "Rede móvel (4G/5G)" abaixo.';
+      internet.textContent = r.invites && !r.brokersUp ? 'Sem conexão com a internet neste computador. Confira a rede.' : reach;
       internet.dataset.tone = (r.invites && !r.brokersUp) || (!mobile && !checking) ? 'warn' : 'ok';
       const tb = document.querySelector('#turnBox'); if (tb && !mobile && !checking && !tb.dataset.autoOpened) { tb.open = true; tb.dataset.autoOpened = '1'; }
     }
@@ -89,38 +89,37 @@
   const flow = $('.invite-flow'), step = flow?.querySelector('.step'); if (!step) return;
   const make = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; };
   const box = make('details', 'turn-box'); box.id = 'turnBox';
+  // Rede móvel (4G/5G): a câmera precisa de uma retransmissão na internet para chegar à mesa pelos dados móveis.
+  // Cloudflare (recomendado): funciona em qualquer rede, sem mexer no roteador. As outras opções ficam para quem precisa.
   box.innerHTML = '<summary><strong>Rede móvel (4G/5G)</strong><span id="turnState" class="turn-state">verificando…</span></summary>' +
-    '<p class="link-note">No 4G/5G a operadora esconde o celular atrás de um endereço compartilhado e a imagem não chega sem retransmissão. A <b>Rede Andrômeda</b> é a retransmissão própria do sistema (sem serviços de terceiros): roda dentro desta mesa, abre a porta no roteador sozinha e entrega ao celular uma credencial temporária junto com o convite.</p>' +
-    '<label>Retransmissão<select id="turnProvider"><option value="andromeda">Rede Andrômeda nesta mesa (recomendado)</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada (só Wi-Fi / mesma rede)</option></select></label>' +
-    '<div class="turn-fw" hidden><p class="link-note" id="turnFirewall" role="status"></p><button type="button" id="fwFix">Liberar no firewall do Windows</button></div><div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p><p class="link-note">Na primeira vez, o Windows pergunta se o <b>Andrômeda Live</b> pode receber conexões: clique em <b>Permitir</b> (redes privadas e públicas). Sem isso, o celular no 4G/5G não alcança a mesa.</p></div>' +
-    '<div class="turn-cf" hidden><input id="turnKeyId" hidden><input id="turnToken" hidden></div>' +
+    '<label>Retransmissão<select id="turnProvider"><option value="cloudflare">Cloudflare · funciona em qualquer rede (recomendado)</option><option value="andromeda">Nesta mesa · precisa do roteador com UPnP</option><option value="custom">Servidor da Rede Andrômeda (empresa)</option><option value="off">Desligada · só Wi-Fi</option></select></label>' +
+    '<div class="turn-fw" hidden><p class="link-note" id="turnFirewall" role="status"></p><button type="button" id="fwFix">Liberar no firewall do Windows</button></div><div class="turn-andromeda"><p class="link-note" id="turnOwnInfo"></p></div>' +
+    '<div class="turn-cf" hidden><p class="link-note">Cloudflare → Realtime → TURN Server → Create: copie o <b>Key ID</b> e o <b>API token</b>.</p><label>Key ID<input id="turnKeyId" autocomplete="off" spellcheck="false"></label><label>API token<input id="turnToken" type="password" autocomplete="off" spellcheck="false"></label></div>' +
     '<div class="turn-own"><label>Endereços do servidor (um por linha)<textarea id="turnUrls" rows="2" spellcheck="false" placeholder="turn:rede.suaempresa.com.br:3478\nturn:rede.suaempresa.com.br:3478?transport=tcp"></textarea></label><label>Usuário<input id="turnUser" autocomplete="off" spellcheck="false"></label><label>Senha<input id="turnPass" type="password" autocomplete="off"></label></div>' +
     '<div class="turn-actions"><button type="button" id="turnSave">Salvar e testar</button><span id="turnMessage" class="link-note" role="status"></span></div>';
   step.append(box);
   const q = s => box.querySelector(s);
-  const paintForm = () => { const p = q('#turnProvider').value; q('.turn-cf').hidden = true; q('.turn-own').hidden = p !== 'custom'; q('.turn-andromeda').hidden = p !== 'andromeda'; };
+  const paintForm = () => { const p = q('#turnProvider').value; q('.turn-cf').hidden = p !== 'cloudflare'; q('.turn-own').hidden = p !== 'custom'; q('.turn-andromeda').hidden = p !== 'andromeda'; };
   q('#turnProvider').onchange = paintForm;
   function paint(s) {
     const state = q('#turnState');
     if (s.provider === 'env') { state.textContent = 'gateway próprio'; state.dataset.tone = 'ok'; box.hidden = true; return; }
     const own = s.provider === 'andromeda', viaNet = own && !s.router?.reachable && !!s.network, open5g = own && (s.router?.reachable || viaNet);
-    state.textContent = s.provider === 'off' ? 'desligada · 4G/5G pode falhar' : !s.ready ? 'com problema' : own ? (viaNet ? 'Rede Andrômeda · 4G/5G pelo servidor da empresa' : open5g ? 'Rede Andrômeda · 4G/5G pronto' : s.router ? 'Rede Andrômeda · só Wi-Fi (veja abaixo)' : 'Rede Andrômeda · abrindo a porta…') : s.provider === 'custom' ? 'ativa · servidor da Rede Andrômeda' : 'ativa · ' + s.provider;
-    state.dataset.tone = s.provider === 'off' ? 'warn' : !s.ready ? 'error' : own && s.router && !open5g ? 'warn' : 'ok';
-    if (own) q('#turnOwnInfo').textContent = !s.ready ? 'A retransmissão não iniciou: ' + (s.error || 'porta ocupada') + '.'
-      : s.router?.direct && s.router.reachable ? 'Funcionando: este computador está ligado direto na internet (IP público ' + s.router.externalIP + '). Celulares em 4G/5G mandam a imagem direto para esta mesa. Se o Windows perguntar, permita o Andrômeda Live também em redes públicas.'
-      : s.router?.direct ? 'Este computador está ligado direto no modem da operadora, com endereço compartilhado (CGNAT ' + s.router.externalIP + '). Assim, nenhum celular chega até a mesa, nem pelo Wi-Fi do roteador (são redes diferentes). Soluções: ligue o cabo do computador no mesmo roteador do Wi-Fi das câmeras, ou use o servidor da Rede Andrômeda.'
-      : viaNet ? 'Funcionando: celulares em 4G/5G mandam a imagem pelo servidor da Rede Andrômeda da empresa (' + s.network.map(u => u.replace(/^turns?:|\?.*$/g, '')).filter((u, i, a) => a.indexOf(u) === i).join(', ') + '). No mesmo Wi-Fi, a imagem vai direto para esta mesa.'
-      : open5g ? 'Funcionando: porta ' + s.port + ' (UDP e TCP) aberta no roteador ' + (s.router.mapped || []).join(', ') + ' · IP público ' + s.router.externalIP + '. Celulares em 4G/5G mandam a imagem direto para esta mesa.' + (s.stats?.active ? ' Câmeras retransmitidas agora: ' + s.stats.active + '.' : '')
-      : s.router ? (s.router.externalIP && !s.router.reachable ? 'A internet deste computador usa endereço compartilhado da operadora (CGNAT: ' + s.router.externalIP + '): o 4G/5G não alcança a mesa por aqui.' : 'O roteador não abriu a porta automaticamente (' + (s.router.error || 'UPnP desligado') + ').') + ' Soluções: ative o UPnP no roteador, ou encaminhe a porta ' + s.port + ' UDP e TCP para ' + s.lan + ', ou use o Servidor da Rede Andrômeda. No Wi-Fi tudo funciona normalmente.'
-      : 'Retransmissão ativa na porta ' + s.port + '. Abrindo a porta no roteador…';
+    const ready4g = s.provider === 'cloudflare' || s.provider === 'custom' ? s.ready : open5g;
+    state.textContent = s.provider === 'off' ? 'desligada · só Wi-Fi' : !s.ready ? 'com problema' : ready4g ? '4G/5G pronto' : own && !s.router ? 'conferindo…' : 'falta configurar';
+    state.dataset.tone = !s.ready && s.provider !== 'off' ? 'error' : ready4g ? 'ok' : 'warn';
+    // Uma linha, só o que muda a decisão do operador.
+    if (own) q('#turnOwnInfo').textContent = !s.ready ? 'Não iniciou: ' + (s.error || 'porta ocupada') + '.'
+      : open5g ? 'Funcionando no 4G/5G.' : !s.router ? 'Conferindo o roteador…'
+      : 'O roteador desta rede não deixa o 4G/5G chegar. Use a opção Cloudflare.';
     if (document.activeElement?.closest('#turnBox')) return;
-    q('#turnProvider').value = s.provider === 'cloudflare' ? 'andromeda' : s.provider;
+    q('#turnProvider').value = s.provider;
     if (s.keyId) q('#turnKeyId').value = s.keyId;
     if (s.hasToken) q('#turnToken').placeholder = 'salvo · deixe em branco para manter';
     if (s.urls && s.provider === 'custom') q('#turnUrls').value = s.urls.join('\n');
     if (s.username) q('#turnUser').value = s.username;
     if (s.provider === 'custom') q('#turnPass').placeholder = 'salva · deixe em branco para manter';
-    q('#turnMessage').textContent = s.provider === 'andromeda' ? '' : s.error ? 'Problema: ' + s.error : s.ready ? 'Funcionando. Celulares em 4G/5G recebem a retransmissão automaticamente.' : '';
+    q('#turnMessage').textContent = s.provider === 'andromeda' || s.provider === 'off' ? '' : s.error ? 'Problema: ' + s.error : s.ready ? 'Funcionando no Wi-Fi e no 4G/5G.' : '';
     if (s.provider === 'off' && !box.dataset.opened) { box.open = true; box.dataset.opened = '1'; }
     paintForm();
   }
@@ -130,7 +129,8 @@
     try { st = st || await (await fetch('/api/firewall', { cache: 'no-store' })).json(); } catch { return; }
     const wrap = q('.turn-fw'), note = q('#turnFirewall'), btn = q('#fwFix');
     if (!st.supported) { wrap.hidden = true; return; }
-    wrap.hidden = false; note.textContent = st.message || ''; note.dataset.tone = st.allowed ? 'ok' : 'warn'; btn.hidden = !!st.allowed;
+    // Só aparece quando o firewall atrapalha; liberado, não há nada a dizer.
+    wrap.hidden = !!st.allowed || st.unknown; note.textContent = st.allowed ? '' : 'O firewall do Windows está bloqueando as câmeras.'; note.dataset.tone = 'warn'; btn.hidden = !!st.allowed;
     if (!st.allowed && !box.dataset.fwOpened) { box.open = true; box.dataset.fwOpened = '1'; }
   }
   q('#fwFix').onclick = async () => {
@@ -150,7 +150,7 @@
       const r = await fetch('/api/turn', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Andromeda-Token': session.token }, body: JSON.stringify(body) });
       const out = await r.json(); if (!r.ok) throw Error(out.error || 'Não foi possível salvar.');
       q('#turnToken').value = ''; q('#turnPass').value = ''; document.activeElement?.blur(); paint(out);
-      q('#turnMessage').textContent = out.provider === 'off' ? 'Retransmissão desligada.' : 'Salvo e testado. Gere ou reenvie os convites: as câmeras já conectadas usam a retransmissão ao reconectar.';
+      q('#turnMessage').textContent = out.provider === 'off' ? 'Desligada: só Wi-Fi.' : 'Salvo e testado. As câmeras usam a retransmissão ao conectar ou reconectar (o mesmo link vale).';
     } catch (e) { q('#turnMessage').textContent = e.message; }
     finally { button.disabled = false; }
   };

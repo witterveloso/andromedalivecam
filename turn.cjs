@@ -11,7 +11,7 @@
  *  - andromeda (padrão): a Rede Andrômeda dentro da própria mesa (andromeda-turn.cjs, código nosso): STUN e TURN na porta
  *    3478 UDP/TCP, porta aberta no roteador por UPnP (upnp.cjs), credenciais temporárias geradas aqui. Sem serviço de terceiros.
  *  - custom: servidor da Rede Andrômeda da empresa (o mesmo andromeda-turn.cjs, no kit cloud/) ou outro TURN próprio.
- *  - cloudflare (legado, não é mais oferecido na tela): Cloudflare Realtime TURN. A mesa guarda o ID e o token da chave TURN (segredo de longa duração,
+ *  - cloudflare (recomendado para 4G/5G em qualquer rede, sem mexer no roteador): Cloudflare Realtime TURN. A mesa guarda o ID e o token da chave TURN (segredo de longa duração,
  *    nunca vai ao navegador) e gera credenciais temporárias de 24 h, renovadas a cada 12 h.
  *  - custom: servidor próprio (coturn ou outro): URLs, usuário e senha.
  *  - off: só STUN (funciona no Wi-Fi e na mesma rede; costuma falhar no 4G/5G).

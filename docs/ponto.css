@@ -1,0 +1,33 @@
+/* Andrômeda PONTO — tela do apresentador/repórter: grande, escura, legível de relance, sem nada que distraia no ar. */
+:root { --bg: #07080f; --panel: #11131f; --line: #262a3d; --text: #f2f3fa; --muted: #9aa0bd; --cue: #ff1f3d; --ok: #19d36b; --warn: #ffb020; --blue: #4f8cff; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { display: grid; grid-template-rows: auto 1fr; min-height: 100dvh; padding: env(safe-area-inset-top, 0) max(14px, env(safe-area-inset-right, 0)) env(safe-area-inset-bottom, 0) max(14px, env(safe-area-inset-left, 0)); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.brand { font-size: 11px; font-weight: 800; letter-spacing: .24em; color: var(--muted); } .brand b { color: var(--cue); }
+#who { font-size: 18px; text-transform: uppercase; letter-spacing: .04em; }
+.status { margin-left: auto; font-size: 13px; color: var(--muted); }
+body[data-state="live"] .status { color: var(--ok); } body[data-state="warn"] .status { color: var(--warn); } body[data-state="error"] .status { color: var(--cue); }
+main { display: grid; align-content: start; gap: 16px; padding: 16px 0 24px; }
+.gate { display: grid; gap: 14px; max-width: 520px; }
+.gate h1 { margin: 6px 0 0; font-size: 26px; } .gate p { margin: 0; color: var(--muted); } .fine { font-size: 13px; }
+button { font: 800 16px system-ui, sans-serif; letter-spacing: .04em; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); min-height: 56px; padding: 0 18px; cursor: pointer; touch-action: manipulation; }
+button:disabled { opacity: .45; }
+.primary { background: var(--blue); border-color: var(--blue); color: #fff; min-height: 64px; font-size: 18px; }
+.live { display: grid; gap: 14px; }
+.cue { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 120px; border-radius: 18px; border: 2px solid var(--line); background: var(--panel); font: 900 clamp(22px, 7vw, 40px)/1.1 system-ui, sans-serif; letter-spacing: .08em; text-align: center; padding: 12px; color: var(--muted); }
+.cue .dot { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--line); }
+body[data-cue="on"] .cue { background: var(--cue); border-color: #ff8a9a; color: #fff; box-shadow: 0 0 40px rgba(255, 31, 61, .45); }
+body[data-cue="on"] .cue .dot { background: #fff; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.note { border-radius: 18px; border: 2px solid var(--warn); background: rgba(255, 176, 32, .1); padding: 14px 16px; }
+.note small { color: var(--warn); font-weight: 700; letter-spacing: .08em; }
+.note p { margin: 4px 0 0; font: 900 clamp(26px, 9vw, 56px)/1.1 system-ui, sans-serif; overflow-wrap: anywhere; }
+.controls { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.vol { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 14px; }
+.vol input { grid-column: 1 / -1; width: 100%; accent-color: var(--blue); }
+.toggle[aria-pressed="true"] { border-color: var(--ok); color: var(--ok); }
+.talk { min-height: 110px; font-size: clamp(17px, 5vw, 22px); background: #182033; border-color: var(--blue); user-select: none; -webkit-user-select: none; }
+.talk[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #04130a; }
+@media (prefers-reduced-motion: reduce) { body[data-cue="on"] .cue .dot { animation: none; } }
+@media (orientation: landscape) and (max-height: 520px) { .cue { min-height: 80px; } .talk { min-height: 80px; } }
