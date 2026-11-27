@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Andrômeda Live — sua emissora ao vivo num computador</title>
+<meta name="description" content="Mesa de corte ao vivo para Windows: câmeras pelo celular, GC, transmissão para várias plataformas ao mesmo tempo (16:9 e 9:16) e gravação junto, em 1080p a 30 fps.">
+<meta property="og:title" content="Andrômeda Live — sua emissora ao vivo num computador">
+<meta property="og:description" content="Câmeras pelo celular, corte ao vivo, GC e transmissão para várias plataformas ao mesmo tempo, com gravação junto.">
+<meta property="og:image" content="img/mesa.webp">
+<meta name="theme-color" content="#05060f">
+<link rel="icon" href="img/icone.png">
+<style>
+/*
+ * ============ CONFIGURAÇÃO DA OFERTA ============
+ * Edite o bloco OFERTA no fim desta página (em <script>): preço mensal e anual, link de pagamento e WhatsApp de vendas.
+ * Sem preço, o cartão mostra "Fale com a gente"; sem link de pagamento, o botão abre o WhatsApp.
+ */
+@font-face{font-family:'Exo 2';font-weight:500 900;font-display:swap;src:url(fonts/exo2-latin.woff2) format('woff2')}
+@font-face{font-family:'Montserrat';font-weight:400 700;font-display:swap;src:url(fonts/montserrat-latin.woff2) format('woff2')}
+:root{
+  --bg:#05060f;--bg-2:#0a0d1f;--panel:#0e1230;--panel-2:#131842;--line:#20275a;--line-2:#2c3577;
+  --text:#eef0fa;--muted:#a3a9cc;--faint:#6f769f;
+  --blue:#00a3ff;--purple:#8b00ff;--red:#ff0033;--green:#22e07a;
+  --display:'Exo 2','Montserrat','Segoe UI',system-ui,sans-serif;--sans:'Montserrat','Segoe UI',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{max-width:100%;height:auto;display:block}
+a{color:inherit}
+.wrap{width:100%;max-width:1180px;margin:0 auto;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);line-height:1.1;margin:0;text-wrap:balance}
+h2{font-size:clamp(28px,4vw,44px);font-weight:800;letter-spacing:-.01em}
+h3{font-size:20px;font-weight:700}
+p{margin:0}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font:700 12px var(--display);letter-spacing:.18em;text-transform:uppercase;color:var(--blue)}
+.eyebrow::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 4px rgba(255,0,51,.18)}
+.lead{color:var(--muted);font-size:clamp(16px,1.6vw,19px);max-width:62ch}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:52px;padding:0 26px;border-radius:12px;font:800 15px var(--display);letter-spacing:.04em;text-decoration:none;text-transform:uppercase;transition:transform .15s,box-shadow .15s,background .15s;border:0;cursor:pointer}
+.btn:hover{transform:translateY(-1px)}
+.btn-air{background:var(--red);color:#fff;box-shadow:0 10px 30px -10px rgba(255,0,51,.7)}
+.btn-air:hover{box-shadow:0 14px 34px -10px rgba(255,0,51,.85)}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--line-2)}
+.btn-ghost:hover{border-color:var(--blue);color:#fff}
+
+/* topo */
+.top{position:sticky;top:0;z-index:50;background:rgba(5,6,15,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(32,39,90,.6);padding-top:env(safe-area-inset-top,0px)}
+.top .wrap{display:flex;align-items:center;gap:20px;min-height:66px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font:800 18px var(--display);letter-spacing:.06em}
+.brand img{width:34px;height:34px;border-radius:9px}
+.brand small{padding:2px 8px;border-radius:999px;background:var(--red);font:700 10px var(--display);letter-spacing:.12em;color:#fff}
+.top nav{display:flex;gap:22px;margin-left:auto}
+.top nav a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:600}
+.top nav a:hover{color:#fff}
+.top .btn{min-height:40px;padding:0 18px;font-size:13px}
+@media(max-width:860px){.top nav{display:none}.top .btn{margin-left:auto}}
+
+/* abertura */
+.hero{position:relative;padding:72px 0 40px;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-30% -10% auto;height:120%;background:radial-gradient(60% 50% at 70% 20%,rgba(139,0,255,.28),transparent 70%),radial-gradient(40% 40% at 15% 10%,rgba(0,163,255,.22),transparent 70%);pointer-events:none}
+.hero .wrap{position:relative;display:grid;gap:28px}
+.hero h1{font-size:clamp(38px,6.4vw,76px);font-weight:900;letter-spacing:-.02em;max-width:16ch}
+.hero h1 em{font-style:normal;background:linear-gradient(90deg,var(--blue),#b06bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.hero-note{color:var(--faint);font-size:13px}
+.screen{position:relative;margin-top:24px;border-radius:16px;padding:10px;background:linear-gradient(180deg,#1a2160,#0b0f2a);border:1px solid var(--line-2);box-shadow:0 40px 120px -40px rgba(0,163,255,.45),0 0 0 1px rgba(255,255,255,.03) inset}
+.screen img{border-radius:9px;width:100%;height:auto}
+.screen .live{position:absolute;top:22px;right:22px;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:8px;background:var(--red);font:800 12px var(--display);letter-spacing:.14em}
+.screen .live::before{content:"";width:8px;height:8px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.screen .live::before{animation:none}html{scroll-behavior:auto}}
+
+/* faixa de números */
+.facts{border-block:1px solid var(--line);background:var(--bg-2)}
+.facts .wrap{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0}
+.fact{padding:22px 16px;border-left:1px solid var(--line)}
+.fact:first-child{border-left:0}
+.fact b{display:block;font:800 24px var(--display);color:#fff}
+.fact span{color:var(--muted);font-size:13px}
+@media(max-width:860px){.facts .wrap{grid-template-columns:repeat(2,minmax(0,1fr))}.fact{border-left:0;border-top:1px solid var(--line)}.fact:nth-child(-n+2){border-top:0}}
+
+/* plataformas */
+.platforms{padding:44px 0 8px;text-align:center}
+.platforms p{color:var(--faint);font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:16px}
+.chip{padding:8px 16px;border-radius:999px;border:1px solid var(--line-2);background:var(--panel);font:700 14px var(--display);color:var(--text)}
+.chip.tech{color:var(--blue)}
+
+/* seções */
+section{scroll-margin-top:80px}
+.block{padding:84px 0}
+.block-head{display:grid;gap:14px;margin-bottom:40px;max-width:760px}
+.feature{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:56px;align-items:center;padding:56px 0;border-top:1px solid var(--line)}
+.feature:first-of-type{border-top:0}
+.feature.flip .feature-media{order:-1}
+.feature-text{display:grid;gap:16px;min-width:0}
+.feature-text h3{font-size:clamp(24px,2.8vw,34px);font-weight:800}
+.ticks{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:10px}
+.ticks li{position:relative;padding-left:30px;color:var(--text)}
+.ticks li::before{content:"";position:absolute;left:0;top:.45em;width:18px;height:10px;border-left:3px solid var(--green);border-bottom:3px solid var(--green);transform:rotate(-45deg) scale(.8);transform-origin:left bottom}
+.ticks li span{color:var(--muted)}
+.feature-media{min-width:0;display:flex;justify-content:center}
+.frame{border-radius:14px;overflow:hidden;border:1px solid var(--line-2);background:#000;box-shadow:0 30px 80px -40px rgba(139,0,255,.6)}
+.phone{width:min(260px,100%);border-radius:36px;padding:10px;background:#111526;border:1px solid var(--line-2);box-shadow:0 30px 80px -30px rgba(0,163,255,.45)}
+.phone img{border-radius:28px}
+.duo{display:flex;gap:18px;align-items:flex-end;justify-content:center;flex-wrap:wrap}
+.duo .phone{width:min(250px,100%)}
+.tag{display:inline-block;padding:4px 10px;border-radius:6px;background:rgba(0,163,255,.12);color:var(--blue);font:700 12px var(--display);letter-spacing:.1em;text-transform:uppercase;width:max-content}
+@media(max-width:900px){.feature{grid-template-columns:1fr;gap:28px;padding:44px 0}.feature.flip .feature-media{order:0}}
+
+.recbox{width:min(480px,100%);padding:22px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);display:grid;gap:12px;box-shadow:0 30px 80px -40px rgba(255,0,51,.5)}
+.rec-head{display:flex;align-items:center;gap:10px;font:800 13px var(--display);letter-spacing:.16em;color:#fff}
+.rec-dot{width:12px;height:12px;border-radius:50%;background:var(--red);box-shadow:0 0 0 5px rgba(255,0,51,.2);animation:blink 1.2s infinite}
+.rec-time{margin-left:auto;font-family:ui-monospace,monospace;letter-spacing:.04em;color:var(--muted)}
+.rec-file{display:flex;align-items:center;gap:14px;padding:14px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line);min-width:0}
+.rec-file div{min-width:0;display:grid}
+.rec-file b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rec-file small{color:var(--muted);font-size:12px}
+.rec-icon{flex:none;border-radius:4px;border:2px solid var(--blue)}
+.rec-icon.wide{width:40px;height:23px}.rec-icon.tall{width:18px;height:32px;margin:0 11px}
+.rec-disk{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12px}
+@media(prefers-reduced-motion:reduce){.rec-dot{animation:none}}
+/* grade de recursos */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.card{padding:22px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:grid;gap:8px;align-content:start}
+.card h3{font-size:17px}
+.card p{color:var(--muted);font-size:14px;line-height:1.55}
+.card .k{font:800 11px var(--display);letter-spacing:.14em;color:var(--blue);text-transform:uppercase}
+
+/* passos */
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;counter-reset:s}
+.step{position:relative;padding:28px 24px 24px;border-radius:16px;background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);display:grid;gap:10px}
+.step::before{counter-increment:s;content:counter(s);font:900 44px var(--display);color:transparent;-webkit-text-stroke:1.5px var(--blue);line-height:1}
+.step p{color:var(--muted);font-size:15px}
+@media(max-width:860px){.steps{grid-template-columns:1fr}}
+
+/* requisitos */
+.req{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.req div{padding:20px;border-radius:14px;border:1px dashed var(--line-2)}
+.req b{display:block;font:700 13px var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+
+/* planos */
+.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;max-width:900px}
+.plan{position:relative;padding:32px 28px;border-radius:20px;background:var(--panel);border:1px solid var(--line-2);display:grid;gap:18px;align-content:start}
+.plan.best{background:linear-gradient(180deg,#1a1450,#0e1230);border-color:#6b3cff;box-shadow:0 30px 90px -40px rgba(139,0,255,.8)}
+.plan .badge{position:absolute;top:-12px;left:28px;padding:4px 12px;border-radius:999px;background:var(--purple);font:800 11px var(--display);letter-spacing:.12em;text-transform:uppercase}
+.plan h3{font-size:22px}
+.price{display:flex;align-items:baseline;gap:6px;min-height:58px}
+.price strong{font:900 44px var(--display);letter-spacing:-.02em}
+.price span{color:var(--muted)}
+.price.ask strong{font-size:26px}
+.plan .btn{width:100%}
+.plan small{color:var(--faint);font-size:13px}
+.included{margin-top:28px;max-width:900px;padding:24px;border-radius:16px;border:1px solid var(--line);background:var(--bg-2)}
+.included .ticks{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+@media(max-width:760px){.plans{grid-template-columns:1fr}}
+
+/* perguntas */
+.faq{display:grid;gap:10px;max-width:860px}
+.faq details{border-radius:12px;background:var(--panel);border:1px solid var(--line);padding:0 20px}
+.faq summary{cursor:pointer;list-style:none;padding:18px 28px 18px 0;font:700 17px var(--display);position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";position:absolute;right:0;top:14px;font-size:24px;color:var(--blue)}
+.faq details[open] summary::after{content:"–"}
+.faq details p{padding:0 0 18px;color:var(--muted)}
+
+/* chamada final */
+.final{position:relative;padding:96px 0;text-align:center;overflow:hidden;border-top:1px solid var(--line)}
+.final::before{content:"";position:absolute;inset:0;background:radial-gradient(50% 70% at 50% 100%,rgba(255,0,51,.18),transparent 70%),radial-gradient(40% 60% at 50% 0%,rgba(0,163,255,.14),transparent 70%)}
+.final .wrap{position:relative;display:grid;gap:22px;justify-items:center}
+.final h2{max-width:20ch}
+footer{border-top:1px solid var(--line);padding:28px 0 calc(28px + env(safe-area-inset-bottom,0px));color:var(--faint);font-size:13px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between}
+footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#inicio"><img src="img/icone.png" alt="">ANDRÔMEDA <small>LIVE</small></a>
+    <nav aria-label="Seções">
+      <a href="#recursos">Recursos</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a href="#planos">Planos</a>
+      <a href="#perguntas">Perguntas</a>
+    </nav>
+    <a class="btn btn-air" href="#planos">Assinar</a>
+  </div>
+</header>
+
+<main id="inicio">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">Mesa de corte ao vivo para Windows</span>
+      <h1>Sua emissora de TV inteira <em>num computador.</em></h1>
+      <p class="lead">Câmeras pelo celular, corte ao vivo, GC, VT e trilha. Transmita para YouTube, Instagram, Facebook, TikTok e outras plataformas <strong>ao mesmo tempo</strong>, em 16:9 e 9:16, gravando tudo junto, em 1080p a 30 quadros por segundo travados.</p>
+      <div class="hero-cta">
+        <a class="btn btn-air" href="#planos">Quero assinar</a>
+        <a class="btn btn-ghost" href="#recursos">Ver o que ela faz</a>
+      </div>
+      <p class="hero-note">Programa para Windows 10 e 11. Os celulares entram por um link, sem instalar aplicativo.</p>
+      <div class="screen">
+        <span class="live" aria-hidden="true">NO AR</span>
+        <img src="img/mesa.webp" width="1800" height="1125" alt="A mesa Andrômeda Live em operação: monitores de PREVIEW e PGM, oito câmeras, GC no ar e os comandos de corte.">
+      </div>
+    </div>
+  </section>
+
+  <div class="facts" role="list">
+    <div class="wrap">
+      <div class="fact" role="listitem"><b>1080p · 4K</b><span>a 30 fps travados</span></div>
+      <div class="fact" role="listitem"><b>6 destinos</b><span>no ar ao mesmo tempo</span></div>
+      <div class="fact" role="listitem"><b>16:9 + 9:16</b><span>na mesma live</span></div>
+      <div class="fact" role="listitem"><b>10 câmeras</b><span>celular, webcam, arquivo</span></div>
+      <div class="fact" role="listitem"><b>Grava junto</b><span>16:9 e 9:16, em MP4</span></div>
+    </div>
+  </div>
+
+  <div class="platforms wrap">
+    <p>Transmite para</p>
+    <div class="chips">
+      <span class="chip">YouTube</span><span class="chip">Instagram</span><span class="chip">Facebook</span><span class="chip">TikTok</span><span class="chip">Twitch</span><span class="chip">Kick</span><span class="chip">LinkedIn</span><span class="chip tech">RTMP / RTMPS</span><span class="chip tech">SRT</span><span class="chip tech">WHIP</span>
+    </div>
+  </div>
+
+  <section class="block" id="recursos">
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">Recursos</span>
+        <h2>Tudo o que uma produção ao vivo precisa, numa tela só.</h2>
+        <p class="lead">Feita para quem faz live de verdade: igrejas, eventos, jornalismo, esportes, podcasts e empresas. Você opera sozinho ou com equipe.</p>
+      </div>
+
+      <article class="feature">
+        <div class="feature-text">
+          <span class="tag">Andrômeda Cam</span>
+          <h3>O celular da equipe vira câmera da sua live.</h3>
+          <p class="lead">Mande um link pelo WhatsApp. O operador abre no celular e a imagem chega na mesa, pelo Wi-Fi, 4G ou 5G, mesmo de longe.</p>
+          <ul class="ticks">
+            <li>Até 10 câmeras: celulares, webcam, arquivos de vídeo e câmeras profissionais</li>
+            <li>Zoom, foco, exposição e balanço de branco <span>controlados da mesa</span></li>
+            <li>Intercom: a direção fala com o operador de câmera</li>
+            <li>O mesmo link reconecta, mesmo com a live no ar</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="phone"><img src="img/cam.webp" width="600" height="1298" loading="lazy" alt="Tela do Andrômeda Cam no celular, com o botão de conectar à mesa."></div></div>
+      </article>
+
+      <article class="feature flip">
+        <div class="feature-text">
+          <span class="tag">Tecnologia Andrômeda Multiplataforma</span>
+          <h3>Várias plataformas ao mesmo tempo. Até duas contas da mesma rede.</h3>
+          <p class="lead">A mesa monta uma imagem só e o serviço Andrômeda entrega a cada destino, com conexão e reconexão próprias. Uma plataforma que cai não derruba as outras.</p>
+          <ul class="ticks">
+            <li>YouTube no canal principal <span>e</span> no canal de cortes, ao mesmo tempo</li>
+            <li>Coloque uma plataforma no ar ou tire dela <span>no meio da live</span>, sem parar</li>
+            <li>Instagram e TikTok recebem a versão em pé, criada na hora</li>
+            <li>Usa a placa de vídeo do computador quando houver, para pesar menos</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="frame"><img src="img/pgm.webp" width="960" height="540" loading="lazy" alt="Imagem que vai ao ar: show com GC de apresentadora."></div></div>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <span class="tag">Produção vertical 9:16</span>
+          <h3>Live só no Instagram? A mesa trabalha em pé.</h3>
+          <p class="lead">Escolha "Vertical 9:16" (ou deixe no automático) e a imagem fica em pé, em 1080×1920, sem bordas laterais. Câmeras deitadas preenchem a tela.</p>
+          <ul class="ticks">
+            <li>GC, logotipo e janela longe do cabeçalho e dos comentários do Instagram</li>
+            <li>Nada cortado nos celulares mais altos</li>
+            <li>Ou faça os dois: 16:9 para o YouTube e 9:16 para o Instagram, na mesma live</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="duo"><div class="phone"><img src="img/vertical.webp" width="540" height="960" loading="lazy" alt="Live vertical 9:16 com GC de perfil @andromedalive."></div></div></div>
+      </article>
+
+      <article class="feature flip">
+        <div class="feature-text">
+          <span class="tag">GC</span>
+          <h3>12 modelos de GC prontos. Personalize em segundos.</h3>
+          <p class="lead">Clássico, Telejornal, Plantão, Esportivo, Neon, Redes sociais e mais. Um clique aplica o modelo. Depois é só trocar cores, tamanho, posição e selo ("AO VIVO", "URGENTE").</p>
+          <ul class="ticks">
+            <li>Créditos programados: deixe a lista pronta e solte um por um</li>
+            <li>Salve os seus modelos e use de novo em todo programa</li>
+            <li>Logotipo fixo, janela (PiP), regressiva e artes</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="frame"><img src="img/modelos-gc.webp" width="1600" height="999" loading="lazy" alt="Os 12 modelos de GC da Andrômeda Live."></div></div>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <span class="tag">Gravação Andrômeda</span>
+          <h3>Grava enquanto transmite. E não perde a gravação.</h3>
+          <p class="lead">A gravação acompanha a live do começo ao fim, por um caminho próprio: problema no disco não derruba a transmissão, e queda na internet não para a gravação.</p>
+          <ul class="ticks">
+            <li>16:9 e 9:16 gravados juntos, em MP4 a 30 fps exatos</li>
+            <li>Se o disco falhar, a gravação volta sozinha e no fim sai um arquivo só</li>
+            <li>Aviso quando o disco está acabando</li>
+            <li>Só gravar, só transmitir ou os dois</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="recbox" aria-label="Exemplo dos arquivos gravados">
+          <div class="rec-head"><span class="rec-dot"></span>GRAVANDO <span class="rec-time">01:24:37</span></div>
+          <div class="rec-file"><span class="rec-icon wide"></span><div><b>Andromeda_2026-11-27_19-30_16x9.mp4</b><small>1920×1080 · 30 fps · YouTube, Facebook</small></div></div>
+          <div class="rec-file"><span class="rec-icon tall"></span><div><b>Andromeda_2026-11-27_19-30_9x16.mp4</b><small>1080×1920 · 30 fps · Instagram, TikTok</small></div></div>
+          <div class="rec-disk"><span>Disco D: · 412 GB livres</span><span>≈ 60 h de gravação</span></div>
+        </div></div>
+      </article>
+
+      <article class="feature flip">
+        <div class="feature-text">
+          <span class="tag">PONTO</span>
+          <h3>A direção fala no ouvido do apresentador.</h3>
+          <p class="lead">O ponto eletrônico do repórter e do apresentador, pelo celular com fone, num caminho separado do intercom das câmeras.</p>
+          <ul class="ticks">
+            <li>Quem está no ar ouve a programação, <span>sem ouvir a própria voz com atraso</span></li>
+            <li>Avisos escritos grandes na tela: "30 segundos", "Encerra", "Chama o VT"</li>
+            <li>O apresentador chama a direção com um toque</li>
+          </ul>
+        </div>
+        <div class="feature-media"><div class="frame"><img src="img/ponto.webp" width="620" height="739" loading="lazy" alt="Painel do PONTO na mesa, com links para apresentador e repórter."></div></div>
+      </article>
+
+      <div class="block-head" style="margin:72px 0 28px">
+        <h2>E muito mais na mesa</h2>
+      </div>
+      <div class="grid">
+        <div class="card"><span class="k">Corte</span><h3>CUT, AUTO e T-bar</h3><p>Mix, dip, wipe e stinger, com PREVIEW e PGM lado a lado.</p></div>
+        <div class="card"><span class="k">Vídeo</span><h3>VT e vinheta</h3><p>Playlist de vídeos para soltar no ar, vinheta em loop e linha do tempo.</p></div>
+        <div class="card"><span class="k">Áudio</span><h3>Mixer e trilha</h3><p>Áudio que acompanha a câmera no ar, fade, trilha com playlist e sincronismo labial automático.</p></div>
+        <div class="card"><span class="k">Apresentação</span><h3>Slides</h3><p>Abra a apresentação e avance pelo atalho, direto no ar.</p></div>
+        <div class="card"><span class="k">Câmeras</span><h3>Mosaico e marcações</h3><p>Várias câmeras na tela ao mesmo tempo e posições de enquadramento salvas.</p></div>
+        <div class="card"><span class="k">Câmeras</span><h3>Tracking</h3><p>A câmera do celular acompanha a pessoa sozinha, com movimento suave.</p></div>
+        <div class="card"><span class="k">Equipe</span><h3>Mesa remota</h3><p>Retorno do programa e controle da mesa por link, de outro computador ou do tablet.</p></div>
+        <div class="card"><span class="k">Operação</span><h3>Do seu jeito</h3><p>Atalhos de teclado, comandos e painéis no lugar que você quiser, com layouts salvos.</p></div>
+        <div class="card"><span class="k">Segurança</span><h3>Não cai fácil</h3><p>Reconexão automática por destino e codificador que se recupera sozinho.</p></div>
+        <div class="card"><span class="k">Qualidade</span><h3>Padrão das plataformas</h3><p>H.264 High, AAC 48 kHz, quadro-chave a cada 2 s e bitrate certo para cada plataforma.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="como-funciona" style="background:var(--bg-2);border-block:1px solid var(--line)">
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">Como funciona</span>
+        <h2>No ar em três passos.</h2>
+      </div>
+      <div class="steps">
+        <div class="step"><h3>Instale no Windows</h3><p>Baixe o instalador, instale e ative a sua assinatura. Não precisa de placa de captura nem de equipamento extra.</p></div>
+        <div class="step"><h3>Chame as câmeras</h3><p>Gere o link de cada câmera e mande pelo WhatsApp. O celular abre o link e já aparece na mesa.</p></div>
+        <div class="step"><h3>Escolha as plataformas e entre no ar</h3><p>Cole a chave de cada plataforma, escolha se vai gravar e aperte TRANSMITIR. Plataformas podem entrar e sair no meio da live.</p></div>
+      </div>
+      <div class="block-head" style="margin:56px 0 20px"><h3 style="font-size:22px">O que você precisa</h3></div>
+      <div class="req">
+        <div><b>Computador</b>Windows 10 ou 11 (64 bits). Recomendado: processador Intel Core i5 de 8ª geração ou superior e 8 GB de memória.</div>
+        <div><b>Placa de vídeo</b>Opcional e recomendada para várias plataformas: Intel Quick Sync, NVIDIA ou AMD aliviam o processador.</div>
+        <div><b>Internet</b>Upload estável. A mesa calcula na hora quanto reservar para os destinos escolhidos (cerca de 8 Mbps por destino em 1080p).</div>
+        <div><b>Câmeras</b>Qualquer celular Android ou iPhone com navegador atualizado, webcam ou câmeras profissionais.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="planos">
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">Planos</span>
+        <h2>Uma assinatura, todos os recursos.</h2>
+        <p class="lead">Sem versão capada: todo assinante tem a mesa completa e as atualizações.</p>
+      </div>
+      <div class="plans">
+        <div class="plan">
+          <h3>Mensal</h3>
+          <div class="price" data-price="mensal"><strong>—</strong></div>
+          <a class="btn btn-ghost" data-buy="mensal" href="#planos">Assinar o mensal</a>
+          <small>Cancele quando quiser.</small>
+        </div>
+        <div class="plan best">
+          <span class="badge">Melhor valor</span>
+          <h3>Anual</h3>
+          <div class="price" data-price="anual"><strong>—</strong></div>
+          <a class="btn btn-air" data-buy="anual" href="#planos">Assinar o anual</a>
+          <small data-note="anual">Um ano de mesa completa.</small>
+        </div>
+      </div>
+      <div class="included">
+        <h3 style="margin-bottom:14px">Incluído em todos os planos</h3>
+        <ul class="ticks">
+          <li>Mesa de corte com até 10 câmeras</li>
+          <li>Andrômeda Cam (celular como câmera) no Wi-Fi, 4G e 5G</li>
+          <li>Até 6 destinos ao mesmo tempo, 16:9 e 9:16</li>
+          <li>Produção vertical para Instagram e TikTok</li>
+          <li>Gravação 16:9 e 9:16 junto com a live</li>
+          <li>12 modelos de GC e créditos programados</li>
+          <li>PONTO para apresentador e repórter</li>
+          <li>VT, vinheta, trilha, slides e mosaico</li>
+          <li>Todas as atualizações durante a assinatura</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="perguntas" style="padding-top:20px">
+    <div class="wrap">
+      <div class="block-head"><span class="eyebrow">Perguntas</span><h2>Perguntas frequentes</h2></div>
+      <div class="faq">
+        <details><summary>Preciso comprar placa de captura ou câmera?</summary><p>Não. As câmeras podem ser os próprios celulares da equipe, pelo Andrômeda Cam. Webcam, arquivos de vídeo e câmeras profissionais também entram na mesa.</p></details>
+        <details><summary>O celular precisa instalar algum aplicativo?</summary><p>Não. O operador abre o link que a mesa gera (pode mandar pelo WhatsApp) e toca em Conectar. Funciona no Android e no iPhone.</p></details>
+        <details><summary>A câmera pode estar longe, em outra rede?</summary><p>Sim. A câmera chega pela internet, no Wi-Fi, 4G ou 5G, mesmo fora da rede da mesa.</p></details>
+        <details><summary>Consigo transmitir para duas contas da mesma plataforma?</summary><p>Sim. Por exemplo, YouTube no canal principal e no canal de cortes ao mesmo tempo, cada um com a sua chave e a sua conexão.</p></details>
+        <details><summary>Dá para colocar uma plataforma no ar com a live já rodando?</summary><p>Sim. Cada destino entra e sai do ar pelo próprio botão, sem parar a transmissão dos outros.</p></details>
+        <details><summary>Faço live só para o Instagram, em pé?</summary><p>Sim. Com a produção vertical, a mesa trabalha em 1080×1920 e a imagem preenche a tela do celular, sem bordas laterais.</p></details>
+        <details><summary>Posso só gravar, sem transmitir?</summary><p>Sim. Escolha "Só gravar" e a mesa grava em MP4 (16:9, 9:16 ou os dois), mesmo sem internet.</p></details>
+        <details><summary>Funciona no Mac?</summary><p>A mesa roda no Windows 10 e 11. As câmeras (celulares) podem ser Android ou iPhone.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <span class="eyebrow">Andrômeda Live</span>
+      <h2>Sua próxima live com cara de emissora.</h2>
+      <a class="btn btn-air" href="#planos">Quero assinar</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="ano">2026</span> Andrômeda Live. Todos os direitos reservados.</span>
+    <span><a href="../">Andrômeda Cam</a> · <a data-contact href="#planos">Fale com a gente</a></span>
+  </div>
+</footer>
+
+<script>
+/* ============ OFERTA: edite aqui ============
+ * mensal / anual: preço como deve aparecer (ex.: 'R$ 97'), vazio = "Fale com a gente".
+ * anualNota: texto abaixo do botão do anual (ex.: 'Equivale a R$ 81 por mês').
+ * pagamentoMensal / pagamentoAnual: link do checkout (Hotmart, Kiwify, Mercado Pago, Stripe…).
+ * whatsapp: número com DDI e DDD, só dígitos (ex.: '5511999999999'). Usado quando não houver link de pagamento. */
+const OFERTA = {
+  mensal: '', anual: '', anualNota: '',
+  pagamentoMensal: '', pagamentoAnual: '',
+  whatsapp: '',
+};
+(() => {
+  const wa = plano => OFERTA.whatsapp ? 'https://wa.me/' + OFERTA.whatsapp + '?text=' + encodeURIComponent('Olá! Quero assinar a Andrômeda Live' + (plano ? ' (plano ' + plano + ')' : '') + '.') : '';
+  for (const el of document.querySelectorAll('[data-price]')) {
+    const v = OFERTA[el.dataset.price];
+    if (v) { el.innerHTML = ''; const s = document.createElement('strong'); s.textContent = v; const u = document.createElement('span'); u.textContent = el.dataset.price === 'anual' ? '/ano' : '/mês'; el.append(s, u); }
+    else { el.classList.add('ask'); el.querySelector('strong').textContent = 'Fale com a gente'; }
+  }
+  for (const a of document.querySelectorAll('[data-buy]')) {
+    const plano = a.dataset.buy, link = plano === 'anual' ? OFERTA.pagamentoAnual : OFERTA.pagamentoMensal, href = link || wa(plano);
+    if (href) { a.href = href; a.target = '_blank'; a.rel = 'noopener'; }
+  }
+  const note = document.querySelector('[data-note="anual"]'); if (OFERTA.anualNota) note.textContent = OFERTA.anualNota;
+  const c = document.querySelector('[data-contact]'), w = wa(''); if (w) { c.href = w; c.target = '_blank'; c.rel = 'noopener'; }
+  document.getElementById('ano').textContent = new Date().getFullYear();
+})();
+</script>
+</body>
+</html>
