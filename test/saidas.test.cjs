@@ -152,3 +152,22 @@ test('destino que trava 3,5 s não perde quadros nem quadro-chave, e o outro des
     assert(b.frames >= 358 && b.errors === '', 'o outro destino seguiu normal (' + b.frames + ' quadros)');
   } finally { enc.kill(); slow.kill(); ok.kill(); proxy.close(); client?.destroy(); outputs.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// 30 fps na grade exata mesmo quando o codificador da mesa entrega quadros tremidos (computador atrasando): o tempo de cada
+// quadro na gravação MP4 e no SRT é sempre maior que o do anterior, sempre em múltiplos de 1/30 s. (Falha vista no CI do Windows.)
+test('grade de 30 fps: quadros tremidos na entrada saem sempre crescentes e em múltiplos exatos de 1/30 s', { timeout: 60000, skip: !ffmpeg && 'FFmpeg ausente' }, () => {
+  const { CFR30 } = require('../encoder.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-grade-')), src = path.join(dir, 'tremido.mkv'), out = path.join(dir, 'final.mp4');
+  try {
+    // Quadros de 33 ms com tremor de até 16 ms para os dois lados (sempre crescentes, como chega de um codificador real atrasando).
+    const jitter = 'PTS+if(eq(mod(N\\,7)\\,3)\\,16\\,if(eq(mod(N\\,5)\\,2)\\,-16\\,0))*(1/1000)/TB';
+    const mk = spawnSync(ffmpeg, ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=320x240:r=30', '-f', 'lavfi', '-i', 'sine', '-t', '6', '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'ultrafast', '-bf', '0', '-c:a', 'aac', '-bsf:v', 'setts=pts=' + jitter + ':dts=' + jitter, '-f', 'matroska', src], { encoding: 'utf8' });
+    assert.equal(mk.status, 0, mk.stderr);
+    const fin = spawnSync(ffmpeg, ['-y', '-v', 'error', '-i', src, '-map', '0', '-c', 'copy', '-bsf:v', CFR30, '-video_track_timescale', '90000', out], { encoding: 'utf8' });
+    assert.equal(fin.status, 0, fin.stderr);
+    const info = spawnSync(ffmpeg, ['-hide_banner', '-v', 'info', '-i', out, '-map', '0:v', '-vf', 'showinfo', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 16 << 20 }).stderr;
+    const pts = [...info.matchAll(/pts:\s*(-?\d+)\s+pts_time/g)].map(m => Number(m[1])), steps = pts.slice(1).map((p, i) => p - pts[i]);
+    assert(pts.length >= 175, 'todos os quadros (' + pts.length + ')');
+    assert(steps.every(d => d > 0 && d % 3000 === 0), 'crescente e em múltiplos de 1/30 s: ' + [...new Set(steps)].join(','));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
