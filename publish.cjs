@@ -10,9 +10,13 @@
  * recebe {type:'restart'} para abrir um gravador novo (o cabeçalho do WebM só existe no começo de cada gravador); até o cabeçalho
  * novo chegar, os pedaços antigos são descartados. Cada reinício grava num arquivo novo (_p2, _p3…), sem sobrescrever o anterior.
  *
+ * Saídas Andrômeda: o codificador de cada formato entrega a imagem pronta ao distribuidor (saidas.cjs), que mantém uma conexão
+ * por destino. Cada destino entra e sai do ar sozinho, com a live rodando: {type:'output', id, action:'start'|'stop', destination?}.
+ * Destinos com on:false começam em espera (o formato deles já fica pronto para entrarem quando o operador quiser).
+ *
  * Protocolo (WebSocket):
- *  - texto: {type:'start', destinations:[{…, aspect}], record:{dir, formats}, vertical:{resolution, bitrate}, channels}
- *           e {type:'stop'}.
+ *  - texto: {type:'start', destinations:[{…, aspect, on}], record:{dir, formats}, vertical:{resolution, bitrate}, channels}
+ *           {type:'output', id, action, destination?} e {type:'stop'}.
  *  - binário: pedaços de WebM (motor padrão) ou de Matroska com H.264 e Opus (start.engine = 'native'). Com channels=2, cada pedaço começa com 1 byte: 0 = 16:9, 1 = 9:16.
  *  - texto também: {type:'engine', reason} (o motor próprio falhou no navegador: o serviço passa ao codificador padrão).
  *  - respostas: ready {groups}, ack, recording, sending, destination, recorded, error, stopped, engine {engine}.
@@ -21,7 +25,8 @@ const fs = require('node:fs'), path = require('node:path');
 const { WebSocket } = require('ws');
 const os = require('node:os');
 const { analyze } = require('./avsync.cjs');
-const { validateConfig, validateBroadcast, argsFor, argsForGroup, groupsFor, detectEncoders, destinationEvents, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
+const { validateConfig, validateBroadcast, validateDestination, MAX_DESTINATIONS, argsFor, argsForGroup, groupsFor, detectEncoders, redact, safeError, safeBroadcastError } = require('./encoder.cjs');
+const { createOutputs } = require('./saidas.cjs');
 
 const MAX_QUEUE = 8 * 1024 * 1024;
 const EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]); // assinatura do início de um arquivo WebM/Matroska
@@ -30,8 +35,10 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
   let stopping = false, everStarted = false, lastInput = Date.now(), startedAt = 0, broadcast = null, dual = false, calibrating = null, canRestart = false;
   const parts = new Map(), restarts = new Map(); // id do grupo -> arquivos de gravação (um por reinício) / instantes dos reinícios
   const runners = new Map(); // id do grupo -> { group, child, ready, lastFrame, lastProgress, stderr, progress, closed, killTimer }
-  const troubled = new Map();
   const send = data => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
+  const outputs = createOutputs({ ffmpeg, spawnProcess, send, audit });
+  // Resumo das saídas a cada 2 s (estado e taxa real de cada destino), para a mesa mostrar no cartão de cada um.
+  const outputsTimer = setInterval(() => { if (broadcast && !stopping) send({ type: 'outputs', list: outputs.status() }); }, 2000); outputsTimer.unref?.();
   const alive = () => [...runners.values()].filter(r => !r.closed);
 
   const stop = () => {
@@ -59,7 +66,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
   let finished = false, receivedMedia = false;
   function finish() {
     if (finished) return; finished = true;
-    clearInterval(watchdog);
+    clearInterval(watchdog); clearInterval(outputsTimer); outputs.close();
     if (shared.active === ws) shared.active = null;
     if (startedAt) audit.info('transmissao', 'fim', 'Envio encerrado', { segundos: startedAt ? Math.round((Date.now() - startedAt) / 1000) : 0, quadros: Math.max(0, ...[...runners.values()].map(r => r.lastFrame)), formatos: [...runners.keys()] });
     const records = [...parts.values()].flat();
@@ -94,6 +101,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     const others = alive().filter(x => x !== r);
     if (!others.length || stopping) { fail(message); return; }
     audit.error('transmissao', 'formato-falhou', 'Saída ' + r.group.aspect + ' interrompida: ' + message, { destinos: r.group.destinations.map(d => d.name) });
+    outputs.endGroup(r.group.id);
     for (const d of r.group.destinations) send({ type: 'destination', id: d.id, state: 'error', reason: 'Saída ' + r.group.aspect + ' interrompida: ' + message });
     if (r.group.record) send({ type: 'notice', message: 'A gravação ' + r.group.aspect + ' parou. A outra saída continua.' });
     try { r.child.stdin.end(); } catch { /* já fechado */ }
@@ -150,9 +158,9 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
   function relaunch(r) {
     const group = { ...r.group }, n = (parts.get(group.id) || []).length + 1;
     if (group.record) group.record = { ...group.record, file: group.record.file.replace(/(_p\d+)?\.mkv$/, '_p' + n + '.mkv') };
+    outputs.resetGroup(group.id); // tempos novos: os destinos ligados reabrem a conexão a partir do primeiro quadro-chave novo
     launch(group, argsForGroup(broadcast, group), true);
     runners.get(group.id).awaitHeader = true; // descarta o que o gravador antigo ainda mandar até chegar o cabeçalho novo
-    for (const d of group.destinations) send({ type: 'destination', id: d.id, state: 'retrying', reason: 'Codificador reiniciado' });
   }
 
   // O motor próprio falhou no navegador: o serviço passa todos os formatos para o codificador padrão (WebM) sem encerrar a sessão.
@@ -192,20 +200,17 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     const r = { group, child: null, ready: false, lastFrame: 0, lastProgress: Date.now(), stderr: '', progress: '', closed: false, failed: false, killTimer: null, dying: false, awaitHeader: false, dups: 0, starved: 0, warnedAt: 0, samples: [], speed: 1, prevWall: 0, prevOut: 0, curOut: NaN, warnedLoad: 0, sentHealth: 0 };
     runners.set(group.id, r);
     if (group.record) { if (!parts.has(group.id)) parts.set(group.id, []); parts.get(group.id).push({ ...group.record, aspect: group.aspect }); }
-    const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', 'ignore', 'pipe', 'pipe'] });
+    const feeds = !!broadcast && group.destinations.length > 0;
+    if (feeds) outputs.group(group.id, { size: group.size });
+    const child = r.child = spawnProcess(ffmpeg, args, { shell: false, windowsHide: true, stdio: ['pipe', feeds ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+    // A imagem codificada vai ao distribuidor, que repassa a cada destino ligado. Se este processo for o antigo de um reinício, descarta.
+    if (feeds) child.stdout.on('data', d => { if (runners.get(group.id) === r) outputs.feed(group.id, d); });
     child.on('spawn', () => { r.ready = true; if (!restarted && [...runners.values()].every(x => x.ready || x.closed)) send({ type: 'ready', groups: [...runners.keys()], message: 'Codificador iniciado. Aguardando sinal PGM.' }); });
     child.on('error', () => groupFailed(r, 'Não foi possível iniciar o FFmpeg. Execute o diagnóstico do pacote.'));
     child.stdin.on('error', () => { if (!stopping) died(r, 'Entrada do codificador interrompida.'); });
     child.stderr.on('data', d => {
       const text = d.toString();
       r.stderr = (r.stderr + (broadcast ? redact(text, { destinations: group.destinations }) : text)).slice(-8192);
-      if (!broadcast || stopping) return;
-      for (const ev of destinationEvents(text, { destinations: group.destinations })) {
-        const seen = troubled.get(ev.id);
-        if (!seen) audit.warn('transmissao', 'destino-reconectando', ev.name + ': ' + ev.reason + '. Tentando reconectar.');
-        if (!seen || Date.now() - seen.sent > 4000) send({ type: 'destination', ...ev });
-        troubled.set(ev.id, { at: Date.now(), sent: !seen || Date.now() - seen.sent > 4000 ? Date.now() : seen.sent, name: ev.name });
-      }
     });
     child.stdio[3].on('data', d => {
       r.progress += d.toString(); let idx;
@@ -238,10 +243,11 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
       r.lastProgress = Date.now(); r.lastFrame = frames;
       // O primeiro formato da sessão é a referência de quadros mostrada ao operador.
       if (!stopping && group.id === [...runners.keys()][0]) send({ type: 'sending', frames, groups: [...runners.keys()], message: broadcast ? 'Sinal sendo enviado. Confirme a recepção em cada plataforma.' : 'Sinal sendo enviado. Confirme a recepção no YouTube Studio.' });
-      for (const [id, t] of troubled) if (Date.now() - t.at > 12000) { troubled.delete(id); audit.info('transmissao', 'destino-recuperado', t.name + ' voltou a receber'); if (!stopping) send({ type: 'destination', id, state: 'sending' }); }
     }
     child.on('close', code => {
       clearTimeout(r.killTimer); r.closed = true;
+      // Fim de verdade deste formato (não um reinício): os destinos dele encerram junto com o sinal.
+      if (runners.get(group.id) === r && (stopping || r.failed)) outputs.endGroup(group.id);
       if (!stopping && !r.failed) {
         const message = broadcast ? safeBroadcastError(r.stderr) : safeError(r.stderr);
         audit.error('transmissao', 'codificador-encerrou', message, { formato: group.aspect, codigo: code, log: r.stderr.slice(-1500) });
@@ -281,6 +287,7 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     // O navegador baixou a resolução (regulador de carga): o codificador de cada formato reinicia, abrindo outro FFmpeg e uma gravação nova (_p2…).
     if (msg.type === 'resync' && everStarted) { resyncAll(String(msg.reason || 'mudança de resolução').slice(0, 160)); return; }
     if (msg.type === 'engine' && everStarted) { useStandardEngine(String(msg.reason || 'falha no navegador').slice(0, 160)); return; }
+    if (msg.type === 'output') { output(msg); return; }
     if (msg.type !== 'start') { fail('Comando não suportado.'); return; }
     if (everStarted) { fail('Abra uma nova sessão para iniciar outra transmissão.'); return; }
     everStarted = true;
@@ -308,14 +315,35 @@ function handlePublish(ws, { ffmpeg, spawnProcess, audit, license, storage, shar
     audit.info('transmissao', 'inicio', multi ? 'Envio iniciado: ' + (cfg.destinations.map(d => d.name + ' (' + d.aspect + ')').join(', ') || 'somente gravação') + (cfg.record ? ' + gravação ' + (cfg.record.formats === 'both' ? '16:9 e 9:16' : cfg.record.formats) : '') : 'Envio iniciado: YouTube',
       { resolucao: cfg.resolution, bitrateMbps: cfg.bitrate, codificador: cfg.encoder || 'libx264', destinos: multi ? cfg.destinations.map(d => d.name) : ['YouTube'], gravacao: cfg.record?.dir || null, formatos: multi ? groups.map(g => g.aspect + ' ' + g.size.replace(':', '×')) : ['16:9'] });
     if (multi) {
+      for (const g of groups) for (const d of g.destinations) outputs.add(d, g.id);
+      for (const d of cfg.destinations) if (!d.on) send({ type: 'destination', id: d.id, state: 'standby', reason: '' });
       for (const d of cfg.destinations) if (d.warning) { send({ type: 'destination', id: d.id, state: 'warning', reason: d.warning }); audit.warn('transmissao', 'destino-suspeito', d.warning); }
       for (const g of groups) if (g.record) send({ type: 'recording', file: g.record.file, format: g.aspect, free: cfg.record.space.free });
       for (const g of groups) launch(g, argsForGroup(cfg, g));
+      for (const d of cfg.destinations) if (d.on) outputs.start(d.id);
     } else {
       launch({ id: 'h', aspect: '16:9', destinations: [], record: null }, argsFor(cfg));
       cfg.target = ''; msg.key = '';
     }
   });
+  // Liga ou desliga um destino com a live no ar. Um destino novo (adicionado durante a live) entra se o formato dele já estiver rodando.
+  function output(msg) {
+    if (!broadcast || stopping) return;
+    const id = String(msg.id || '').slice(0, 40), reject = reason => send({ type: 'destination', id, state: 'error', reason });
+    if (msg.action === 'stop') { outputs.stop(id); return; }
+    if (msg.action !== 'start') return;
+    if (!outputs.has(id)) {
+      let d; try { d = validateDestination({ ...(msg.destination || {}), id }, id); } catch (e) { reject(e.message); return; }
+      if (broadcast.destinations.length >= MAX_DESTINATIONS) { reject('Use no máximo ' + MAX_DESTINATIONS + ' destinos simultâneos.'); return; }
+      if (broadcast.destinations.some(x => x.target === d.target)) { reject('Já existe um destino com o mesmo servidor e a mesma chave.'); return; }
+      const g = [...runners.values()].find(r => r.group.aspect === d.aspect && !r.failed && r.group.destinations.length);
+      if (!g) { reject('A saída ' + d.aspect + ' não foi preparada nesta live. Para entrar no meio da live, deixe o destino em espera antes de começar.'); return; }
+      broadcast.destinations.push(d); g.group.destinations.push(d); outputs.add(d, g.group.id);
+      if (d.warning) send({ type: 'destination', id, state: 'warning', reason: d.warning });
+    }
+    outputs.start(id);
+  }
+
   ws.on('error', () => stop());
   ws.on('close', () => { stop(); if (!alive().length && shared.active === ws) shared.active = null; });
 }

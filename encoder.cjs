@@ -2,10 +2,9 @@
 /*
  * Codificação do PROGRAM por formato de tela: um grupo 16:9 (YouTube, Facebook,
  * Twitch, Kick, LinkedIn…) e um grupo 9:16 (Instagram, TikTok…). Cada grupo é uma
- * codificação H.264 + AAC que alimenta os destinos daquele formato e, se pedido,
- * o arquivo de gravação do formato (muxer tee do FFmpeg).
- * Cada destino passa por uma fila própria (muxer fifo) que reconecta sozinha,
- * então a queda de uma plataforma não interrompe as outras nem a gravação.
+ * codificação H.264 + AAC que alimenta o arquivo de gravação do formato (com fila própria)
+ * e o distribuidor de saídas do serviço (saidas.cjs), que liga, desliga e reconecta cada
+ * destino de forma independente, com a live no ar (RTMP, RTMPS e SRT).
  */
 const { spawnSync } = require('node:child_process');
 const { clampOffset } = require('./avsync.cjs');
@@ -20,6 +19,7 @@ const PLATFORMS = {
   tiktok:    { name: 'TikTok',       example: 'rtmp://push-rtmp-….tiktokcdn.com/…',          hosts: /tiktok/, aspect: '9:16' },
   linkedin:  { name: 'LinkedIn',     example: 'rtmps://….linkedin.com:443/live',             hosts: /(^|\.)(linkedin\.com|licdn\.com|live-video\.net|azure\.net|media\.azure\.net)$/ },
   custom:    { name: 'RTMP próprio', example: 'rtmp://servidor/app',                         hosts: null },
+  srt:       { name: 'SRT',          example: 'srt://servidor:porta',                        hosts: null, protocol: 'srt' },
 };
 const MAX_DESTINATIONS = 6;
 // Formato de exibição de cada plataforma: Instagram e TikTok ao vivo são verticais; as demais, horizontais.
@@ -32,6 +32,7 @@ function fail(message) { throw Error(message); }
 function validateDestination(input, index) {
   const platform = PLATFORMS[input?.platform] ? input.platform : 'custom', rule = PLATFORMS[platform];
   const label = String(input?.name || rule.name).slice(0, 40);
+  if (rule.protocol === 'srt') return validateSrt(input, index, label);
   let u;
   try { u = new URL(String(input?.server || '').trim()); } catch { fail('Destino ' + label + ': informe a URL do servidor (rtmp:// ou rtmps://).'); }
   if (!['rtmp:', 'rtmps:'].includes(u.protocol) || !u.hostname || u.username || u.password || u.search || u.hash) fail('Destino ' + label + ': use somente a URL do servidor, começando com rtmp:// ou rtmps://, sem chave nem parâmetros.');
@@ -41,7 +42,30 @@ function validateDestination(input, index) {
   if (!KEY.test(key)) fail('Destino ' + label + ': informe apenas a chave de transmissão, sem espaços nem a URL.');
   const warning = rule.hosts && !rule.hosts.test(u.hostname) ? 'O servidor de ' + label + ' não parece ser de ' + rule.name + '. Confira a URL copiada da plataforma.' : null;
   const aspect = ASPECTS.includes(input?.aspect) ? input.aspect : aspectOf(platform);
-  return { id: String(input?.id ?? index).slice(0, 40), platform, name: label, aspect, target: u.toString().replace(/\/$/, '') + '/' + key, warning };
+  return { id: String(input?.id ?? index).slice(0, 40), platform, protocol: 'rtmp', secure: u.protocol === 'rtmps:', name: label, aspect, target: u.toString().replace(/\/$/, '') + '/' + key, warning, on: input?.on !== false };
+}
+
+// SRT: o Andrômeda Live chama o servidor (modo caller). Stream ID e senha são opcionais; a latência (ms) segura perdas da rede.
+const SRT_PARAMS = ['streamid', 'passphrase', 'latency', 'pbkeylen', 'mode'];
+function validateSrt(input, index, label) {
+  let u;
+  try { u = new URL(String(input?.server || '').trim()); } catch { fail('Destino ' + label + ': informe o endereço SRT (srt://servidor:porta).'); }
+  if (u.protocol !== 'srt:' || !u.hostname || !u.port || u.username || u.password || u.hash || (u.pathname && u.pathname !== '/')) fail('Destino ' + label + ': use o endereço no formato srt://servidor:porta.');
+  for (const k of u.searchParams.keys()) if (!SRT_PARAMS.includes(k)) fail('Destino ' + label + ': o parâmetro "' + k + '" do endereço SRT não é aceito. Use os campos Stream ID e Senha.');
+  if (u.searchParams.get('mode') && u.searchParams.get('mode') !== 'caller') fail('Destino ' + label + ': o Andrômeda Live chama o servidor SRT (modo caller). Configure o servidor para escutar (listener).');
+  const streamid = String(input?.key ?? '').trim() || u.searchParams.get('streamid') || '';
+  if (streamid.length > 512 || /[\s\x00-\x1f]/.test(streamid)) fail('Destino ' + label + ': Stream ID inválido (sem espaços, até 512 caracteres).');
+  const passphrase = String(input?.passphrase ?? '').trim() || u.searchParams.get('passphrase') || '';
+  if (passphrase && (passphrase.length < 10 || passphrase.length > 79 || /[\x00-\x1f]/.test(passphrase))) fail('Destino ' + label + ': a senha SRT precisa ter de 10 a 79 caracteres.');
+  // Latência em ms (campo da mesa). No endereço colado de outro programa ela pode vir em microssegundos.
+  let latency = Number(input?.latency ?? NaN);
+  if (!Number.isFinite(latency)) { const q = Number(u.searchParams.get('latency')); latency = Number.isFinite(q) && q > 0 ? (q > 20000 ? q / 1000 : q) : 2000; }
+  latency = Math.round(Math.min(8000, Math.max(120, latency)));
+  const pbkeylen = [16, 24, 32].includes(Number(u.searchParams.get('pbkeylen'))) ? Number(u.searchParams.get('pbkeylen')) : 16;
+  const enc = encodeURIComponent;
+  const target = 'srt://' + u.host + '?mode=caller&transtype=live&latency=' + latency * 1000 + '&pkt_size=1316' + (streamid ? '&streamid=' + enc(streamid) : '') + (passphrase ? '&passphrase=' + enc(passphrase) + '&pbkeylen=' + pbkeylen : '');
+  const aspect = ASPECTS.includes(input?.aspect) ? input.aspect : '16:9';
+  return { id: String(input?.id ?? index).slice(0, 40), platform: 'srt', protocol: 'srt', secure: !!passphrase, name: label, aspect, target, latency, warning: passphrase ? null : 'SRT sem senha: o sinal vai sem criptografia. Se o servidor aceitar, defina uma senha.', on: input?.on !== false };
 }
 
 function validateBroadcast(input) {
@@ -53,17 +77,19 @@ function validateBroadcast(input) {
   const record = input.record ? validateRecording(input.record) : null;
   // Regra do produto: toda transmissão sai em 1080p (ou 4K) a 30 fps. A vertical (9:16) sai em 1080×1920.
   // Só a gravação sem destinos (ex.: calibração do sincronismo) pode usar um tamanho menor.
-  const live = destinations.length > 0;
+  // Destinos WHIP saem direto da mesa (WebRTC): o serviço só precisa manter o formato deles rodando (sem enviar a lugar nenhum).
+  const whip = { h: Math.max(0, Math.min(6, Number(input.whip?.h) || 0)), v: Math.max(0, Math.min(6, Number(input.whip?.v) || 0)) };
+  const live = destinations.length > 0 || whip.h > 0 || whip.v > 0;
   const v = input.vertical || {}, vres = live ? '1080p' : ['720p', '1080p'].includes(v.resolution) ? v.resolution : '720p';
   const vbit = Number(v.bitrate ?? (vres === '1080p' ? 6 : 4));
   if (!Number.isFinite(vbit) || vbit < 2 || vbit > 12) fail('Bitrate da saída vertical deve ficar entre 2 e 12 Mbps.');
-  if (!destinations.length && !record) fail('Ative pelo menos um destino ou a gravação.');
+  if (!destinations.length && !record && !whip.h && !whip.v) fail('Ative pelo menos um destino ou a gravação.');
   let resolution = input.resolution; if (!['540p', '720p', '1080p', '2160p'].includes(resolution)) fail('Escolha 540p, 720p, 1080p ou 2160p (4K).');
   if (live && resolution !== '2160p') resolution = '1080p';
   let bitrate = Number(input.bitrate); if (live && resolution === '1080p' && Number.isFinite(bitrate)) bitrate = Math.max(6, bitrate); if (!Number.isFinite(bitrate) || bitrate < (resolution === '2160p' ? 30 : 3) || bitrate > (resolution === '2160p' ? 60 : 20)) fail('Bitrate fora do limite da resolução escolhida.');
   const encoder = ENCODERS[input.encoder] ? input.encoder : 'libx264';
   // Sincronismo: positivo atrasa o som, negativo atrasa a imagem (ms). Vem da calibração automática ou do ajuste fino.
-  return { destinations, record, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
+  return { destinations, record, whip, resolution, bitrate, fps: 30, encoder, avSync: clampOffset(input.avSyncMs), preset: PRESETS.includes(input.preset) ? input.preset : 'veryfast', engine: input.engine === 'native' ? 'native' : 'webm', vertical: { resolution: vres, bitrate: vbit } };
 }
 
 // Grupos de codificação: cada formato com seus destinos e sua gravação. Só existe o grupo que tiver uso.
@@ -71,8 +97,9 @@ function groupsFor(cfg) {
   const h = cfg.destinations.filter(d => d.aspect !== '9:16'), v = cfg.destinations.filter(d => d.aspect === '9:16');
   const formats = cfg.record?.formats || '16:9', recH = !!cfg.record && formats !== '9:16', recV = !!cfg.record && formats !== '16:9';
   const groups = [];
-  if (h.length || recH) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '2160p' ? '3840:2160' : cfg.resolution === '540p' ? '960:540' : cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
-  if (v.length || recV) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null });
+  const wh = cfg.whip?.h > 0, wv = cfg.whip?.v > 0;
+  if (h.length || recH || wh) groups.push({ id: 'h', aspect: '16:9', size: cfg.resolution === '2160p' ? '3840:2160' : cfg.resolution === '540p' ? '960:540' : cfg.resolution === '720p' ? '1280:720' : '1920:1080', bitrate: cfg.bitrate, destinations: h, record: recH ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_16x9.mkv') } : null });
+  if (v.length || recV || wv) groups.push({ id: 'v', aspect: '9:16', size: (cfg.vertical?.resolution || '720p') === '1080p' ? '1080:1920' : '720:1280', bitrate: cfg.vertical?.bitrate || 4, destinations: v, record: recV ? { ...cfg.record, file: cfg.record.file.replace(/\.mkv$/, '_9x16.mkv') } : null });
   return groups;
 }
 
@@ -138,13 +165,22 @@ const FIFO = "f=fifo:fifo_format=flv:format_opts='flush_packets=1\\:rtmp_flashve
 // vez de segurar a transmissão.
 const RECORD_FIFO = "f=fifo:fifo_format=matroska:format_opts='flush_packets=1':queue_size=2400:drop_pkts_on_overflow=1:onfail=ignore";
 
+// Saída para o distribuidor (saidas.cjs): FLV na saída padrão do processo. Cada destino é ligado, desligado e reconectado lá,
+// sem tocar no codificador. A configuração do vídeo (SPS/PPS) e do som vem em etiquetas próprias, que o distribuidor guarda e
+// repete para quem entra no meio da live, a partir do último quadro-chave.
+const FEED = '[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]pipe:1';
 function outputArgs(group) {
-  const outputs = group.destinations.map(d => '[' + FIFO + ']' + d.target);
+  const outputs = [];
+  if (group.destinations.length) outputs.push(FEED);
   // A gravação também tem fila própria: se o disco engasgar (HD externo, antivírus, disco lento), a live segue sem parar
   // e a gravação alcança depois. Sem a fila, o tee esperava o disco e a transmissão parava junto (test/record-stall.test.cjs).
   if (group.record) outputs.push('[' + RECORD_FIFO + ']' + teeEscape(group.record.file));
+  // Só destinos WHIP neste formato (saem direto da mesa): o codificador roda sem saída, para a sessão e os relatórios seguirem iguais.
+  if (!outputs.length) return ['-f', 'null', '-'];
   return ['-flags', '+global_header', '-f', 'tee', outputs.join('|')];
 }
+// Compatibilidade de testes antigos: a fila por destino do FFmpeg (fifo) deu lugar ao distribuidor; fica exportada para referência.
+void FIFO;
 
 // Entrada do WebM vindo do navegador com sondagem curta: o navegador manda o cabeçalho com as duas faixas no começo, então
 // 256 KB bastam para identificar imagem e som. NÃO usar -fflags +nobuffer: ele descarta o primeiro quadro-chave lido na
@@ -195,8 +231,8 @@ function findFFmpeg() {
 // Remove qualquer URL de destino (que carrega a chave) antes de um texto sair do processo.
 function redact(text, cfg) {
   let out = String(text);
-  for (const d of cfg?.destinations || []) out = out.split(d.target).join('rtmp://' + d.name + '/•••');
-  return out.replace(/rtmps?:\/\/[^\s'"]+/g, m => m.replace(/\/[^/]*$/, '/•••'));
+  for (const d of cfg?.destinations || []) out = out.split(d.target).join((d.protocol === 'srt' ? 'srt://' : 'rtmp://') + d.name + '/•••');
+  return out.replace(/rtmps?:\/\/[^\s'"]+/g, m => m.replace(/\/[^/]*$/, '/•••')).replace(/srt:\/\/[^\s'"]+/g, m => m.replace(/\?.*$/, '?•••'));
 }
 
 // Associa uma linha de erro do FFmpeg ao destino a que ela se refere.
@@ -224,4 +260,4 @@ function safeBroadcastError(stderr) {
   return 'O codificador foi interrompido. Confira a conexão e os destinos e inicie novamente.';
 }
 
-module.exports = { PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };
+module.exports = { FLASHVER, PLATFORMS, MAX_DESTINATIONS, validateConfig, validateBroadcast, validateDestination, argsFor, argsForBroadcast, argsForGroup, groupsFor, ASPECTS, detectEncoders, findFFmpeg, safeError, safeBroadcastError, redact, destinationEvents, ENCODERS, PRESETS };

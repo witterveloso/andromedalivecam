@@ -4,7 +4,8 @@
 // Aqui o "disco" é um pipe que para de ler por 3,5 s no meio do envio; medimos o maior buraco na chegada à "plataforma".
 const { test } = require('node:test'), assert = require('node:assert/strict'), net = require('node:net');
 const { spawn, spawnSync, execFileSync } = require('node:child_process'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-const { validateBroadcast, argsForBroadcast, findFFmpeg } = require('../encoder.cjs');
+const { validateBroadcast, argsForBroadcast, groupsFor, findFFmpeg } = require('../encoder.cjs');
+const { createOutputs } = require('../saidas.cjs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 test('disco da gravação travado 3,5 s não trava a transmissão, e a gravação fica completa', { timeout: 60000, skip: process.platform === 'win32' ? 'pipe nomeado (mkfifo) só no Linux/macOS' : false }, async t => {
@@ -23,14 +24,18 @@ test('disco da gravação travado 3,5 s não trava a transmissão, e a gravaçã
   await new Promise(r => proxy.listen(proxyPort, '127.0.0.1', r)); await wait(700);
   const cfg = validateBroadcast({ destinations: [{ platform: 'custom', server: 'rtmp://127.0.0.1:' + proxyPort + '/live', key: 'test-stream-key-123' }], record: { dir, formats: '16:9' }, resolution: '1080p', bitrate: 6 });
   cfg.record.file = path.join(dir, 'disco.mkv'); // o tee grava em disco_16x9.mkv = o pipe
-  const tee = argsForBroadcast(cfg).slice(-5); assert.match(tee[4], /disco_16x9\.mkv/);
+  const tee = argsForBroadcast(cfg).slice(-5); assert.match(tee[4], /disco_16x9\.mkv/); assert.match(tee[4], /pipe:1/);
+  // O destino sai pelo distribuidor (saidas.cjs), alimentado pela saída do codificador, como no programa.
+  const g = groupsFor(cfg)[0], outputs = createOutputs({ ffmpeg, spawnProcess: spawn });
+  outputs.group(g.id, { size: g.size }); outputs.add(cfg.destinations[0], g.id); outputs.start(cfg.destinations[0].id);
   const sender = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=s=1280x720:r=30', '-f', 'lavfi', '-i', 'sine=r=48000', '-t', '10',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '6M', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-map', '0:v', '-map', '1:a', ...tee], { stdio: 'ignore' });
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '6M', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-map', '0:v', '-map', '1:a', ...tee], { stdio: ['ignore', 'pipe', 'ignore'] });
+  sender.stdout.on('data', d => outputs.feed(g.id, d));
   const senderDone = new Promise(r => sender.once('exit', r));
   let stallFrom = 0, stallTo = 0;
   try {
     await wait(3000); stallFrom = Date.now(); disk.kill('SIGSTOP'); await wait(3500); disk.kill('SIGCONT'); stallTo = Date.now();
-    await Promise.race([senderDone, wait(20000)]); await Promise.race([diskDone, wait(5000)]); await Promise.race([receiverDone, wait(3000)]);
+    await Promise.race([senderDone, wait(20000)]); outputs.endGroup(g.id); await Promise.race([diskDone, wait(5000)]); await Promise.race([receiverDone, wait(5000)]);
     // Maior buraco na chegada à plataforma durante a trava do disco.
     const during = arrivals.filter(a => a >= stallFrom - 500 && a <= stallTo + 500);
     let gap = 0; for (let i = 1; i < during.length; i++) gap = Math.max(gap, during[i] - during[i - 1]);
@@ -38,5 +43,5 @@ test('disco da gravação travado 3,5 s não trava a transmissão, e a gravaçã
     assert(gap < 1000, 'a transmissão continuou chegando enquanto o disco travava (maior buraco ' + gap + ' ms)');
     const frames = spawnSync(ffmpeg, ['-v', 'error', '-i', out, '-map', '0:v', '-f', 'framemd5', '-'], { encoding: 'utf8', maxBuffer: 8 << 20 }).stdout.split('\n').filter(l => l && !l.startsWith('#')).length;
     assert(frames >= 298, 'a gravação ficou completa depois da trava (' + frames + ' de 300 quadros)');
-  } finally { sender.kill(); receiver.kill(); disk.kill('SIGCONT'); disk.kill(); for (const k of socks) k.destroy(); proxy.close(); try { fs.closeSync(outFd); } catch {} fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { outputs.close(); sender.kill(); receiver.kill(); disk.kill('SIGCONT'); disk.kill(); for (const k of socks) k.destroy(); proxy.close(); try { fs.closeSync(outFd); } catch {} fs.rmSync(dir, { recursive: true, force: true }); }
 });

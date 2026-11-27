@@ -24,15 +24,30 @@ test('bad destinations are refused with a reason; a wrong host only warns',()=>{
  assert.match(odd.destinations[0].warning,/não parece ser de Facebook/);
 });
 
-test('one encode feeds every destination through its own recovering queue, plus the recording',()=>{
+test('one encode feeds the Andromeda output distributor and the recording, each with its own path',()=>{
  const cfg=validateBroadcast({...base,destinations:[yt,fb],record:{dir:path.join(os.tmpdir(),"Lives [2026] d'agua")}});
  const args=argsForBroadcast(cfg),spec=args.at(-1);
  assert.equal(args.filter(a=>a==='libx264').length,1);assert.equal(args[args.lastIndexOf('-f')+1],'tee');
- const outputs=spec.split('|');assert.equal(outputs.length,3);
- assert(outputs[0].startsWith('[f=fifo:fifo_format=flv:')&&outputs[0].includes('attempt_recovery=1')&&outputs[0].endsWith(cfg.destinations[0].target));
- assert(outputs[2].startsWith("[f=fifo:fifo_format=matroska:format_opts='flush_packets=1':queue_size=2400:drop_pkts_on_overflow=1:onfail=ignore]"),'recording has its own queue: a slow disk never holds the live')
- assert(true&&outputs[2].includes("Lives \\[2026\\] d\\'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d_16x9\.mkv$/.test(outputs[2]));
+ const outputs=spec.split('|');assert.equal(outputs.length,2,'one feed for all destinations + the recording');
+ assert.equal(outputs[0],'[f=flv:flvflags=no_duration_filesize:flush_packets=1:onfail=abort]pipe:1','destinations are fed through the distributor (saidas.cjs), never directly by the encoder');
+ assert(!spec.includes(cfg.destinations[0].target)&&!spec.includes('FB-123456'),'no destination key in the encoder command');
+ assert(outputs[1].startsWith("[f=fifo:fifo_format=matroska:format_opts='flush_packets=1':queue_size=2400:drop_pkts_on_overflow=1:onfail=ignore]"),'recording has its own queue: a slow disk never holds the live')
+ assert(true&&outputs[1].includes("Lives \\[2026\\] d\\'agua")&&/Andromeda_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d_16x9\.mkv$/.test(outputs[1]));
  assert.equal(validateBroadcast({...base,record:{dir:os.tmpdir()}}).destinations.length,0,'recording alone is allowed');
+ assert(!argsForBroadcast(validateBroadcast({...base,record:{dir:os.tmpdir()}})).at(-1).includes('pipe:1'),'recording alone: no feed');
+ assert.equal(validateBroadcast({...base,destinations:[{...yt,on:false}]}).destinations[0].on,false,'a destination can start on standby');
+});
+
+test('SRT destination: caller mode, stream ID and passphrase encoded, never leaked in logs',()=>{
+ const cfg=validateBroadcast({...base,destinations:[{id:'s',platform:'srt',name:'Restream SRT',server:'srt://ingest.example.com:9000',key:'#!::r=live/abc,m=publish',passphrase:'segredo-forte-123',latency:1500}]});
+ const d=cfg.destinations[0];assert.equal(d.protocol,'srt');assert.equal(d.secure,true);
+ assert.equal(d.target,'srt://ingest.example.com:9000?mode=caller&transtype=live&latency=1500000&pkt_size=1316&streamid=%23!%3A%3Ar%3Dlive%2Fabc%2Cm%3Dpublish&passphrase=segredo-forte-123&pbkeylen=16');
+ const clean=redact('Connection to '+d.target+' failed; also srt://x:1?passphrase=zzz',cfg);assert(!clean.includes('segredo')&&!clean.includes('zzz')&&!clean.includes('abc'));
+ assert.throws(()=>validateBroadcast({...base,destinations:[{platform:'srt',server:'srt://h:9000',passphrase:'curta'}]}),/10 a 79/);
+ assert.throws(()=>validateBroadcast({...base,destinations:[{platform:'srt',server:'srt://h:9000?mode=listener'}]}),/caller/);
+ assert.throws(()=>validateBroadcast({...base,destinations:[{platform:'srt',server:'srt://h'}]}),/srt:\/\/servidor:porta/);
+ assert.match(validateBroadcast({...base,destinations:[{platform:'srt',server:'srt://h:9000'}]}).destinations[0].warning,/sem criptografia/);
+ assert.equal(validateBroadcast({...base,destinations:[{platform:'srt',server:'srt://h:9000?latency=500000'}]}).destinations[0].latency,500,'latency pasted in microseconds is understood');
 });
 
 test('encoder log lines map to the right destination and never leak a key',()=>{
@@ -57,7 +72,7 @@ test('real run: two RTMP destinations (one of them down) and an MP4 recording fr
  try{
   const session=await(await fetch('http://localhost:'+port+'/api/session')).json();assert(session.encoders.includes('libx264'));assert.equal(session.platforms.kick.name,'Kick');assert.equal(session.license.required,false);
   ws=new WebSocket('ws://localhost:'+port+'/publish','andromeda.'+session.token,{origin:'http://localhost:'+port});const seen=[];let stopSent=false;
-  const done=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out: '+JSON.stringify(seen.map(m=>m.type)))),60000);ws.on('message',raw=>{const m=JSON.parse(raw);seen.push(m);if(m.type==='ready')timer=feed(ws,fs.readFileSync(source),14);if(m.type==='sending'&&!stopSent&&m.frames>120&&(seen.some(x=>x.type==='destination'&&x.id==='b')||m.frames>360)){stopSent=true;ws.send(JSON.stringify({type:'stop'}))}if(m.type==='stopped'){clearTimeout(timeout);resolve()}});ws.on('error',reject)});
+  const done=new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Timed out: '+JSON.stringify(seen.map(m=>m.type)))),60000);ws.on('message',raw=>{const m=JSON.parse(raw);seen.push(m);if(m.type==='ready')timer=feed(ws,fs.readFileSync(source),14);if(m.type==='sending'&&!stopSent&&m.frames>120&&(seen.some(x=>x.type==='destination'&&x.id==='b'&&x.state==='retrying')||m.frames>400)){stopSent=true;ws.send(JSON.stringify({type:'stop'}))}if(m.type==='stopped'){clearTimeout(timeout);resolve()}});ws.on('error',reject)});
   await once(ws,'open');
   ws.send(JSON.stringify({type:'start',...base,destinations:[{id:'a',platform:'custom',name:'Destino A',server:'rtmp://127.0.0.1:19411/live',key:'keyAAAA1'},{id:'b',platform:'custom',name:'Destino B',server:'rtmp://127.0.0.1:19412/live',key:'keyBBBB2'}],record:{dir:recDir}}));
   await done;

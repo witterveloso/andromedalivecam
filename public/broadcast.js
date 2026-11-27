@@ -15,7 +15,13 @@
     tiktok:    { name: 'TikTok',       server: '',                                            help: 'Disponível para contas com transmissão por software liberada. Copie a URL do servidor e a chave. Recebe a saída vertical 9:16.', aspect: '9:16' },
     linkedin:  { name: 'LinkedIn',     server: '',                                            help: 'Evento ao vivo → transmitir com software (RTMP personalizado). Copie a URL e a chave.' },
     custom:    { name: 'RTMP próprio', server: '',                                            help: 'Qualquer servidor RTMP/RTMPS: informe a URL do servidor e a chave (nome do stream).' },
+    srt:       { name: 'SRT',          server: '', protocol: 'srt',                           help: 'Servidor SRT (restream, emissora, nuvem): informe srt://servidor:porta, o Stream ID e a senha, se o servidor usar. Mais latência segura redes instáveis; o SRT reenvia o que se perde no caminho.' },
+    whip:      { name: 'WHIP · WebRTC', server: '', protocol: 'whip',                         help: 'Atraso abaixo de 1 segundo. Cole a URL de ingestão WHIP (https://…) e o token, se o servidor pedir. A imagem sai direto da mesa por WebRTC: cada destino WHIP é mais uma codificação neste computador.' },
   };
+  const protocolOf = d => PRESETS[d.platform]?.protocol || 'rtmp';
+  // Destino completo: RTMP precisa de servidor e chave; SRT e WHIP, só do endereço (Stream ID, senha e token são opcionais).
+  const complete = d => !!d.server.trim() && (protocolOf(d) !== 'rtmp' || !!d.key.trim());
+  const START = { on: 'No ar ao iniciar', standby: 'Em espera', off: 'Desligado' };
   // Marca de cada plataforma (24×24), desenhada sobre o bloco colorido do destino. Texto fixo do programa, sem dados de fora.
   const svg = body => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">' + body + '</svg>';
   const LOGOS = {
@@ -26,6 +32,8 @@
     kick: svg('<rect x="4.5" y="4" width="4.2" height="16" fill="#06130a"/><polygon points="9,12 15,4 20,4 13.5,12" fill="#06130a"/><polygon points="9,12 13.5,12 20,20 15,20" fill="#06130a"/>'),
     tiktok: svg('<g transform="translate(-.7 -.5)"><path fill="#25f4ee" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/></g><path transform="translate(.7 .5)" fill="#fe2c55" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/><path fill="#fff" d="M16.6 5.8a4.3 4.3 0 0 1-1-2.8h-3.1v12.3a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.8 5.8 0 1 0 5 5.7V9.2a7.3 7.3 0 0 0 4.2 1.4V7.5a4.3 4.3 0 0 1-3.3-1.7z"/>'),
     linkedin: svg('<rect x="4.5" y="9.5" width="3.2" height="10" fill="#fff"/><circle cx="6.1" cy="5.9" r="1.9" fill="#fff"/><path fill="#fff" d="M10 9.5h3v1.4c.5-.9 1.6-1.7 3.2-1.7 3 0 3.6 2 3.6 4.6v5.7h-3.2v-5c0-1.2-.02-2.6-1.7-2.6-1.7 0-2 1.3-2 2.6v5H10v-10z"/>'),
+    srt: svg('<path d="M4 8h11M4 16h11" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><path d="M13 5l4 3-4 3M13 13l4 3-4 3" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20" cy="8" r="1.4" fill="#fff"/><circle cx="20" cy="16" r="1.4" fill="#fff"/>'),
+    whip: svg('<path d="M13 3L5 13.5h6L10 21l8-10.5h-6L13 3z" fill="#fff"/>'),
     custom: svg('<circle cx="12" cy="12" r="2" fill="#fff"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" stroke="#fff" fill="none" stroke-width="1.7" stroke-linecap="round"/>'),
   };
   const STORE = 'andromeda.broadcast.v1';
@@ -36,7 +44,10 @@
   const model = { recordFormats: '16:9', formatsVersion: 3, destinations: [{ id: uid(), platform: 'youtube', name: 'YouTube', server: PRESETS.youtube.server, key: '', enabled: true, aspect: '16:9' }], resolution: '1080p', policy: 'fixed', bitrate: 6, encoder: 'auto', record: false, dir: '', remember: false };
   try {
     const saved = JSON.parse(localStorage.getItem(STORE));
-    if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => ({ id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', enabled: d.enabled !== false, aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' })) });
+    if (saved && Array.isArray(saved.destinations)) Object.assign(model, saved, { destinations: saved.destinations.filter(d => PRESETS[d.platform]).slice(0, 6).map(d => {
+      const start = START[d.start] ? d.start : d.enabled !== false ? 'on' : 'off';
+      return { id: d.id || uid(), platform: d.platform, name: String(d.name || PRESETS[d.platform].name), server: String(d.server || ''), key: saved.remember ? String(d.key || '') : '', passphrase: saved.remember ? String(d.passphrase || '') : '', latency: [200, 500, 1000, 2000, 4000].includes(d.latency) ? d.latency : 2000, start, enabled: start !== 'off', aspect: ['16:9', '9:16'].includes(d.aspect) ? d.aspect : PRESETS[d.platform].aspect || '16:9' };
+    }) });
   } catch { /* primeiro uso */ }
   // O padrão antigo habilitava duas capturas sem exigir uma escolha explícita.
   if (model.formatsVersion !== 3) {
@@ -48,14 +59,19 @@
   if (!MODES[model.mode]) model.mode = model.record ? 'both' : 'stream';
   model.record = model.mode !== 'stream';
   const streaming = () => model.mode !== 'record';
-  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '' })) })); } catch { /* sem armazenamento */ } };
-  const live = { states: new Map(), recording: null, recorded: null, files: [], storage: null, checked: null };
+  const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ ...model, destinations: model.destinations.map(d => ({ ...d, key: model.remember ? d.key : '', passphrase: model.remember ? d.passphrase || '' : '' })) })); } catch { /* sem armazenamento */ } };
+  // Estado de cada destino na live: states (conectando, no ar, reconectando, em espera, fora do ar), rates (Mbps e hora de entrada),
+  // sent (destinos que esta live conhece no serviço) e whip (sessões WebRTC, uma por destino WHIP).
+  const live = { states: new Map(), rates: new Map(), sent: new Set(), whip: new Map(), recording: null, recorded: null, files: [], storage: null, checked: null };
   // A compensação de sincronismo é medida e guardada por motor: cada um tem o seu atraso próprio de captura e codificação.
   const avSyncFor = engine => (engine === 'native' ? model.avSyncNativeMs : model.avSyncMs) || 0;
   window.andromedaBroadcast = { model, live, save, avSyncFor };
 
-  const active = () => model.destinations.filter(d => d.enabled && d.server.trim() && d.key.trim());
-  const pending = () => model.destinations.filter(d => d.enabled && !(d.server.trim() && d.key.trim()));
+  const active = () => model.destinations.filter(d => d.enabled && complete(d));
+  const pending = () => model.destinations.filter(d => d.enabled && !complete(d));
+  const onAtStart = () => active().filter(d => d.start !== 'standby');
+  // O que vai ao serviço para um destino RTMP/SRT (WHIP fica na mesa).
+  const payload = d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9', on: d.start !== 'standby', passphrase: (d.passphrase || '').trim(), latency: d.latency || 2000 });
 
   /* ---------- painel de destinos ---------- */
 
@@ -71,26 +87,51 @@
   adder.append(choose, add, remember);
   add.onclick = () => {
     if (model.destinations.length >= 6) { log('Limite de 6 destinos simultâneos'); return; }
-    const p = PRESETS[choose.value]; model.destinations.push({ id: uid(), platform: choose.value, name: p.name, server: p.server, key: '', enabled: true, aspect: p.aspect || '16:9' });
+    // Durante a live, o destino novo entra em espera: o operador põe no ar quando quiser, com o botão do próprio cartão.
+    const p = PRESETS[choose.value], start = busyTx() ? 'standby' : 'on';
+    model.destinations.push({ id: uid(), platform: choose.value, name: p.name, server: p.server, key: '', passphrase: '', latency: 2000, start, enabled: true, aspect: p.aspect || '16:9' });
     save(); render();
   };
   rememberBox.onchange = () => { model.remember = rememberBox.checked; save(); };
 
+  const clock = ms => { const t = Math.max(0, Math.floor(ms / 1000)), two = n => String(n).padStart(2, '0'); return two(Math.floor(t / 3600)) + ':' + two(Math.floor(t / 60) % 60) + ':' + two(t % 60); };
+  // No ar = este destino está recebendo; conectando/reconectando = tentando. Os três contam como "ligado" para o botão do cartão.
+  const airing = d => ['sending', 'connecting', 'retrying'].includes(live.states.get(d.id)?.state);
   function statusOf(d) {
     const state = live.states.get(d.id);
-    if (busyTx() && d.enabled && state) return state.state === 'error' ? ['SAÍDA PAROU', 'bad', state.reason] : state.state === 'retrying' ? ['RECONECTANDO', 'bad', state.reason] : state.state === 'sending' ? ['ENVIANDO', 'on', ''] : ['CONECTANDO', 'wait', ''];
+    if (busyTx() && state) {
+      const rate = live.rates.get(d.id), extra = rate?.kbps ? (rate.kbps / 1000).toFixed(1).replace('.', ',') + ' Mbps' + (rate.since ? ' · ' + clock(Date.now() - rate.since) + ' no ar' : '') : '';
+      switch (state.state) {
+        case 'sending': return ['NO AR', 'on', extra];
+        case 'connecting': return ['CONECTANDO', 'wait', ''];
+        case 'retrying': return ['RECONECTANDO', 'bad', state.reason];
+        case 'stopping': return ['SAINDO DO AR', 'wait', ''];
+        case 'standby': return ['EM ESPERA', 'ready', 'Pronto para entrar no ar.'];
+        case 'off': return ['FORA DO AR', 'off', 'Saiu do ar. Os outros destinos continuam.'];
+        case 'error': return ['ERRO', 'bad', state.reason];
+        case 'warning': return ['CONECTANDO', 'wait', state.reason];
+      }
+    }
+    if (busyTx() && d.enabled && complete(d)) return ['FORA DO AR', 'off', 'Pode entrar no ar agora.'];
     if (!d.enabled) return ['DESLIGADO', 'off', ''];
-    if (!d.server.trim() || !d.key.trim()) return ['FALTA ' + (!d.server.trim() ? 'SERVIDOR' : 'CHAVE'), 'wait', ''];
-    return ['PRONTO', 'ready', state?.state === 'warning' ? state.reason : ''];
+    if (!complete(d)) return ['FALTA ' + (!d.server.trim() ? (protocolOf(d) === 'whip' ? 'URL' : 'SERVIDOR') : 'CHAVE'), 'wait', ''];
+    return [d.start === 'standby' ? 'EM ESPERA' : 'PRONTO', 'ready', state?.state === 'warning' ? state.reason : ''];
   }
   function paintStatus() {
+    const busy = busyTx(), sending = liveTx.phase === 'sending';
     for (const card of list.children) {
       const d = model.destinations.find(x => x.id === card.dataset.id); if (!d) continue;
       const [text, tone, detail] = statusOf(d), pill = card.querySelector('.dest-state');
       pill.textContent = text; pill.dataset.tone = tone; card.querySelector('.dest-detail').textContent = detail;
-      card.querySelectorAll('input, button, select').forEach(el => { el.disabled = busyTx(); });
+      // Durante a live: quem está no ar não muda de configuração; quem está fora pode ser editado e entrar no ar.
+      const on = busy && airing(d), air = card.querySelector('.dest-air');
+      card.querySelectorAll('input, select, .dest-key button').forEach(el => { el.disabled = on || (busy && el.classList.contains('dest-start')); });
+      card.querySelector('.dest-remove').disabled = busy;
+      air.hidden = !busy || !streaming(); air.disabled = !sending || !complete(d) || live.states.get(d.id)?.state === 'stopping';
+      air.textContent = on ? '■ Sair do ar' : '▶ Entrar no ar'; air.dataset.on = String(on);
+      card.dataset.air = on ? 'on' : '';
     }
-    add.disabled = choose.disabled = busyTx() || model.destinations.length >= 6;
+    add.disabled = choose.disabled = model.destinations.length >= 6 || liveTx.phase === 'stopping';
     quality.querySelectorAll('select, input').forEach(el => { el.disabled = busyTx(); });
   }
   function render() {
@@ -99,12 +140,16 @@
       const head = make('header'), badge = make('span', 'dest-badge'), title = make('input', 'dest-name');
       badge.innerHTML = LOGOS[d.platform] || LOGOS.custom; badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', p.name);
       title.value = d.name; title.maxLength = 40; title.setAttribute('aria-label', 'Nome do destino');
-      const toggle = make('label', 'dest-toggle'), box = make('input'); box.type = 'checkbox'; box.checked = d.enabled; toggle.append(box, 'Ativo');
+      const proto = protocolOf(d);
+      // Como o destino começa a live: no ar, em espera (entra quando o operador quiser) ou desligado.
+      const startSel = make('select', 'dest-start'); for (const [k, v] of Object.entries(START)) startSel.add(new Option(v, k)); startSel.value = d.start || (d.enabled ? 'on' : 'off');
+      startSel.setAttribute('aria-label', 'Como ' + d.name + ' começa a transmissão');
       const pill = make('span', 'dest-state'), remove = make('button', 'dest-remove', 'Remover'); remove.type = 'button';
-      head.append(badge, title, pill, toggle, remove);
-      const server = make('label', '', 'Servidor (URL RTMP)'), serverInput = make('input'); serverInput.type = 'url'; serverInput.value = d.server; serverInput.placeholder = 'rtmp:// ou rtmps://'; serverInput.spellcheck = false; serverInput.autocomplete = 'off'; server.append(serverInput);
-      const key = make('label', '', 'Chave de transmissão'), keyRow = make('span', 'dest-key'), keyInput = make('input'), show = make('button', '', 'Mostrar');
-      keyInput.type = 'password'; keyInput.value = d.key; keyInput.autocomplete = 'off'; keyInput.spellcheck = false; keyInput.placeholder = 'Cole a chave da plataforma'; show.type = 'button';
+      const air = make('button', 'dest-air', '▶ Entrar no ar'); air.type = 'button'; air.hidden = true; air.setAttribute('aria-label', 'Entrar ou sair do ar em ' + d.name);
+      head.append(badge, title, pill, air, startSel, remove);
+      const server = make('label', '', proto === 'srt' ? 'Servidor SRT' : proto === 'whip' ? 'URL de ingestão WHIP' : 'Servidor (URL RTMP)'), serverInput = make('input'); serverInput.type = 'url'; serverInput.value = d.server; serverInput.placeholder = proto === 'srt' ? 'srt://servidor:porta' : proto === 'whip' ? 'https://…/whip' : 'rtmp:// ou rtmps://'; serverInput.spellcheck = false; serverInput.autocomplete = 'off'; server.append(serverInput);
+      const key = make('label', '', proto === 'srt' ? 'Stream ID (opcional)' : proto === 'whip' ? 'Token (opcional)' : 'Chave de transmissão'), keyRow = make('span', 'dest-key'), keyInput = make('input'), show = make('button', '', 'Mostrar');
+      keyInput.type = 'password'; keyInput.value = d.key; keyInput.autocomplete = 'off'; keyInput.spellcheck = false; keyInput.placeholder = proto === 'srt' ? 'Ex.: live/minha-chave' : proto === 'whip' ? 'Bearer token do servidor' : 'Cole a chave da plataforma'; show.type = 'button';
       show.onclick = () => { const reveal = keyInput.type === 'password'; keyInput.type = reveal ? 'text' : 'password'; show.textContent = reveal ? 'Ocultar' : 'Mostrar'; };
       keyRow.append(keyInput, show); key.append(keyRow);
       const aspect = make('label', 'dest-aspect', 'Formato'), aspectSelect = make('select');
@@ -113,14 +158,22 @@
       aspectSelect.onchange = () => { d.aspect = aspectSelect.value; card.dataset.aspect = d.aspect; save(); summary(); };
       card.dataset.aspect = d.aspect || '16:9';
       const fields = make('div', 'dest-fields'); fields.append(server, key, aspect);
+      if (proto === 'srt') {
+        const pass = make('label', '', 'Senha SRT (opcional, 10 a 79 caracteres)'), passInput = make('input'); passInput.type = 'password'; passInput.value = d.passphrase || ''; passInput.autocomplete = 'off'; passInput.spellcheck = false; passInput.placeholder = 'Criptografia AES do sinal'; pass.append(passInput);
+        const lat = make('label', '', 'Latência'), latSel = make('select'); for (const ms of [200, 500, 1000, 2000, 4000]) latSel.add(new Option(ms + ' ms' + (ms === 2000 ? ' · padrão' : ms <= 500 ? ' · rede local' : ms === 4000 ? ' · rede ruim' : ''), String(ms))); latSel.value = String(d.latency || 2000); lat.append(latSel);
+        passInput.oninput = () => { d.passphrase = passInput.value.trim(); save(); };
+        latSel.onchange = () => { d.latency = Number(latSel.value); save(); };
+        fields.append(pass, lat);
+      }
       // Um clique para a sala de controle ao vivo da plataforma (pré-requisito do YouTube Live Verified): conferir a saúde do stream e a latência.
       const studio = STUDIO_URL[d.platform]; const go = studio ? Object.assign(make('a', 'dest-studio', 'Abrir o painel ao vivo do ' + p.name + ' ↗'), { href: studio, target: '_blank', rel: 'noopener noreferrer' }) : null;
       card.append(head, fields, make('p', 'dest-help', p.help), ...(go ? [go] : []), make('p', 'dest-detail'));
       title.oninput = () => { d.name = title.value; save(); };
-      serverInput.oninput = () => { d.server = serverInput.value; live.states.delete(d.id); save(); paintStatus(); summary(); };
+      serverInput.oninput = () => { d.server = serverInput.value; if (!busyTx()) live.states.delete(d.id); save(); paintStatus(); summary(); };
       keyInput.oninput = () => { d.key = keyInput.value.trim(); save(); paintStatus(); summary(); };
-      box.onchange = () => { d.enabled = box.checked; save(); paintStatus(); summary(); };
+      startSel.onchange = () => { d.start = startSel.value; d.enabled = d.start !== 'off'; save(); paintStatus(); summary(); };
       remove.onclick = () => { model.destinations.splice(model.destinations.indexOf(d), 1); save(); render(); };
+      air.onclick = () => { if (airing(d)) leaveAir(d); else enterAir(d); };
       return card;
     }));
     paintStatus(); summary();
@@ -234,11 +287,12 @@
 
   const lastFiles = () => 'Última gravação: ' + (live.files.length ? live.files : [live.recorded]).map(f => (f.format ? f.format + ' → ' : '') + f.file + ' (' + gb(f.size) + ')').join(' · ');
   function summary() {
-    const on = streaming() ? active().length : 0, vert = streaming() ? active().filter(d => d.aspect === '9:16') : [], vbit = vRate();
+    const on = streaming() ? onAtStart().length : 0, vert = streaming() ? onAtStart().filter(d => d.aspect === '9:16') : [], vbit = vRate();
     const total = model.bitrate * (on - vert.length) + vbit * vert.length;
     window.andromedaVertical?.setUses(model.destinations.filter(d => streaming() && d.enabled && d.aspect === '9:16').map(d => d.name).concat(model.record && model.recordFormats !== '16:9' ? ['gravação'] : []));
     paintCompliance();
-    upload.textContent = !streaming() ? 'Só gravar: nada é enviado às plataformas.' : on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino pronto: informe servidor e chave.';
+    const waiting = streaming() ? active().length - on : 0;
+    upload.textContent = !streaming() ? 'Só gravar: nada é enviado às plataformas.' : on || waiting ? (on ? 'Envio simultâneo para ' + on + ' destino(s): reserve pelo menos ' + (total * 1.3).toFixed(0) + ' Mbps de upload estável.' : 'Nenhum destino no ar ao iniciar.') + (waiting ? ' ' + waiting + ' em espera: entram no ar quando você quiser, com a live rodando.' : '') : 'Nenhum destino pronto: informe servidor e chave.';
     if (model.record) {
       const vbit = vRate(), rate = (model.recordFormats !== '9:16' ? model.bitrate * 1000 + 128 : 0) + (model.recordFormats !== '16:9' ? vbit * 1000 + 128 : 0);
       const perHour = rate * 3600 / 8 / 1e6, free = live.checked?.free;
@@ -262,8 +316,11 @@
     if (h.length) rows.push(['ok', 'Saída 16:9', res + ' · ' + rateH + ' Mbps · uma codificação para ' + h.length + (h.length === 1 ? ' destino' : ' destinos') + (rateH < model.bitrate ? ' (ajustado ao limite de ' + limiter + ')' : '')]);
     if (v.length) rows.push(['ok', 'Saída 9:16', '1080×1920 · ' + rateV + ' Mbps · uma codificação para ' + v.length + (v.length === 1 ? ' destino' : ' destinos')]);
     for (const d of list) {
-      const secure = /^rtmps:/i.test(d.server.trim());
-      rows.push([secure ? 'ok' : 'warn', d.name || d.platform, (d.aspect === '9:16' ? 'recebe a saída 9:16' : 'recebe a saída 16:9') + ' · ' + (secure ? 'RTMPS (criptografado)' : 'RTMP sem criptografia: use o endereço rtmps:// se a plataforma oferecer') + ' · conexão própria, com reconexão automática']);
+      const proto = protocolOf(d), secure = proto === 'srt' ? !!(d.passphrase || '').trim() : proto === 'whip' ? true : /^rtmps:/i.test(d.server.trim());
+      const how = proto === 'srt' ? (secure ? 'SRT com senha (AES)' : 'SRT sem senha: defina uma senha se o servidor aceitar') + ' · latência ' + (d.latency || 2000) + ' ms'
+        : proto === 'whip' ? 'WHIP · WebRTC criptografado (DTLS-SRTP) · atraso abaixo de 1 s · codificação própria na mesa'
+        : secure ? 'RTMPS (criptografado)' : 'RTMP sem criptografia: use o endereço rtmps:// se a plataforma oferecer';
+      rows.push([secure ? 'ok' : 'warn', d.name || d.platform, (d.aspect === '9:16' ? 'recebe a saída 9:16' : 'recebe a saída 16:9') + ' · ' + how + ' · ' + (d.start === 'standby' ? 'em espera, entra no ar quando você quiser' : 'no ar ao iniciar') + ' · conexão própria, com reconexão automática']);
     }
     if (list.length) rows.push(['ok', 'Upload', 'reserve ' + Math.ceil((rateH * h.length + rateV * v.length) * 1.3) + ' Mbps estáveis de upload para ' + list.length + (list.length === 1 ? ' destino' : ' destinos')]);
     if (streaming() && !list.length) rows.push(['warn', 'Destinos', 'Nenhum destino pronto: informe servidor e chave.']);
@@ -271,7 +328,7 @@
       make('p', 'tx-comp-note', 'Diretrizes conferidas: YouTube (encoder settings), Meta/Facebook (Live Video API) e Twitch. Cada envio real é medido no Diagnóstico.'));
   }
   function paintButtons() {
-    const on = streaming() ? active().length : 0, busy = busyTx(), dests = on ? ' · ' + on + (on === 1 ? ' DESTINO' : ' DESTINOS') : '';
+    const on = streaming() ? (busyTx() ? model.destinations.filter(airing).length : onAtStart().length) : 0, busy = busyTx(), dests = on ? ' · ' + on + (on === 1 ? ' DESTINO' : ' DESTINOS') : '';
     startButton.textContent = liveTx.phase === 'stopping' ? 'ENCERRANDO…' : busy ? '■ PARAR' : model.mode === 'record' ? '● GRAVAR' : model.mode === 'both' ? '▶ TRANSMITIR + GRAVAR' + dests : '▶ TRANSMITIR' + dests;
     startButton.dataset.mode = model.mode;
     for (const b of modeButtons) { const sel = b.dataset.mode === model.mode; b.setAttribute('aria-checked', String(sel)); b.setAttribute('aria-pressed', String(sel)); b.disabled = busy; }
@@ -301,7 +358,7 @@
     if (!captureTypes.length) { txStatus('Este navegador não oferece o formato de captura necessário. Use Chrome ou Edge.'); return; }
     const epoch = ++liveTx.epoch; liveTx.phase = 'preparing'; live.states.clear(); live.recording = null; live.recorded = null; sync(); txStatus('Preparando saída PROGRAM…');
     try {
-      const session = await checkBridge(); if (epoch !== liveTx.epoch) return;
+      const session = await checkBridge(); if (epoch !== liveTx.epoch) return; liveTx.apiToken = session?.token;
       if (!session?.ffmpegReady) throw Error('Codificador indisponível. Execute INSTALAR.bat e INICIAR.bat.');
       if (session.busy) throw Error('Outra aba já está transmitindo. Encerre-a antes de continuar.');
       if (session.license && !session.license.valid) throw Error(session.license.message);
@@ -452,7 +509,10 @@
       if (engine === 'webm') buildStandard();
       const dual = needV;
       const socket = new WebSocket('ws://' + location.host + '/publish', 'andromeda.' + session.token); liveTx.socket = socket; liveTx.pending = 0; liveTx.notice = sizeNote; liveTx.phase = 'connecting';
-      for (const d of targets) live.states.set(d.id, { state: 'connecting' });
+      // Cada destino começa no ar ou em espera. RTMP/SRT vão ao distribuidor do serviço; WHIP sai direto da mesa (WebRTC).
+      const serverTargets = targets.filter(d => protocolOf(d) !== 'whip'), whipTargets = targets.filter(d => protocolOf(d) === 'whip');
+      live.sent = new Set(serverTargets.map(d => d.id)); live.rates.clear();
+      for (const d of targets) live.states.set(d.id, { state: d.start === 'standby' ? 'standby' : 'connecting' });
       sync(); txStatus('Conectando o codificador…');
       liveTx.stopTimer = setTimeout(() => { if (epoch === liveTx.epoch && liveTx.phase !== 'sending') finishTransport('O codificador não iniciou o envio. Confira a conexão e tente de novo.'); }, 35000);
       // Com dois formatos, cada pedaço leva 1 byte de canal: 0 = 16:9, 1 = 9:16.
@@ -531,7 +591,7 @@
         if (vertical) { recorderV = fresh; liveTx.recorderV = fresh; } else { recorder = fresh; liveTx.recorder = fresh; }
         pipe(fresh, vertical ? 1 : 0); fresh.start(100);
       };
-      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: targets.map(d => ({ id: d.id, platform: d.platform, name: d.name, server: d.server.trim(), key: d.key.trim(), aspect: d.aspect || '16:9' })), record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: planBPreset || model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
+      socket.onopen = () => { if (epoch !== liveTx.epoch) return; socket.send(JSON.stringify({ type: 'start', resolution: outRes, bitrate: outBitrate, encoder: selectedEncoder, destinations: serverTargets.map(payload), whip: { h: whipTargets.filter(d => d.aspect !== '9:16').length, v: whipTargets.filter(d => d.aspect === '9:16').length }, record: model.record ? { dir: model.dir, formats: recFormats } : null, vertical: { resolution: '1080p', bitrate: vRate() }, channels: dual ? 2 : 1, avSyncMs: liveTx.calibrating ? 0 : avSyncFor(engine), engine, preset: planBPreset || model.preset || 'veryfast', resync: true, calibrate: !!liveTx.calibrating })); };
       socket.onmessage = event => {
         if (epoch !== liveTx.epoch) return; let msg; try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ready') { try { const groups = msg.groups || ['h']; groupsReady = groups; if (engine === 'native') startNative(groups); else { if (groups.includes('h') || !dual) { if (recorder.state === 'inactive') recorder.start(100); } else liveTx.recorder = null; if (recorderV && groups.includes('v') && recorderV.state === 'inactive') recorderV.start(100); } navigator.wakeLock?.request('screen').then(lock => { if (epoch === liveTx.epoch) liveTx.wakeLock = lock; else lock.release(); }).catch(() => {}); txStatus('Enviando PROGRAM ao codificador…');
@@ -542,19 +602,27 @@
         else if (msg.type === 'recording') { if (live.recording?.epoch !== epoch) live.files = []; live.recording = { ...msg, epoch }; paintButtons(); }
         else if (msg.type === 'recorded') { live.recorded = msg; live.files.push(msg); log('Gravação ' + (msg.format || '') + ' salva: ' + msg.file); summary(); }
         else if (msg.type === 'destination') {
-          live.states.set(msg.id, { state: msg.state, reason: msg.reason || '' }); paintStatus();
-          const d = model.destinations.find(x => x.id === msg.id);
-          if (msg.state === 'retrying') log((d?.name || 'Destino') + ': ' + msg.reason + ' — reconectando'); else if (msg.state === 'sending') log((d?.name || 'Destino') + ' voltou a receber');
+          const before = live.states.get(msg.id)?.state;
+          // Aviso (servidor suspeito) não apaga o estado de conexão: só acrescenta o motivo.
+          live.states.set(msg.id, msg.state === 'warning' && before ? { ...live.states.get(msg.id), reason: msg.reason } : { state: msg.state, reason: msg.reason || '' }); paintStatus(); paintButtons();
+          const d = model.destinations.find(x => x.id === msg.id), name = d?.name || 'Destino';
+          if (msg.state === 'retrying' && before !== 'retrying') log(name + ': ' + msg.reason + ' — reconectando sozinho');
+          else if (msg.state === 'sending' && before !== 'sending') log(name + (before === 'retrying' ? ' voltou ao ar' : ' no ar'));
+          else if (msg.state === 'off' && before && before !== 'off' && liveTx.phase === 'sending') log(name + ' saiu do ar');
+          else if (msg.state === 'error') log(name + ': ' + msg.reason);
         }
+        // Resumo das saídas do serviço (mesmo computador, mesmo relógio): taxa real e hora em que cada destino entrou no ar.
+        else if (msg.type === 'outputs') { for (const o of msg.list || []) if (o.state === 'sending') live.rates.set(o.id, { kbps: o.kbps, since: o.since || 0 }); else live.rates.delete(o.id); paintStatus(); }
         else if (msg.type === 'sending' && liveTx.phase !== 'stopping') {
           if (liveTx.phase !== 'sending') {
             clearTimeout(liveTx.stopTimer); liveTx.startedAt = Date.now(); state.liveSecs = 0;
-            for (const [id, s] of live.states) if (s.state === 'connecting') live.states.set(id, { state: 'sending' });
-            log(targets.length ? 'No ar: ' + targets.map(d => d.name).join(', ') + (model.record ? ' + gravação' : '') : 'Gravação iniciada');
+            const first = targets.filter(d => d.start !== 'standby'), waiting = targets.filter(d => d.start === 'standby');
+            for (const d of whipTargets) if (d.start !== 'standby') startWhip(d);
+            log(targets.length ? 'Programa no ar' + (first.length ? ': ' + first.map(d => d.name).join(', ') : ' (nenhum destino ligado ainda)') + (waiting.length ? ' · em espera: ' + waiting.map(d => d.name).join(', ') : '') + (model.record ? ' + gravação' : '') : 'Gravação iniciada');
           }
           liveTx.phase = 'sending'; if (!liveTx.calibrating) state.live = true; liveTx.frames = msg.frames; sync();
-          const trouble = [...live.states.values()].filter(s => s.state === 'retrying').length;
-          txStatus((liveTx.notice ? liveTx.notice + ' — ' : '') + (targets.length ? 'Enviando para ' + targets.length + ' destino(s)' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Confirme a prévia em cada plataforma.' : '. Só gravando: nada vai para as plataformas.'));
+          const states = [...live.states.values()].map(s => s.state), trouble = states.filter(s => s === 'retrying').length, airCount = states.filter(s => s === 'sending').length;
+          txStatus((liveTx.notice ? liveTx.notice + ' — ' : '') + (targets.length ? airCount + ' de ' + targets.length + ' destino(s) no ar' : 'Gravando') + ' · ' + msg.frames + ' quadros' + (trouble ? ' · ' + trouble + ' reconectando' : '') + (targets.length ? '. Cada destino entra e sai do ar no próprio cartão.' : '. Só gravando: nada vai para as plataformas.'));
         }
         else if (msg.type === 'health') { liveTx.health = msg; }
         else if (msg.type === 'restart') { if (engine === 'native') nativeSession?.restart(msg.group); else reopen(msg.group); log(msg.message); }
@@ -568,6 +636,65 @@
     } catch (e) { if (epoch === liveTx.epoch) finishTransport(e.name === 'NotAllowedError' ? 'Permissão de microfone negada. Autorize o navegador ou use somente o mixer das fontes.' : e.message); }
   }
   window.startBroadcast = startBroadcast;
+
+  /* ---------- cada destino entra e sai do ar sozinho, com a live rodando ---------- */
+
+  function enterAir(d) {
+    if (liveTx.phase !== 'sending' || !complete(d)) return;
+    if (protocolOf(d) === 'whip') { startWhip(d); return; }
+    const socket = liveTx.socket; if (socket?.readyState !== WebSocket.OPEN) return;
+    live.states.set(d.id, { state: 'connecting', reason: '' }); live.sent.add(d.id);
+    socket.send(JSON.stringify({ type: 'output', id: d.id, action: 'start', destination: { ...payload(d), on: true } }));
+    window.andromedaAudit?.('info', 'destino-ligado', d.name + ': entrando no ar pela mesa'); paintStatus(); paintButtons();
+  }
+  function leaveAir(d) {
+    if (protocolOf(d) === 'whip') { live.whip.get(d.id)?.stop(); return; }
+    const socket = liveTx.socket; if (socket?.readyState !== WebSocket.OPEN) return;
+    live.states.set(d.id, { state: 'stopping', reason: '' });
+    socket.send(JSON.stringify({ type: 'output', id: d.id, action: 'stop' }));
+    paintStatus(); paintButtons();
+  }
+
+  // WHIP: imagem do PROGRAM (ou da saída 9:16) e som da mesa, direto por WebRTC. Uma sessão por destino, cada uma independente.
+  function whipTrack(aspect) {
+    liveTx.whipTracks = liveTx.whipTracks || {};
+    const current = liveTx.whipTracks[aspect];
+    if (current && current.readyState === 'live') return current;
+    const canvas = aspect === '9:16' ? window.andromedaVertical?.canvas : programOutput;
+    if (!canvas?.captureStream) return null;
+    return (liveTx.whipTracks[aspect] = canvas.captureStream(30).getVideoTracks()[0]);
+  }
+  function startWhip(d) {
+    if (!window.AndromedaWhip || !window.RTCPeerConnection) { live.states.set(d.id, { state: 'error', reason: 'WebRTC indisponível nesta mesa.' }); paintStatus(); return; }
+    let session = live.whip.get(d.id);
+    if (!session) {
+      const video = whipTrack(d.aspect || '16:9'), audio = window.audioMixer?.destination?.stream.getAudioTracks()[0];
+      if (!video) { live.states.set(d.id, { state: 'error', reason: 'A saída ' + (d.aspect || '16:9') + ' não está disponível.' }); paintStatus(); return; }
+      session = window.AndromedaWhip.create({
+        url: d.server.trim(), token: d.key.trim(), video, audio, apiToken: liveTx.apiToken,
+        bitrate: (d.aspect === '9:16' ? vRate() : Math.min(model.bitrate, 12)) * 1e6,
+        onState: (state, reason) => {
+          const before = live.states.get(d.id)?.state;
+          live.states.set(d.id, { state, reason: reason || '' });
+          if (state === 'sending') { if (!live.rates.get(d.id)?.since) live.rates.set(d.id, { kbps: 0, since: Date.now() }); if (before !== 'sending') { log(d.name + ' no ar (WHIP)'); window.andromedaAudit?.('info', 'destino-no-ar', d.name + ' no ar (WHIP)'); } }
+          else { if (state !== 'retrying') live.rates.delete(d.id); if (state === 'retrying' && before !== 'retrying') { log(d.name + ': ' + reason); window.andromedaAudit?.('warn', 'destino-reconectando', d.name + ': ' + reason); } if (state === 'off' && before === 'sending') log(d.name + ' saiu do ar'); }
+          paintStatus(); paintButtons();
+        },
+        onStats: st => { const r = live.rates.get(d.id); if (r) r.kbps = st.kbps; },
+      });
+      live.whip.set(d.id, session);
+    }
+    session.start();
+  }
+  function stopAllWhip() {
+    for (const s of live.whip.values()) { try { s.stop(); } catch { /* já parada */ } }
+    live.whip.clear();
+    for (const t of Object.values(liveTx.whipTracks || {})) { try { t.stop(); } catch { /* já parada */ } }
+    liveTx.whipTracks = {};
+  }
+  // Ao encerrar a live (pelo operador ou por falha), as sessões WHIP terminam junto.
+  const baseFinish = finishTransport;
+  finishTransport = function (error) { stopAllWhip(); return baseFinish(error); };
   startButton.onclick = () => busyTx() ? stopTransport() : startBroadcast();
 
   const pgmHealth = make('small');
