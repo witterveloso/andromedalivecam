@@ -661,6 +661,8 @@ body[data-tally="program"] #elapsed::before { content: ""; display: inline-block
   .ident > * { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dock { padding-top: 10px; }
   .meter-row { gap: 8px; }
+  /* O medidor ocupa o que sobra da linha: o timecode com a luz de REC nunca sai da tela. */
+  .vu { flex: 1 1 0; width: auto; min-width: 0; }
 }
 
 /* ---------- celular deitado (horizontal) ---------- */
@@ -705,3 +707,16 @@ body[data-tally="program"] #elapsed::before { content: ""; display: inline-block
 }
 /* Tela de boas-vindas no mesmo desenho de placas. */
 .steps li, .btn { border-radius: var(--tile-r); }
+
+/* DTV falando (0.35.1): aviso discreto quando a voz do diretor chega no retorno. Não recebe toque e não cobre o centro da imagem. */
+.dtv-talking { position: fixed; z-index: 7; left: 50%; top: calc(62px + var(--safe-t)); transform: translateX(-50%); margin: 0; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 8px; border-radius: 4px;
+  background: rgba(20, 8, 40, .86); border: 1px solid rgba(139, 0, 255, .75); color: #e3ccff; font: 800 10.5px/1 var(--sans); letter-spacing: .14em; }
+.dtv-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.dtv-bars i { width: 3px; height: 100%; border-radius: 1px; background: #b57bff; animation: dtv-bar .7s ease-in-out infinite alternate; }
+.dtv-bars i:nth-child(2) { animation-delay: -.25s; }
+.dtv-bars i:nth-child(3) { animation-delay: -.5s; }
+@keyframes dtv-bar { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+.dtv-bars i { transform-origin: bottom; }
+@media (orientation: portrait) { .dtv-talking { top: calc(210px + var(--safe-t)); } }
+@media (orientation: landscape) { .dtv-talking { left: calc((100% - var(--rail, 0px)) / 2); } }

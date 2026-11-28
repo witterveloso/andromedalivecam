@@ -23,6 +23,11 @@
   - Girar o celular com a câmera ligada (ou no ar) gira a imagem junto, sem desligar a câmera e sem cair da mesa.
   - Na mesa, em produção vertical 9:16, a câmera em pé preenche a tela inteira. Em produção horizontal, ela aparece inteira, com fundo desfocado dos lados.
   - Antes, o app sempre pedia imagem deitada e mostrava "Gire o celular".
+- **Andrômeda Cam: retorno do DTV sempre ligado.** Toda câmera recebe o DTV nos fones sozinha, sem botão para liberar o retorno.
+  - O único botão do intercom no celular é chamar o DTV (SEGURE P/ FALAR).
+  - Quando o DTV fala, aparece um aviso discreto "DTV FALANDO" no alto da imagem, com barrinhas de áudio. O aviso some quando ele para de falar.
+  - Se o aparelho segurar o som mesmo assim, o primeiro toque em qualquer lugar da tela libera o retorno, sem aviso.
+  - Testado na mesa: o retorno tocou sozinho no celular, o aviso apareceu quando o DTV falou e sumiu quando ele parou, com a live no ar.
 - **Andrômeda Cam: visual broadcast, em pé e deitado.** O visor virou um painel de câmera de transmissão, com placas escuras sólidas e cantos retos, sem vidro desfocado por cima da imagem.
   - **Topo:** tarja NO AR / PREVIEW, nome da câmera e botões, numa linha só.
   - **Ajustes** (lente, formato, zoom, WB, exposição, estabilização, foco) como painel de instrumentos. Deitado, ficam num trilho vertical à esquerda e o ajuste abre ao lado. Em pé, ficam numa grade logo abaixo do topo, todos à vista.

@@ -48,8 +48,17 @@ const until = async (fn, ms, what) => { const end = Date.now() + ms; while (Date
     await until(() => desk.evaluate(() => { const p = camDesk.peers.get('0:media'); return !!p && !p.pc._antiga && p.pc.connectionState === 'connected'; }), 30000, 'imagem de volta pelo caminho novo');
     assert(await cam.evaluate(() => cam.ws._mesma === true), 'sem reconectar à mesa (mesma conexão)');
     assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a troca de rede');
+    // Retorno do DTV sempre ligado: sem botão para liberar; quando o DTV fala, o celular mostra "DTV FALANDO" e apaga quando ele para.
+    assert(await cam.evaluate(() => q('#hear').hidden), 'sem botão de liberar o retorno');
+    await desk.click('#dtvEnable'); await until(() => desk.evaluate(() => !$('#dtvTalk').disabled), 15000, 'intercom do DTV habilitado');
+    await until(() => cam.evaluate(() => { const a = q('#returnAudio'); return !!a.srcObject && !a.paused; }), 15000, 'retorno do DTV tocando sozinho no celular');
+    assert(await cam.evaluate(() => q('#dtvTalking').hidden), 'sem aviso enquanto o DTV não fala');
+    await desk.evaluate(() => setDtvTalk(true));
+    await until(() => cam.evaluate(() => !q('#dtvTalking').hidden && document.body.dataset.dtv === 'on'), 15000, 'aviso DTV FALANDO no celular');
+    await desk.evaluate(() => setDtvTalk(false));
+    await until(() => cam.evaluate(() => q('#dtvTalking').hidden), 15000, 'aviso some quando o DTV para de falar');
     await desk.evaluate(() => stopTransport()); await until(() => desk.evaluate(() => liveTx.phase === 'idle'), 20000, 'live encerrada');
     assert.deepEqual(errors.filter(e => !/play\(\)|AbortError/.test(e)), []);
-    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, trocou de rede sem cair, live seguiu no ar');
+    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, trocou de rede sem cair, retorno do DTV sempre ligado com aviso DTV FALANDO, live seguiu no ar');
   } finally { await browser.close(); server.kill(); pages.close(); rede.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

@@ -136,9 +136,32 @@ talk.onkeydown = e => { if ([' ', 'Enter'].includes(e.key)) { e.preventDefault()
 talk.onkeyup = () => ptt(false);
 window.addEventListener('blur', () => ptt(false));
 
-q('#hear').onclick = () => q('#returnAudio').play()
-  .then(() => say('Retorno do DTV liberado. Use fones.', 'ok'))
-  .catch(() => say('O retorno estará disponível quando o intercom conectar.', 'info'));
+/* ---------- retorno do DTV: sempre ligado ----------
+ * Toda Andrômeda Cam recebe o DTV sem botão para liberar: o som do retorno começa sozinho quando o intercom conecta.
+ * O navegador já deixa tocar porque a página está usando câmera e microfone (e o toque em ATIVAR conta como gesto).
+ * Se mesmo assim o aparelho segurar o som, o primeiro toque em qualquer lugar da tela libera, sem aviso nem botão.
+ * O único controle do intercom no celular é chamar o DTV (SEGURE P/ FALAR). Quando o DTV fala, aparece "DTV FALANDO". */
+function playReturn() {
+  const a = q('#returnAudio'); if (!a.srcObject || !a.play) return;
+  a.muted = false; a.play().then(() => { cam.returnBlocked = false; }, () => { cam.returnBlocked = true; });
+}
+document.addEventListener('pointerdown', () => { if (cam.returnBlocked) playReturn(); if (cam.ac?.state === 'suspended') cam.ac.resume().catch(() => {}); }, true);
+// Voz do DTV chegando: medida no próprio retorno (a mesa só abre o microfone do DTV enquanto ele fala).
+const dtv = { lastVoice: 0, on: false };
+function watchDtv(stream) {
+  try { if (!cam.ac) return; cam.dtvMeter = cam.ac.createAnalyser(); cam.dtvMeter.fftSize = 1024; cam.ac.createMediaStreamSource(stream).connect(cam.dtvMeter); } catch { cam.dtvMeter = null; }
+}
+function showDtv(on) {
+  if (dtv.on === on) return; dtv.on = on;
+  root.dataset.dtv = on ? 'on' : 'off'; const el = q('#dtvTalking'); if (el) el.hidden = !on;
+}
+setInterval(() => {
+  const m = cam.dtvMeter; if (!m || !cam.running) { showDtv(false); return; }
+  const a = new Float32Array(m.fftSize); m.getFloatTimeDomainData(a);
+  const rms = Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length), now = Date.now();
+  if (rms > 0.008) dtv.lastVoice = now; // acima de cerca de −42 dBFS: voz, não ruído de linha
+  showDtv(now - dtv.lastVoice < 900);
+}, 120);
 
 /* ---------- lentes e dispositivos ---------- */
 
@@ -365,8 +388,8 @@ async function makePeer(lane) {
     cam.intercomTrack = cam.stream.getAudioTracks()[0].clone(); cam.intercomTrack.enabled = false;
     pc.addTrack(cam.intercomTrack, new MediaStream([cam.intercomTrack]));
     pc.ontrack = e => {
-      q('#returnAudio').srcObject = e.streams[0] || new MediaStream([e.track]);
-      q('#returnAudio').play().catch(() => say('Toque em “Liberar retorno do DTV” para ouvir nos fones.', 'warn'));
+      const stream = e.streams[0] || new MediaStream([e.track]);
+      q('#returnAudio').srcObject = stream; playReturn(); watchDtv(stream);
     };
   }
   pc.onconnectionstatechange = () => {
@@ -592,7 +615,7 @@ function stop() {
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
   cam.stream?.getTracks().forEach(t => t.stop()); cam.stream = null; q('#view').srcObject = null;
-  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null;
+  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null; cam.dtvMeter = null; showDtv(false);
   cam.wake?.release().catch(() => {}); cam.wake = null;
   if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
   setStartLabel(localTest ? 'ATIVAR TESTE' : cam.key ? 'ATIVAR CÂMERA' : 'CONECTAR');
@@ -737,7 +760,7 @@ if (localTest) {
   q('#invite').disabled = true; q('#inviteApply').disabled = true; q('#bitrate').disabled = true; q('#ptt').disabled = true;
   q('#notice').textContent = 'Teste local: câmera, microfone e lentes funcionam. Tally e intercom dependem da mesa.';
   q('#localTest').textContent = 'Sair do teste local';
-  q('#hear').textContent = 'Ouvir microfone nos fones';
+  q('#hear').hidden = false; q('#hear').textContent = 'Ouvir microfone nos fones';
   q('#hear').onclick = async () => {
     if (!cam.running) { say('Ative o teste primeiro.', 'warn'); return; }
     const a = q('#returnAudio');
