@@ -1612,9 +1612,9 @@ body.second-screen { margin: 0; padding: 8px; min-height: 100vh; box-sizing: bor
 .prod-note { margin: 0; color: var(--d-muted); font-size: 12px; line-height: 1.5; }
 .prod-format[data-vertical="true"] .prod-note { color: var(--d-text); }
 .prod-note[data-tone="bad"] { color: #ff8fa3; }
-/* Produção vertical: os monitores PGM e PREVIEW mostram a tela em pé inteira, centralizada no quadro do monitor. */
-/* A área dos lados é só a moldura do monitor (hachurada = fora do quadro); a imagem que vai ao ar é a parte em pé, sem bordas. */
-body.prod-vertical #monProgram > canvas, body.prod-vertical #monPreview > canvas { object-fit: contain; background: repeating-linear-gradient(135deg, #05060f 0 9px, #0d1130 9px 18px); }
+/* Produção vertical: os monitores PGM e PREVIEW mostram a tela em pé inteira, centralizada, com bordas pretas dos lados (como numa TV);
+   as bordas são só do monitor da mesa e não vão ao ar. */
+body.prod-vertical #monProgram > canvas, body.prod-vertical #monPreview > canvas { object-fit: contain; background: #000; }
 body.prod-vertical #monProgram .effects-monitor { object-fit: contain; }
 body.prod-vertical #monProgram::after, body.prod-vertical #monPreview::after { content: "VERTICAL 9:16"; position: absolute; top: 40px; left: 8px; z-index: 3; padding: 2px 6px; border-radius: 4px; background: rgba(0, 0, 0, .65); color: var(--brand-blue); font: 700 10px var(--d-mono); letter-spacing: .08em; pointer-events: none; }
 

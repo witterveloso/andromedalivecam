@@ -1,5 +1,10 @@
 # Andrômeda Live 0.35 — Multiplataforma, produção vertical 9:16, Gravação Andrômeda, ponto sem a própria voz e pacote de GCs
 
+## 0.35.1
+- **Produção vertical 9:16: bordas pretas nos monitores.** No PGM/AR e no PREVIEW, a imagem em pé aparece centralizada com bordas pretas lisas dos lados, como numa TV. Antes, os lados eram listrados. As bordas são só do monitor da mesa: o que vai ao ar continua sendo a imagem em pé inteira, sem bordas.
+- **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.
+
+
 ## Várias plataformas ao mesmo tempo, com gravação junto
 A mesa monta e codifica **uma imagem só** (16:9). O serviço Andrômeda distribui essa imagem para cada destino e cria dela a versão 9:16 para Instagram e TikTok, usando a placa de vídeo quando houver (Intel Quick Sync, NVIDIA, AMD).
 
@@ -20,7 +25,7 @@ Na produção vertical:
 
 - **O PGM fica em pé (1080×1920, 30 fps)** e sai como uma imagem só, sem recorte, para todos os destinos 9:16 e para a gravação.
 - **Sem bordas laterais.** Câmeras deitadas (16:9) preenchem a tela em pé. Celulares em pé ocupam a tela inteira.
-- **Monitores PGM e PREVIEW em pé**, com o selo VERTICAL 9:16. A área hachurada dos lados é só a moldura do monitor e não vai ao ar.
+- **Monitores PGM e PREVIEW em pé**, com o selo VERTICAL 9:16 e bordas pretas dos lados. As bordas são só do monitor da mesa e não vão ao ar.
 - **GC, logotipo e janela se ajustam à tela em pé.** O GC de baixo fica acima da área de comentários do Instagram e do TikTok.
 - **O mosaico se reorganiza na vertical.**
 - **Destinos 16:9 ficam de fora.** A mesa avisa antes de começar e não deixa um destino 16:9 entrar numa live vertical.
