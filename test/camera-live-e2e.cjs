@@ -41,8 +41,15 @@ const until = async (fn, ms, what) => { const end = Date.now() + ms; while (Date
     await cam.close(); cam = await join();
     await until(async () => (await desk.evaluate(() => !!cams[0].conn)) && !!(await frames()), 40000, 'câmera de volta pelo mesmo link');
     assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a reconexão');
+    // Troca de rede sem cair (Wi-Fi ↔ 5G): o caminho da imagem cai; o celular refaz só ele, na MESMA conexão com a mesa.
+    await desk.evaluate(() => { camDesk.peers.get('0:media').pc._antiga = true; });
+    const repathed = await cam.evaluate(async () => { cam.ws._mesma = true; cam.pcs.get('media').pc.close(); return await repath('network'); });
+    assert.equal(repathed, true, 'o celular refez o caminho da imagem');
+    await until(() => desk.evaluate(() => { const p = camDesk.peers.get('0:media'); return !!p && !p.pc._antiga && p.pc.connectionState === 'connected'; }), 30000, 'imagem de volta pelo caminho novo');
+    assert(await cam.evaluate(() => cam.ws._mesma === true), 'sem reconectar à mesa (mesma conexão)');
+    assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a troca de rede');
     await desk.evaluate(() => stopTransport()); await until(() => desk.evaluate(() => liveTx.phase === 'idle'), 20000, 'live encerrada');
     assert.deepEqual(errors.filter(e => !/play\(\)|AbortError/.test(e)), []);
-    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, live seguiu no ar');
+    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, trocou de rede sem cair, live seguiu no ar');
   } finally { await browser.close(); server.kill(); pages.close(); rede.close(); }
 })().catch(e => { console.error(e); process.exit(1); });

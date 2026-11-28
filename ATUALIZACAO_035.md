@@ -12,6 +12,11 @@
   - A Cloudflare e o servidor da empresa, quando configurados, somam caminhos a ela, e o celular usa o primeiro que funcionar.
   - A tela "Rede móvel (4G/5G)" mostra os caminhos ligados (por exemplo "Rede Andrômeda + Cloudflare") e permite remover cada extra.
   - Com a chave da Cloudflare salva uma vez, a câmera chega no 4G/5G mesmo com o roteador fechado.
+- **Andrômeda Cam: troca de rede sem cair.**
+  - Quando o celular troca de rede (o Wi-Fi some, ou passa do Wi-Fi para o 5G e vice-versa), o app refaz só o caminho da imagem pelo sinal novo, na mesma conexão com a mesa. Leva cerca de 1 a 2 s.
+  - Antes, o app esperava 6 s e reconectava tudo.
+  - Se ainda assim não voltar, reconecta tudo, como antes.
+  - Testado: no ensaio com a live no ar, o caminho da imagem foi derrubado e voltou pelo caminho novo, sem reconectar à mesa e sem tirar a live do ar.
 - **Andrômeda Cam: PARAR com confirmação.** O primeiro toque em PARAR só arma: o botão mostra "TOQUE DE NOVO". O segundo toque, em até 3 s, desliga a câmera. Sem o segundo toque, volta a PARAR. Assim um toque sem querer não derruba a câmera no ar.
 - **Andrômeda Cam: tarja menor.** A tarja de PREVIEW / NO AR / EM ESPERA ficou menor e tapa menos a imagem.
 - **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.

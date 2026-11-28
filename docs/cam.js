@@ -325,6 +325,16 @@ function opusBroadcast(sdp) {
   const add = cur => { const have = Object.fromEntries(cur.split(';').filter(Boolean).map(kv => kv.split('='))); return Object.entries({ ...have, ...want }).map(([k, v]) => k + '=' + v).join(';'); };
   return line.test(sdp) ? sdp.replace(line, (_, cur) => 'a=fmtp:' + pt + ' ' + add(cur)) : sdp.replace(new RegExp('(a=rtpmap:' + pt + ' opus\\/48000\\/2[^\\r\\n]*\\r?\\n)', 'i'), '$1a=fmtp:' + pt + ' ' + add('') + '\r\n');
 }
+// Troca de rede sem cair (Wi-Fi ↔ 4G/5G): refaz só o caminho da imagem, na mesma conexão com a mesa (a mesa troca a conexão
+// velha pela nova ao receber a oferta). Bem mais rápido que derrubar e reconectar tudo.
+async function repath(reason) {
+  if (!cam.running || cam.repathing || cam.ws?.readyState !== 1) return false;
+  const media = cam.pcs.get('media')?.pc; if (media && media.connectionState === 'connected') return false;
+  cam.repathing = true;
+  try { cleanPeers(); await makePeer('media'); await makePeer('intercom'); say(reason === 'network' ? 'Rede mudou: imagem seguindo pelo sinal novo…' : 'Sinal oscilou: refazendo o caminho da imagem…', 'info'); return true; }
+  catch { return false; }
+  finally { cam.repathing = false; }
+}
 async function makePeer(lane) {
   const pc = new RTCPeerConnection({ iceServers: cam.ice }), p = { pc, queue: [] };
   cam.pcs.set(lane, p);
@@ -357,7 +367,9 @@ async function makePeer(lane) {
       // "disconnected" é muitas vezes passageiro (troca de antena, Wi-Fi → 5G): o WebRTC se recupera sozinho em segundos.
       // Só refaz a conexão se continuar sem caminho; "failed" refaz logo.
       clearTimeout(cam.retry);
-      cam.retry = setTimeout(() => { if (cam.running && cam.pcs.get('media')?.pc === pc && pc.connectionState !== 'connected') cam.ws?.close(); }, pc.connectionState === 'failed' ? 1000 : 6000);
+      // Primeiro refaz só o caminho da imagem (1,5 s); se ainda assim não voltar, reconecta tudo.
+      if (pc.connectionState === 'disconnected') setTimeout(() => { if (cam.running && cam.pcs.get('media')?.pc === pc && pc.connectionState !== 'connected') repath('signal'); }, 1500);
+      cam.retry = setTimeout(() => { const now = cam.pcs.get('media')?.pc; if (cam.running && (!now || now.connectionState !== 'connected')) cam.ws?.close(); }, pc.connectionState === 'failed' ? 1000 : 8000);
     }
   };
   const offer = await pc.createOffer(); if (lane === 'media') offer.sdp = opusBroadcast(offer.sdp);
@@ -591,7 +603,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', stop);
 // A rede do celular voltou ou mudou (Wi-Fi ↔ 5G): reconecta o ponto de encontro já, sem esperar a conexão velha cair.
 window.addEventListener('online', () => { if (cam.running) cam.channel?.reconnect?.(); });
-navigator.connection?.addEventListener?.('change', () => { if (cam.running && navigator.onLine) cam.channel?.reconnect?.(); });
+navigator.connection?.addEventListener?.('change', () => { if (cam.running && navigator.onLine) { cam.channel?.reconnect?.(); setTimeout(() => repath('network'), 800); } });
 window.addEventListener('offline', () => { tally('offline'); ptt(false); say('Sem rede. Aguardando reconexão.', 'warn'); cam.ws?.close(); });
 
 /* ---------- telemetria ---------- */
