@@ -570,7 +570,7 @@ document.addEventListener('keydown', wakeHud, { capture: true });
 async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request('screen'); } catch { /* o sistema pode negar */ } }
 
 function stop() {
-  clearTimeout(stopArmed); stopArmed = null; q('#start').dataset.confirm = '';
+  clearTimeout(stopTimer); stopTimer = null; stopArmed = 0; q('#start').dataset.confirm = '';
   cam.running = false; cam.generation++; clearTimeout(cam.retry); clearTimeout(cleanTimer); root.dataset.clean = 'off';
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
@@ -589,11 +589,11 @@ function stop() {
 }
 
 // PARAR pede confirmação: o primeiro toque só arma (3 s); o segundo toque para. Evita derrubar a câmera sem querer no ar.
-let stopArmed = null;
-function disarmStop() { clearTimeout(stopArmed); stopArmed = null; q('#start').dataset.confirm = ''; if (cam.running) setStartLabel('PARAR'); }
+let stopArmed = 0, stopTimer = null; // horário do 1º toque em PARAR (0 = não armado)
+function disarmStop() { clearTimeout(stopTimer); stopTimer = null; stopArmed = 0; q('#start').dataset.confirm = ''; if (cam.running) setStartLabel('PARAR'); }
 q('#start').onclick = () => {
-  if (!cam.running) { start(); return; }
-  if (!stopArmed) { q('#start').dataset.confirm = 'on'; setStartLabel('TOQUE DE NOVO'); say('Toque de novo em PARAR para desligar a câmera.', 'warn'); stopArmed = setTimeout(disarmStop, 3000); return; }
+  if (!cam.running) return start();
+  if (!stopArmed || Date.now() - stopArmed > 3000) { stopArmed = Date.now(); q('#start').dataset.confirm = 'on'; setStartLabel('TOQUE DE NOVO'); say('Toque de novo em PARAR para desligar a câmera.', 'warn'); clearTimeout(stopTimer); stopTimer = setTimeout(disarmStop, 3000); return; }
   disarmStop(); stop();
 };
 document.addEventListener('visibilitychange', () => {

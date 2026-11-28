@@ -25,8 +25,10 @@ test('áudio de programa limpo: sem cancelamento de eco, supressão de ruído ne
 });
 
 test('queda momentânea da rede: espera o WebRTC se recuperar antes de refazer a conexão', () => {
-  assert.match(cam, /pc\.connectionState === 'failed' \? 1000 : 6000/);
-  assert.match(cam, /pc\.connectionState !== 'connected'\) cam\.ws\?\.close\(\)/, 'só refaz se continuar sem caminho');
+  assert.match(cam, /pc\.connectionState === 'failed' \? 1000 : 8000/);
+  assert.match(cam, /now\.connectionState !== 'connected'\)\) cam\.ws\?\.close\(\)/, 'só refaz tudo se continuar sem caminho');
+  assert.match(cam, /async function repath\(reason\)/, 'antes, refaz só o caminho da imagem (troca de rede sem cair)');
+  assert.match(cam, /setTimeout\(\(\) => repath\('network'\), 800\)/, 'rede mudou: refaz o caminho na hora');
 });
 
 test('tela no ar limpa: some em 8 s sem toque, volta com qualquer toque, e nunca esconde alertas nem erros', () => {
