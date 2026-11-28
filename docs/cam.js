@@ -214,7 +214,7 @@ async function enumerate() {
   for (const [selector, kind] of [['#lens', 'videoinput'], ['#input', 'audioinput']]) {
     const select = q(selector), old = select.value;
     select.replaceChildren();
-    if (kind === 'audioinput') select.add(new Option('Padrão do sistema', ''));
+    if (kind === 'audioinput') select.add(new Option('Automático · microfone externo quando conectado', ''));
     devices.filter(d => d.kind === kind).forEach((d, i) => select.add(new Option(d.label || (kind === 'videoinput' ? 'Câmera ' : 'Microfone ') + (i + 1), d.deviceId)));
     if ([...select.options].some(o => o.value === old)) select.value = old;
   }
@@ -222,14 +222,65 @@ async function enumerate() {
   if (actual) q('#lens').value = actual || current;
   renderLenses();
 }
-navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (cam.stream) enumerate().catch(() => {}); });
+let micTimer = null;
+navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+  if (!cam.stream) return;
+  enumerate().catch(() => {});
+  // Microfone plugado ou tirado: espera o sistema terminar de listar e escolhe de novo (externo, se houver).
+  clearTimeout(micTimer); micTimer = setTimeout(() => pickMic().catch(() => {}), 700);
+});
+
+/* ---------- microfone externo: reconhecido sozinho ----------
+ * Com fio (P2/fone com microfone), USB-C, Lightning, receptor de microfone sem fio (DJI, Rode, Hollyland, Boya…) ou Bluetooth:
+ * ao conectar, o Andrômeda Cam passa a enviar esse microfone para a mesa; ao tirar, volta ao microfone do celular (áudio ambiente).
+ * Prioridade: com fio/USB antes de Bluetooth (o Bluetooth do celular grava em qualidade de telefone).
+ * Em Ajustes › Áudio dá para fixar um microfone; "Automático" volta a escolher sozinho. */
+const PHONE_MIC = /built-?in|internal|interno|integrad|iphone|ipad|speakerphone|viva-voz|bottom|top mic|front|back|rear|traseir|frontal|handset|telephone|phone mic|do telefone|do celular/i;
+const BT_MIC = /bluetooth|\bbt\b|airpods|buds|hands-?free|hfp/i;
+const EXT_MIC = /usb|type-?c|lightning|headset|head set|\bfones?\b|earphone|wired|com fio|lapela|lavalier|\blav\b|rode|shure|boya|dji|saramonic|hollyland|sennheiser|comica|synco|maono|tascam|zoom h\d|interface|line ?in|jack|extern|wireless|sem fio|mic(rophone)? \d|receiver|receptor/i;
+function micKind(d) {
+  const label = d?.label || '';
+  if (!label || ['default', 'communications'].includes(d.deviceId)) return 'phone';
+  if (BT_MIC.test(label)) return 'bluetooth';
+  if (EXT_MIC.test(label) && !(PHONE_MIC.test(label) && !/usb|headset|\bfones?\b/i.test(label))) return 'wired';
+  return 'phone';
+}
+const micName = label => String(label || '').replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').trim();
+function showMicSource() {
+  const el = q('#micSource'); if (!el) return;
+  const kind = cam.micKind || 'phone';
+  el.hidden = !cam.running; el.dataset.kind = kind;
+  el.textContent = kind === 'phone' ? 'MIC DO CELULAR' : 'MIC EXTERNO' + (cam.micLabel ? ' · ' + micName(cam.micLabel).slice(0, 28) : '');
+}
+async function pickMic(quiet = false) {
+  if (!cam.stream || !navigator.mediaDevices?.enumerateDevices) return;
+  const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  const manual = q('#input').value;
+  if (manual) { // microfone fixado em Ajustes: só confere se ainda existe
+    const d = inputs.find(x => x.deviceId === manual);
+    if (d) { cam.micKind = micKind(d); cam.micLabel = micName(d.label); showMicSource(); return; }
+    q('#input').value = '';
+  }
+  const rank = d => ({ wired: 0, bluetooth: 1 })[micKind(d)] ?? 9;
+  const ext = inputs.filter(d => rank(d) < 9).sort((a, b) => rank(a) - rank(b))[0];
+  const want = ext?.deviceId || '', track = cam.stream.getAudioTracks()[0];
+  const live = !!track && track.readyState !== 'ended';
+  if (live && want === (cam.autoMic ?? '')) return;
+  const before = cam.micKind || 'phone';
+  cam.autoMic = want; cam.micKind = ext ? micKind(ext) : 'phone'; cam.micLabel = micName(ext?.label);
+  await applyMic(true);
+  showMicSource(); send({ type: 'mic', source: cam.micKind === 'phone' ? 'phone' : 'external', label: cam.micLabel });
+  if (quiet) return;
+  if (cam.micKind !== 'phone') say('Microfone externo conectado' + (cam.micLabel ? ': ' + cam.micLabel : '') + '. É ele que vai para a mesa.' + (cam.micKind === 'bluetooth' ? ' Bluetooth tem qualidade de telefone; para o programa, prefira microfone com fio ou receptor USB.' : ''), cam.micKind === 'bluetooth' ? 'warn' : 'ok');
+  else if (before !== 'phone') say('Microfone externo desconectado. Voltou o microfone do celular (áudio ambiente).', 'warn');
+}
 
 // Áudio de programa como num equipamento de transmissão: sem cancelamento de eco, sem supressão de ruído e sem ganho
 // automático (esses filtros "bombeiam" o som, abafam música e cortam o ambiente). Com fones, não há eco a cancelar.
 // "Celular sem fones" liga o cancelamento de eco para o retorno do DTV não voltar pelo microfone.
 function audioConstraints() {
-  const noHeadphones = prefs.get('echo', '0') === '1';
-  return { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
+  const noHeadphones = prefs.get('echo', '0') === '1', id = q('#input').value || cam.autoMic || '';
+  return { deviceId: id ? { exact: id } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
     echoCancellation: noHeadphones, noiseSuppression: false, autoGainControl: false };
 }
 // A imagem acompanha o celular: em pé, sai em pé (9:16, ex. 1080×1920); deitado, sai deitada (16:9, ex. 1920×1080).
@@ -317,13 +368,19 @@ async function applyFormat() {
   say(matches ? 'Formato aplicado: ' + got + '.' : 'Este aparelho entregou ' + got + ' nesta lente (pedido: ' + q('#resolution').selectedOptions[0].text + ' · ' + fps + ' fps).', matches ? 'ok' : 'warn');
 }
 // Microfone novo: troca no envio e no intercom sem derrubar o vídeo.
-async function applyMic() {
+async function applyMic(auto = false) {
   if (!cam.stream) return;
+  if (!auto && !q('#input').value) { cam.autoMic = null; return pickMic(); } // voltou para "Automático": escolhe sozinho de novo
   const old = cam.stream.getAudioTracks()[0];
   let fresh;
   try { fresh = (await navigator.mediaDevices.getUserMedia({ video: false, audio: audioConstraints() })).getAudioTracks()[0]; }
-  catch (e) { say('Microfone não abriu: ' + captureMessage(e), 'error'); return; }
-  fresh.enabled = old ? old.enabled : true;
+  catch (e) {
+    if (auto && cam.autoMic) { cam.autoMic = ''; cam.micKind = 'phone'; cam.micLabel = ''; return applyMic(true); } // externo não abriu: fica no do celular
+    say('Microfone não abriu: ' + captureMessage(e), 'error'); return;
+  }
+  fresh.enabled = !cam.muted && !cam.talking;
+  // Microfone desconectado no meio da live (a faixa termina): escolhe de novo na hora, sem esperar a lista do sistema.
+  fresh.addEventListener('ended', () => { if (cam.stream?.getAudioTracks()[0] === fresh) { cam.autoMic = null; pickMic().catch(() => {}); } });
   if (old) { cam.stream.removeTrack(old); old.stop(); }
   cam.stream.addTrack(fresh);
   const media = cam.pcs.get('media')?.pc.getSenders().find(s => s.track?.kind === 'audio');
@@ -333,7 +390,7 @@ async function applyMic() {
   if (intercom) await intercom.replaceTrack(ic).catch(() => {});
   cam.intercomTrack?.stop(); cam.intercomTrack = ic;
   if (cam.ac && cam.meter) cam.ac.createMediaStreamSource(new MediaStream([fresh])).connect(cam.meter);
-  say('Microfone trocado: ' + (q('#input').selectedOptions[0]?.text || 'padrão') + '.', 'ok');
+  if (!auto) { const d = q('#input').selectedOptions[0]; cam.micKind = q('#input').value ? micKind({ label: d?.text, deviceId: q('#input').value }) : cam.micKind; showMicSource(); say('Microfone trocado: ' + (d?.text || 'automático') + '.', 'ok'); }
 }
 // A lista não tem mais 720p: um convite antigo que peça 1280×720 abre em 1080p.
 function setResolution(w, h) { const v = w + 'x' + h, sel = q('#resolution'); sel.value = [...sel.options].some(o => o.value === v) ? v : '1920x1080'; }
@@ -418,7 +475,7 @@ async function makePeer(lane) {
 }
 
 async function message(m) {
-  if (m.type === 'ready') { q('#cameraName').textContent = m.name; cam.ice = m.iceServers; return; }
+  if (m.type === 'ready') { q('#cameraName').textContent = m.name; cam.ice = m.iceServers; send({ type: 'mic', source: (cam.micKind || 'phone') === 'phone' ? 'phone' : 'external', label: cam.micLabel || '' }); return; }
   if (m.type === 'negotiate') { cleanPeers(); cam.ice = m.iceServers; await makePeer('media'); await makePeer('intercom'); return; }
   if (m.type === 'desk-offline') { cleanPeers(); tally('offline'); say('Mesa desconectada. Aguardando o operador abrir a mesa.', 'warn'); return; }
   if (m.type === 'tally') { cam.lastTally = Date.now(); tally(m.state); return; }
@@ -565,8 +622,10 @@ async function start() {
     await enumerate(); showCapabilities(); await preferPhysicalLens();
     cam.ac = new AudioContext(); await cam.ac.resume();
     cam.meter = cam.ac.createAnalyser(); cam.ac.createMediaStreamSource(cam.stream).connect(cam.meter);
+    // Microfone externo já conectado ao abrir: é ele que vai para a mesa (os nomes só aparecem depois da permissão).
+    cam.autoMic = ''; cam.micKind = 'phone'; cam.micLabel = ''; await pickMic(true).catch(() => {}); if (cam.micKind !== 'phone') say('Microfone externo reconhecido: ' + cam.micLabel + '.', 'ok');
     cam.running = true; cam.started = Date.now(); cam.lastTally = 0; cam.lastBytes = 0; cam.lastStatsAt = 0;
-    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live'); wakeHud();
+    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live'); wakeHud(); showMicSource();
     if (localTest) { tally('offline'); say('Câmera e microfone reais ativos somente neste aparelho. Nenhum sinal enviado à mesa.', 'ok'); }
     else { tally('offline'); say('Câmera ativa. Conectando à mesa…', 'info'); signal(); }
     await keepAwake();
@@ -615,7 +674,7 @@ function stop() {
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
   cam.stream?.getTracks().forEach(t => t.stop()); cam.stream = null; q('#view').srcObject = null;
-  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null; cam.dtvMeter = null; showDtv(false);
+  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null; cam.dtvMeter = null; showDtv(false); showMicSource();
   cam.wake?.release().catch(() => {}); cam.wake = null;
   if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
   setStartLabel(localTest ? 'ATIVAR TESTE' : cam.key ? 'ATIVAR CÂMERA' : 'CONECTAR');

@@ -48,6 +48,9 @@ const until = async (fn, ms, what) => { const end = Date.now() + ms; while (Date
     await until(() => desk.evaluate(() => { const p = camDesk.peers.get('0:media'); return !!p && !p.pc._antiga && p.pc.connectionState === 'connected'; }), 30000, 'imagem de volta pelo caminho novo');
     assert(await cam.evaluate(() => cam.ws._mesma === true), 'sem reconectar à mesa (mesma conexão)');
     assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a troca de rede');
+    // A mesa sabe qual microfone a câmera está usando (aqui, o do aparelho: o navegador de teste não tem microfone externo).
+    await until(() => desk.evaluate(() => camDesk.cameras.get(0)?.mic?.source === 'phone' && /MIC DO CELULAR/.test($('#cameraPresence').textContent)), 15000, 'microfone da câmera informado à mesa');
+    assert.equal(await cam.evaluate(() => q('#micSource').textContent), 'MIC DO CELULAR');
     // Retorno do DTV sempre ligado: sem botão para liberar; quando o DTV fala, o celular mostra "DTV FALANDO" e apaga quando ele para.
     assert(await cam.evaluate(() => q('#hear').hidden), 'sem botão de liberar o retorno');
     await desk.click('#dtvEnable'); await until(() => desk.evaluate(() => !$('#dtvTalk').disabled), 15000, 'intercom do DTV habilitado');

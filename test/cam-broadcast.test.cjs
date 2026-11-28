@@ -59,3 +59,17 @@ test('imagem acompanha o celular: em pé sai 9:16 (1080×1920), deitado sai 16:9
   assert.match(cam, /uprightQuery\?\.addEventListener\?\.\('change'/, 'girar o celular refaz a imagem na hora');
   assert.match(cam, /async function followOrientation\(\)[\s\S]*?applyConstraints[\s\S]*?reopenVideo/, 'primeiro sem fechar a câmera; se o aparelho não girar, reabre');
 });
+
+test('microfone externo reconhecido sozinho: com fio/USB/receptor/Bluetooth vão para a mesa; o do celular é o áudio ambiente', () => {
+  const start = cam.indexOf('const PHONE_MIC'), end = cam.indexOf('const micName');
+  const micKind = new Function(cam.slice(start, end) + ';return micKind;')();
+  const kind = (label, deviceId = 'x') => micKind({ label, deviceId });
+  for (const l of ['USB Audio Device', 'USB-C Wireless Mic Receiver (2e8a:00c0)', 'Headset Microphone', 'Fone de ouvido com microfone', 'Wired headset', 'RODE Wireless GO II RX', 'DJI Mic 2', 'Hollyland Lark M1', 'BOYA BY-M1', 'Lightning Microphone']) assert.equal(kind(l), 'wired', l);
+  for (const l of ['AirPods Pro', 'Bluetooth headset', 'Galaxy Buds2 Hands-Free']) assert.equal(kind(l), 'bluetooth', l);
+  for (const l of ['iPhone Microphone', 'Microfone do iPhone', 'Built-in Microphone', 'Speakerphone', 'Bottom microphone', 'Back Microphone', '']) assert.equal(kind(l), 'phone', l);
+  assert.equal(kind('USB Audio Device', 'default'), 'phone', 'a entrada "padrão" do sistema não conta como externa');
+  assert.match(cam, /addEventListener\?\.\('devicechange'[\s\S]*?pickMic\(\)/, 'plugar ou tirar o microfone escolhe de novo, com a câmera no ar');
+  assert.match(cam, /fresh\.addEventListener\('ended'[\s\S]*?pickMic\(\)/, 'microfone arrancado: volta ao do celular na hora');
+  assert.match(cam, /send\(\{ type: 'mic', source:/, 'a mesa sabe qual microfone está no ar');
+  const hub = read('../camera-hub.cjs'); assert.match(hub, /m\.type==='mic'\)send\(desk,\{type:'mic',slot,source:m\.source==='external'\?'external':'phone'/, 'o serviço repassa e limpa o aviso');
+});

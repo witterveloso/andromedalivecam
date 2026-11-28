@@ -65,6 +65,7 @@
   <div class="hud">
     <p id="connection" class="status" role="status" data-kind="info">Abra o link de convite enviado pela mesa.</p>
     <div class="telemetry">
+      <span id="micSource" hidden>MIC DO CELULAR</span>
       <span id="qualityActual">—</span>
       <span id="sendRate" hidden></span>
       <span id="stats">0 Mbps</span>
@@ -149,8 +150,9 @@
     <section class="group">
       <h3>Áudio</h3>
       <label>Microfone
-        <select id="input"><option value="">Padrão do sistema / fone externo</option></select>
+        <select id="input"><option value="">Automático · microfone externo quando conectado</option></select>
       </label>
+      <p class="hint">Automático: ao conectar um microfone no celular (com fio, USB-C, Lightning, receptor sem fio ou Bluetooth), é ele que vai para a mesa; ao tirar, volta o microfone do celular (áudio ambiente). Escolha um microfone aqui só para fixá-lo.</p>
       <label class="check"><input id="echoPref" type="checkbox">Celular sem fones (cancelar o eco do retorno)</label>
       <p class="hint">Desligado (padrão de transmissão): o som vai limpo, sem filtros de eco, ruído ou ganho automático, em Opus 128 kb/s. Ligue só se estiver sem fones.</p>
     </section>

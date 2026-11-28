@@ -720,3 +720,9 @@ body[data-tally="program"] #elapsed::before { content: ""; display: inline-block
 .dtv-bars i { transform-origin: bottom; }
 @media (orientation: portrait) { .dtv-talking { top: calc(210px + var(--safe-t)); } }
 @media (orientation: landscape) { .dtv-talking { left: calc((100% - var(--rail, 0px)) / 2); } }
+
+/* Microfone em uso (0.35.1): primeiro dado da faixa; externo em destaque. */
+#micSource::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: var(--faint); }
+#micSource[data-kind="wired"], #micSource[data-kind="bluetooth"] { color: #9bdcff; }
+#micSource[data-kind="wired"]::before { background: var(--amber); }
+#micSource[data-kind="bluetooth"]::before { background: var(--warn); }
