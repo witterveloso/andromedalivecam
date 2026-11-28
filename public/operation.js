@@ -18,7 +18,7 @@ const nav=document.createElement('nav');nav.className='workspace-tabs';nav.setAt
 const operation=$('.main'),transmission=document.createElement('section'),configuration=document.createElement('section');transmission.className='workspace-page';configuration.className='workspace-page';operation.before(nav);operation.after(transmission,configuration);
 const pages={operation,transmission,configuration};
 function openWorkspace(name){Object.entries(pages).forEach(([key,el])=>el.hidden=key!==name);nav.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.page===name));}
-for(const [name,label] of [['operation','Operação'],['transmission','Transmissão'],['configuration','Configurações']]){const b=document.createElement('button');b.textContent=label;b.dataset.page=name;b.onclick=()=>openWorkspace(name);nav.append(b)}
+for(const [name,label] of [['operation','Operação'],['transmission','Transmissão'],['configuration','Câmera']]){const b=document.createElement('button');b.textContent=label;b.dataset.page=name;b.onclick=()=>openWorkspace(name);nav.append(b)}
 transmission.append(transportPanel,$('.stream-panel'),realStop,realRec);const configureTx=document.createElement('button');configureTx.textContent='Configurar YouTube';configureTx.onclick=()=>{settingsDialog.showModal();settingsDialog.querySelector('iframe').contentDocument?.querySelector('[data-tab="stream"]')?.click()};transmission.prepend(configureTx);
 configuration.append(settingsButton,mediaButton,bmPanel,$('.events'),$('#export'),$('#reset'));
 bmConfigure.onclick=()=>{mediaDialog.close();openWorkspace('configuration');bmPanel.scrollIntoView({block:'center'})};

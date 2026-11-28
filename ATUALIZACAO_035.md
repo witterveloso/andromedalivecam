@@ -1,5 +1,9 @@
 # Andrômeda Live 0.35 — Multiplataforma, produção vertical 9:16, Gravação Andrômeda, ponto sem a própria voz e pacote de GCs
 
+## 0.35.2
+- **Aba "Configurações" agora se chama "Câmera".** É a página dos convites do Andrômeda Cam, das fontes de câmera e da Blackmagic. O botão "Configurações gerais" continua dentro dela.
+- Os avisos que mandavam aumentar o número de câmeras agora apontam para **Câmera → Configurações gerais**.
+
 ## 0.35.1
 - **Produção vertical 9:16: bordas pretas nos monitores.** No PGM/AR e no PREVIEW, a imagem em pé aparece centralizada com bordas pretas lisas dos lados, como numa TV. Antes, os lados eram listrados. As bordas são só do monitor da mesa: o que vai ao ar continua sendo a imagem em pé inteira, sem bordas.
 - **Modelos de GC com dois cliques:** dois cliques num modelo da galeria já aplicam o modelo no programa, sem precisar clicar em "Aplicar ajustes ao programa". Um clique continua escolhendo o modelo para personalizar antes.
