@@ -47,3 +47,15 @@ test('visor limpo: sem véu sobre a imagem e dados de transmissão no rodapé', 
   assert.match(last, /body\[data-clean="on"\] \.telemetry \{ opacity: 1; \}/, 'dados legíveis na tela limpa');
   assert.match(last, /body\[data-clean="on"\] \.chip-btn \{ display: none; \}/, 'botão escondido não ocupa lugar');
 });
+
+test('imagem acompanha o celular: em pé sai 9:16 (1080×1920), deitado sai 16:9, e girar com a câmera ligada gira a imagem', () => {
+  const text = cam.slice(cam.indexOf('function videoConstraints('), cam.indexOf('function showCapabilities('));
+  const fields = { '#resolution': { value: '1920x1080' }, '#lens': { value: '' } };
+  const make = upright => new Function('q', 'matchMedia', text + ';return videoConstraints;')(k => fields[k], () => ({ matches: upright }));
+  const up = make(true)(), flat = make(false)();
+  assert.deepEqual([up.width.ideal, up.height.ideal], [1080, 1920]); assert.equal(up.aspectRatio.ideal, 1080 / 1920);
+  assert.deepEqual([flat.width.ideal, flat.height.ideal], [1920, 1080]); assert.equal(flat.aspectRatio.ideal, 1920 / 1080);
+  fields['#resolution'].value = '3840x2160'; assert.deepEqual([make(true)().width.ideal, make(true)().height.ideal], [2160, 3840]);
+  assert.match(cam, /uprightQuery\?\.addEventListener\?\.\('change'/, 'girar o celular refaz a imagem na hora');
+  assert.match(cam, /async function followOrientation\(\)[\s\S]*?applyConstraints[\s\S]*?reopenVideo/, 'primeiro sem fechar a câmera; se o aparelho não girar, reabre');
+});

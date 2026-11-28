@@ -19,6 +19,15 @@
   - Testado: no ensaio com a live no ar, o caminho da imagem foi derrubado e voltou pelo caminho novo, sem reconectar à mesa e sem tirar a live do ar.
 - **Andrômeda Cam: PARAR com confirmação.** O primeiro toque em PARAR só arma: o botão mostra "TOQUE DE NOVO". O segundo toque, em até 3 s, desliga a câmera. Sem o segundo toque, volta a PARAR. Assim um toque sem querer não derruba a câmera no ar.
 - **Andrômeda Cam: tarja menor.** A tarja de PREVIEW / NO AR / EM ESPERA ficou menor e tapa menos a imagem.
+- **Andrômeda Cam: imagem em pé com o celular em pé.** Com o celular na vertical, a câmera agora envia imagem vertical (9:16, por exemplo 1080×1920). Na horizontal, envia 16:9, como antes.
+  - Girar o celular com a câmera ligada (ou no ar) gira a imagem junto, sem desligar a câmera e sem cair da mesa.
+  - Na mesa, em produção vertical 9:16, a câmera em pé preenche a tela inteira. Em produção horizontal, ela aparece inteira, com fundo desfocado dos lados.
+  - Antes, o app sempre pedia imagem deitada e mostrava "Gire o celular".
+- **Andrômeda Cam: visual broadcast, em pé e deitado.** O visor virou um painel de câmera de transmissão, com placas escuras sólidas e cantos retos, sem vidro desfocado por cima da imagem.
+  - **Topo:** tarja NO AR / PREVIEW, nome da câmera e botões, numa linha só.
+  - **Ajustes** (lente, formato, zoom, WB, exposição, estabilização, foco) como painel de instrumentos. Deitado, ficam num trilho vertical à esquerda e o ajuste abre ao lado. Em pé, ficam numa grade logo abaixo do topo, todos à vista.
+  - **Deitado:** trilho à direita com o timecode (bolinha vermelha piscando quando está NO AR), o medidor de áudio na vertical em toda a altura, a luz de CLIP, o MIC, o botão do AR e o intercom.
+  - **Dados de transmissão** numa faixa única com divisórias. O enlace tem barras de sinal (3 = bom, 2 = instável, 1 = fraco) e a bateria tem ícone.
 - **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.
 
 

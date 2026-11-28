@@ -209,10 +209,13 @@ function audioConstraints() {
   return { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
     echoCancellation: noHeadphones, noiseSuppression: false, autoGainControl: false };
 }
+// A imagem acompanha o celular: em pé, sai em pé (9:16, ex. 1080×1920); deitado, sai deitada (16:9, ex. 1920×1080).
 function videoConstraints(deviceId = q('#lens').value) {
-  const [width, height] = q('#resolution').value.split('x').map(Number);
+  const [long, short] = q('#resolution').value.split('x').map(Number);
+  const upright = typeof matchMedia === 'function' && matchMedia('(orientation: portrait)').matches;
+  const width = upright ? short : long, height = upright ? long : short;
   return {
-    width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 },
+    width: { ideal: width }, height: { ideal: height }, aspectRatio: { ideal: width / height }, frameRate: { ideal: 30, max: 30 },
     ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
   };
 }
@@ -279,10 +282,10 @@ q('#lens').onchange = async () => {
 // Resolução e quadros/s valem na hora: primeiro sem fechar a câmera; se o aparelho não muda ao vivo, reabre.
 async function applyFormat() {
   if (!cam.stream) return;
-  const [width, height] = q('#resolution').value.split('x').map(Number), fps = 30;
+  const [width, height] = q('#resolution').value.split('x').map(Number), fps = 30, want = videoConstraints();
   const track = cam.stream.getVideoTracks()[0];
   const fits = () => { const st = track.getSettings(), long = Math.max(st.width || 0, st.height || 0), short = Math.min(st.width || 0, st.height || 0); return long >= width * 0.95 && short >= height * 0.95 && (st.frameRate || 0) >= fps * 0.95 && st.frameRate <= fps + 0.1; };
-  let ok = await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps, max: fps } }).then(() => true, () => false);
+  let ok = await track.applyConstraints({ width: want.width, height: want.height, aspectRatio: want.aspectRatio, frameRate: { ideal: fps, max: fps } }).then(() => true, () => false);
   if (!ok || !fits()) ok = !!(await reopenVideo(q('#lens').value));
   else { showCapabilities(); await bitrate().catch(() => {}); }
   const now = cam.stream?.getVideoTracks()[0]?.getSettings() || {};
@@ -311,6 +314,20 @@ async function applyMic() {
 }
 // A lista não tem mais 720p: um convite antigo que peça 1280×720 abre em 1080p.
 function setResolution(w, h) { const v = w + 'x' + h, sel = q('#resolution'); sel.value = [...sel.options].some(o => o.value === v) ? v : '1920x1080'; }
+// Girou o celular com a câmera ligada: a imagem gira junto (em pé ↔ deitada), sem desligar a câmera nem cair da mesa.
+const uprightQuery = typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)') : null;
+let orientTimer = null;
+async function followOrientation() {
+  const track = cam.stream?.getVideoTracks()[0]; if (!track || track.readyState !== 'live') return;
+  const upright = !!uprightQuery?.matches, isUpright = st => (st.height || 0) > (st.width || 0);
+  if (isUpright(track.getSettings()) === upright) return;
+  const c = videoConstraints();
+  const ok = await track.applyConstraints({ width: c.width, height: c.height, aspectRatio: c.aspectRatio, frameRate: c.frameRate }).then(() => true, () => false);
+  if (!ok || isUpright(track.getSettings()) !== upright) { if (!(await reopenVideo(q('#lens').value))) return; }
+  else { showCapabilities(); await bitrate().catch(() => {}); }
+  say(upright ? 'Celular em pé: imagem vertical (9:16).' : 'Celular deitado: imagem horizontal (16:9).', 'info');
+}
+uprightQuery?.addEventListener?.('change', () => { clearTimeout(orientTimer); orientTimer = setTimeout(() => followOrientation().catch(() => {}), 400); });
 q('#resolution').onchange = q('#fps').onchange = () => { if (cam.running) applyFormat().catch(e => say(e.message, 'warn')); };
 q('#input').onchange = () => { if (cam.running) applyMic().catch(e => say(e.message, 'warn')); };
 
@@ -618,9 +635,12 @@ function showMicLevel(rms, peak = rms) {
   const toPos = db => Math.max(0, Math.min(1, (db + 60) / 60));
   const db = 20 * Math.log10(rms || 1e-6), pdb = 20 * Math.log10(peak || 1e-6), now = Date.now();
   bar.style.clipPath = 'inset(0 ' + ((1 - toPos(db)) * 100).toFixed(1) + '% 0 0)';
+  // Também em variáveis de CSS: o painel broadcast desenha o mesmo medidor na vertical (celular deitado).
+  bar.parentElement?.style?.setProperty?.('--lvl', toPos(db).toFixed(3));
   bar.dataset.level = db > -6 ? 'poor' : db > -18 ? 'fair' : 'good';
   if (pdb >= peakHold.db || now - peakHold.at > 1500) { peakHold.db = pdb; peakHold.at = now; }
   if (pdb > -0.5) peakHold.clipAt = now;
+  bar.parentElement?.style?.setProperty?.('--pk', toPos(peakHold.db).toFixed(3));
   const mark = q('#micPeak'); if (mark?.style) { mark.style.left = (toPos(peakHold.db) * 100).toFixed(1) + '%'; mark.hidden = peakHold.db <= -59; }
   const clip = q('#micClip'); if (clip) clip.dataset.on = now - peakHold.clipAt < 2000 ? 'on' : 'off';
 }
