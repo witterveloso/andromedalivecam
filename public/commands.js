@@ -58,7 +58,7 @@
 
   const COMMANDS = [
     // GC com créditos programados: toque põe no AR o crédito NO PONTO; dois cliques abrem a lista (editar e escolher o do ponto).
-    { id: 'gc0', name: () => 'GC', sub: () => window.andromedaGcList?.label() || '', run: () => window.andromedaGcList ? window.andromedaGcList.run() : $('#fxGC0').click(), on: () => fx.live.layers[0]?.on, settings: b => window.andromedaGcList ? openPop(b, 'GC · Créditos programados', window.andromedaGcList.panel(() => { closePop(); openGC(0); })) : openGC(0) },
+    { id: 'gc0', name: () => 'GC', sub: () => window.andromedaGcList?.label() || '', run: () => window.andromedaGcList ? window.andromedaGcList.run() : $('#fxGC0').click(), on: () => fx.live.layers[0]?.on, settings: () => { openGC(0); setTimeout(() => document.querySelector('#gcCredits')?.scrollIntoView({ block: 'start' }), 80); } }, // dois cliques: configurações do GC (modelos, cores e a sequência dos créditos)
     { id: 'logo', name: () => 'LOGO', run: () => $('#fxLogo').click(), on: () => fx.live.logo.on, settings: () => openFx('#logoFile') },
     // ARTE: arte (cartaz, aviso, patrocinador) por cima da imagem do AR, com fade de 2 s. Dois cliques: carregar e escolher as artes.
     { id: 'arte', name: () => 'ARTE', sub: () => window.andromedaArte?.label() || '', run: () => window.andromedaArte?.toggle(), on: () => !!window.andromedaArte?.isOn(), settings: b => openPop(b, 'ARTE', window.andromedaArte.panel()) },

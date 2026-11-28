@@ -4,6 +4,9 @@
 - **Produção vertical 9:16: bordas pretas nos monitores.** No PGM/AR e no PREVIEW, a imagem em pé aparece centralizada com bordas pretas lisas dos lados, como numa TV. Antes, os lados eram listrados. As bordas são só do monitor da mesa: o que vai ao ar continua sendo a imagem em pé inteira, sem bordas.
 - **Modelos de GC com dois cliques:** dois cliques num modelo da galeria já aplicam o modelo no programa, sem precisar clicar em "Aplicar ajustes ao programa". Um clique continua escolhendo o modelo para personalizar antes.
 - **Prévia dos efeitos mostra o modelo de cada GC:** passe o mouse sobre um modelo da galeria e a prévia mostra como ele fica em cima da imagem real. Ao tirar o mouse, volta ao escolhido. Com o GC ainda sem nome e cargo, a prévia usa um texto de exemplo ("Nome da Pessoa / Cargo ou função") para o modelo aparecer. O texto de exemplo nunca vai ao ar.
+- **Botão GC nos Comandos:**
+  - **Um clique** põe no ar o crédito que está no ponto. Outro clique tira do ar, e o próximo da lista já fica no ponto para o clique seguinte.
+  - **Dois cliques** abrem as configurações do GC (página GC e efeitos). Ali ficam os modelos, as cores e a **lista de créditos (sequência)**: adicionar, ordenar e escolher o que fica no ponto.
 - **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.
 
 
