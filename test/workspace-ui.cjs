@@ -88,11 +88,13 @@ console.log('PASS: GC credits playlist (on cue → on air → next on cue) and t
  assert.equal(q('.gc-models-grid').querySelectorAll('.gc-model').length,12);
  [...q('.gc-models-grid').querySelectorAll('.gc-model')].find(b=>/Plantão/.test(b.textContent)).click();
  assert.equal(vm.runInContext('fx.draft.layers[0].style',ctx),'plantao');assert.equal(q('#gcTag').value,'URGENTE');assert.equal(q('#gcAccent').value,'#e10600');
+ const neon=[...q('.gc-models-grid').querySelectorAll('.gc-model')].find(b=>/Neon/.test(b.textContent));neon.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));
+ assert.equal(vm.runInContext('fx.live.layers[0].style',ctx),'neon','double click applies the model to the program');assert.match(q('#fxStatus').textContent,/Neon.*aplicado ao programa/);
  q('.gc-models-save input').value='Meu plantão';q('.gc-models-save button').click();assert.equal(w.document.querySelectorAll('.gc-models-grid')[1].querySelectorAll('.gc-model').length,1,'my model saved');
  const P=vm.runInContext('window.andromedaPonto',ctx),panel=P.panel();w.document.body.append(panel);const sel=panel.querySelector('.ponto-row .ponto-minus select');
  assert(sel&&[...sel.options].some(o=>o.value==='mic')&&sel.options.length>=3,'mix-minus channel list');sel.value='1';sel.dispatchEvent(new w.Event('change'));
  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('andromedaPonto.state.minus',ctx)))['0'],['1'],'the presenter return leaves out CAM 2');panel.remove();
- console.log('PASS: GC model pack (12 models, apply, tag, my models) and PONTO return without the own voice (mix-minus)')}
+ console.log('PASS: GC model pack (12 models, apply, double click to program, tag, my models) and PONTO return without the own voice (mix-minus)')}
 {const css=fs.readFileSync(root+'/workspace-custom.css','utf8');assert.match(css,/\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:sticky;top:calc\(var\(--topbar-h,56px\) \+ 12px\)/,'effects preview follows the page scroll');assert.match(css,/@media\(max-width:500px\)\{\.workspace-page>\.dock-panel\[data-tool=fx-preview\]\{position:static/,'stacked on phones');assert(w.document.documentElement.style.getPropertyValue('--topbar-h'),'top bar height measured for the sticky preview');console.log('PASS: effects preview stays in view while the settings scroll')}
 {const rd=vm.runInContext('window.andromedaRundown',ctx),cmd=vm.runInContext('window.andromedaCommands',ctx);
 assert.equal(rd.parseClock('5'),300);assert.equal(rd.parseClock('4:30'),270);assert.equal(rd.parseClock('1:00:00'),3600);assert.equal(rd.parseClock('7:75'),null);assert.equal(rd.parseClock('abc'),null);assert.equal(rd.parseClock('0:00'),null);

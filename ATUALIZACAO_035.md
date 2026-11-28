@@ -2,6 +2,7 @@
 
 ## 0.35.1
 - **Produção vertical 9:16: bordas pretas nos monitores.** No PGM/AR e no PREVIEW, a imagem em pé aparece centralizada com bordas pretas lisas dos lados, como numa TV. Antes, os lados eram listrados. As bordas são só do monitor da mesa: o que vai ao ar continua sendo a imagem em pé inteira, sem bordas.
+- **Modelos de GC com dois cliques:** dois cliques num modelo da galeria já aplicam o modelo no programa, sem precisar clicar em "Aplicar ajustes ao programa". Um clique continua escolhendo o modelo para personalizar antes.
 - **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.
 
 
@@ -57,7 +58,7 @@ A gravação é feita junto com a transmissão, da mesma imagem que vai às plat
 
 ## Pacote de GCs: 12 modelos de tarja
 - **Galeria na página "GC e efeitos":** Clássico, Tarja dupla, Telejornal, Moderno, Vidro, Minimalista, Esportivo, Plantão, Etiqueta, Neon, Cartão e Redes sociais. As miniaturas mostram o texto do próprio GC.
-- **Um clique aplica o modelo** com as cores sugeridas dele.
+- **Um clique escolhe o modelo** com as cores sugeridas dele, para personalizar. **Dois cliques já aplicam no programa.**
 - **Personalização:** cores, tamanho, largura, posição e opacidade continuam editáveis. Há um campo novo de **selo** (AO VIVO, URGENTE…).
 - **"Salvar como meu modelo"** guarda a sua versão em **Meus modelos**.
 - **O visual do GC é lembrado** ao fechar e abrir o programa.

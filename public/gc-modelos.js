@@ -28,7 +28,7 @@
 
   /* ---------- galeria ---------- */
   const box = make('div', 'gc-models'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Modelos de GC');
-  const head = make('div', 'gc-models-head'); head.append(make('strong', '', 'Modelos de GC'), make('span', '', 'Um clique aplica o modelo; depois personalize cores, tamanho e posição abaixo.'));
+  const head = make('div', 'gc-models-head'); head.append(make('strong', '', 'Modelos de GC'), make('span', '', 'Um clique escolhe o modelo para personalizar; dois cliques já aplicam o modelo no programa.'));
   const grid = make('div', 'gc-models-grid'), mineHead = make('strong', 'gc-models-mine', 'Meus modelos'), mineGrid = make('div', 'gc-models-grid');
   const saveRow = make('div', 'gc-models-save'), saveName = make('input'), saveBtn = make('button', '', 'Salvar como meu modelo');
   saveName.maxLength = 30; saveName.placeholder = 'Nome do modelo (ex.: Programa da manhã)'; saveName.setAttribute('aria-label', 'Nome do meu modelo'); saveBtn.type = 'button'; saveRow.append(saveName, saveBtn);
@@ -41,6 +41,8 @@
     const b = make('button', 'gc-model'); b.type = 'button'; b.title = settings.hint || name;
     const c = make('canvas'); c.width = 384; c.height = 216; c.setAttribute('aria-hidden', 'true');
     b.append(c, make('span', '', name)); b.onclick = onPick;
+    // Dois cliques: escolhe e já aplica no programa (o mesmo que clicar em "Aplicar ajustes ao programa").
+    b.ondblclick = () => { onPick(); commit(name); };
     const wrap = make('div', 'gc-model-wrap'); wrap.append(b);
     if (onDelete) { const x = make('button', 'gc-model-del', '×'); x.type = 'button'; x.title = 'Apagar ' + name; x.setAttribute('aria-label', 'Apagar o modelo ' + name); x.onclick = onDelete; wrap.append(x); }
     thumbs.push({ canvas: c, button: b, settings }); return wrap;
@@ -59,6 +61,11 @@
   let pending = 0;
   const repaint = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(() => { if (!effectsPage.hidden) thumbs.forEach(paintThumb); }); };
 
+  function commit(name) {
+    document.querySelector('#fxApply')?.click();
+    const st = document.querySelector('#fxStatus'); if (st) st.textContent = 'Modelo "' + name + '" aplicado ao programa.';
+    try { log('GC: modelo ' + name + ' aplicado ao programa'); } catch { /* sem registro */ }
+  }
   function apply(settings) {
     const l = layer(); readForm();
     Object.assign(l, settings.defaults, settings.custom || {}, { style: settings.style });
