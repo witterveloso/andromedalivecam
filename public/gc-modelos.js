@@ -28,7 +28,7 @@
 
   /* ---------- galeria ---------- */
   const box = make('div', 'gc-models'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Modelos de GC');
-  const head = make('div', 'gc-models-head'); head.append(make('strong', '', 'Modelos de GC'), make('span', '', 'Um clique aplica o modelo; depois personalize cores, tamanho e posição abaixo.'));
+  const head = make('div', 'gc-models-head'); head.append(make('strong', '', 'Modelos de GC'), make('span', '', 'Passe o mouse para ver na prévia. Um clique escolhe o modelo para personalizar; dois cliques já aplicam no programa.'));
   const grid = make('div', 'gc-models-grid'), mineHead = make('strong', 'gc-models-mine', 'Meus modelos'), mineGrid = make('div', 'gc-models-grid');
   const saveRow = make('div', 'gc-models-save'), saveName = make('input'), saveBtn = make('button', '', 'Salvar como meu modelo');
   saveName.maxLength = 30; saveName.placeholder = 'Nome do modelo (ex.: Programa da manhã)'; saveName.setAttribute('aria-label', 'Nome do meu modelo'); saveBtn.type = 'button'; saveRow.append(saveName, saveBtn);
@@ -36,11 +36,33 @@
   document.querySelector('#fxLayer').closest('label').after(box);
 
   const layer = () => fx.draft.layers[layerIndex()];
+  let hover = null; // modelo sob o mouse: aparece na prévia sem mudar o rascunho
+
+  /* ---------- prévia dos efeitos: sempre mostra o modelo ----------
+   * O GC sem texto não aparece no AR (nem deve). Na prévia, com "Mostrar elemento em edição", o GC em edição aparece com um texto
+   * de exemplo; e o modelo sob o mouse aparece no lugar do escolhido, para comparar os modelos em cima da imagem real. */
+  if (typeof inspectionSettings === 'function') {
+    const baseInspect = inspectionSettings;
+    inspectionSettings = function () {
+      const s = baseInspect(), editing = typeof inspecting === 'undefined' || inspecting === 'gc', show = document.querySelector('#fxInspect')?.checked;
+      const l = s.layers?.[layerIndex()]; if (!l) return s;
+      if (hover) Object.assign(l, hover.defaults, hover.custom || {}, { style: hover.style, on: true });
+      if ((hover || (editing && show)) && l.on && !String(l.title || '').trim() && !String(l.subtitle || '').trim()) {
+        const social = l.style === 'redes'; l.title = social ? '@seuperfil' : 'Nome da Pessoa'; l.subtitle = social ? 'Siga e ative as notificações' : 'Cargo ou função';
+      }
+      return s;
+    };
+  }
   const thumbs = [];
   function tile(name, settings, onPick, onDelete) {
     const b = make('button', 'gc-model'); b.type = 'button'; b.title = settings.hint || name;
     const c = make('canvas'); c.width = 384; c.height = 216; c.setAttribute('aria-hidden', 'true');
     b.append(c, make('span', '', name)); b.onclick = onPick;
+    // Dois cliques: escolhe e já aplica no programa (o mesmo que clicar em "Aplicar ajustes ao programa").
+    b.ondblclick = () => { onPick(); commit(name); };
+    // Passar o mouse (ou o foco do teclado) num modelo mostra ele na prévia dos efeitos, em cima da imagem do AR.
+    const show = () => { hover = settings; }, hide = () => { if (hover === settings) hover = null; };
+    b.addEventListener('mouseenter', show); b.addEventListener('focus', show); b.addEventListener('mouseleave', hide); b.addEventListener('blur', hide);
     const wrap = make('div', 'gc-model-wrap'); wrap.append(b);
     if (onDelete) { const x = make('button', 'gc-model-del', '×'); x.type = 'button'; x.title = 'Apagar ' + name; x.setAttribute('aria-label', 'Apagar o modelo ' + name); x.onclick = onDelete; wrap.append(x); }
     thumbs.push({ canvas: c, button: b, settings }); return wrap;
@@ -59,6 +81,11 @@
   let pending = 0;
   const repaint = () => { cancelAnimationFrame(pending); pending = requestAnimationFrame(() => { if (!effectsPage.hidden) thumbs.forEach(paintThumb); }); };
 
+  function commit(name) {
+    document.querySelector('#fxApply')?.click();
+    const st = document.querySelector('#fxStatus'); if (st) st.textContent = 'Modelo "' + name + '" aplicado ao programa.';
+    try { log('GC: modelo ' + name + ' aplicado ao programa'); } catch { /* sem registro */ }
+  }
   function apply(settings) {
     const l = layer(); readForm();
     Object.assign(l, settings.defaults, settings.custom || {}, { style: settings.style });

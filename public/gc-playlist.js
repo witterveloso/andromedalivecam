@@ -17,7 +17,7 @@
   clampCue();
   const layer = () => fx.live.layers[0];
   const cued = () => L.items[L.cue] || null;
-  let panelEl = null;
+  const panels = new Set(); // listas abertas (a da página GC e efeitos fica sempre lá)
 
   // Coloca o crédito no GC · Créditos (texto do AR e da página de ajustes ficam iguais).
   function load(item) {
@@ -49,7 +49,7 @@
 
   /* ---------- lista (dois cliques no botão GC) ---------- */
   function panel(openVisual) {
-    const el = document.createElement('div'); el.className = 'gcl-panel'; panelEl = el;
+    const el = document.createElement('div'); el.className = 'gcl-panel'; panels.add(el);
     el.innerHTML = '<p class="gcl-help">Programe os créditos do programa. O marcado como <b>NO PONTO</b> entra quando você toca o GC.</p>' +
       '<ol class="gcl-list"></ol>' +
       '<div class="gcl-add"><input class="gcl-new-title" maxlength="120" placeholder="Nome (ex.: Maria Silva)" aria-label="Nome do novo crédito"><input class="gcl-new-sub" maxlength="160" placeholder="Função (ex.: Repórter)" aria-label="Função do novo crédito"><button type="button" class="gcl-add-btn">+ Adicionar crédito</button></div>' +
@@ -66,7 +66,10 @@
   }
   function paint() {
     window.andromedaCommandsPaint?.();
-    const el = panelEl; if (!el || (!el.isConnected && el.dataset.drawn)) return; el.dataset.drawn = '1';
+    for (const el of [...panels]) { if (!el.isConnected && el.dataset.drawn) { panels.delete(el); continue; } paintPanel(el); }
+  }
+  function paintPanel(el) {
+    el.dataset.drawn = '1';
     const list = el.querySelector('.gcl-list');
     if (list.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') { markCue(list); return; }
     list.replaceChildren(...L.items.map((item, i) => {
@@ -98,4 +101,14 @@
   }
   // Atalho: o crédito no ponto pode avançar e voltar sem abrir a lista.
   window.andromedaGcList = { run, label, panel, next, has: () => L.items.length > 0, state: L };
+
+  // A lista de créditos também fica na página GC e efeitos (dois cliques no botão GC abrem essa página): modelos, cores e a
+  // sequência dos créditos no mesmo lugar.
+  const card = document.querySelector('#gcTitle')?.closest('.fx-card');
+  if (card) {
+    const sec = document.createElement('section'); sec.className = 'gcl-embed'; sec.id = 'gcCredits';
+    const h = document.createElement('h4'); h.textContent = 'Créditos programados · sequência (GC · Créditos)'; sec.append(h);
+    sec.append(panel(() => document.querySelector('.gc-models')?.scrollIntoView({ block: 'start', behavior: 'smooth' })));
+    document.querySelector('#fxLayer')?.closest('label')?.after(sec);
+  }
 })();

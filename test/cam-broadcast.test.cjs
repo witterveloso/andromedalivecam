@@ -25,8 +25,10 @@ test('áudio de programa limpo: sem cancelamento de eco, supressão de ruído ne
 });
 
 test('queda momentânea da rede: espera o WebRTC se recuperar antes de refazer a conexão', () => {
-  assert.match(cam, /pc\.connectionState === 'failed' \? 1000 : 6000/);
-  assert.match(cam, /pc\.connectionState !== 'connected'\) cam\.ws\?\.close\(\)/, 'só refaz se continuar sem caminho');
+  assert.match(cam, /pc\.connectionState === 'failed' \? 1000 : 8000/);
+  assert.match(cam, /now\.connectionState !== 'connected'\)\) cam\.ws\?\.close\(\)/, 'só refaz tudo se continuar sem caminho');
+  assert.match(cam, /async function repath\(reason\)/, 'antes, refaz só o caminho da imagem (troca de rede sem cair)');
+  assert.match(cam, /setTimeout\(\(\) => repath\('network'\), 800\)/, 'rede mudou: refaz o caminho na hora');
 });
 
 test('tela no ar limpa: some em 8 s sem toque, volta com qualquer toque, e nunca esconde alertas nem erros', () => {
@@ -44,4 +46,30 @@ test('visor limpo: sem véu sobre a imagem e dados de transmissão no rodapé', 
   assert.match(last, /\.hud \.telemetry \{ order: 9; \}/, 'dados de transmissão sempre na última linha');
   assert.match(last, /body\[data-clean="on"\] \.telemetry \{ opacity: 1; \}/, 'dados legíveis na tela limpa');
   assert.match(last, /body\[data-clean="on"\] \.chip-btn \{ display: none; \}/, 'botão escondido não ocupa lugar');
+});
+
+test('imagem acompanha o celular: em pé sai 9:16 (1080×1920), deitado sai 16:9, e girar com a câmera ligada gira a imagem', () => {
+  const text = cam.slice(cam.indexOf('function videoConstraints('), cam.indexOf('function showCapabilities('));
+  const fields = { '#resolution': { value: '1920x1080' }, '#lens': { value: '' } };
+  const make = upright => new Function('q', 'matchMedia', text + ';return videoConstraints;')(k => fields[k], () => ({ matches: upright }));
+  const up = make(true)(), flat = make(false)();
+  assert.deepEqual([up.width.ideal, up.height.ideal], [1080, 1920]); assert.equal(up.aspectRatio.ideal, 1080 / 1920);
+  assert.deepEqual([flat.width.ideal, flat.height.ideal], [1920, 1080]); assert.equal(flat.aspectRatio.ideal, 1920 / 1080);
+  fields['#resolution'].value = '3840x2160'; assert.deepEqual([make(true)().width.ideal, make(true)().height.ideal], [2160, 3840]);
+  assert.match(cam, /uprightQuery\?\.addEventListener\?\.\('change'/, 'girar o celular refaz a imagem na hora');
+  assert.match(cam, /async function followOrientation\(\)[\s\S]*?applyConstraints[\s\S]*?reopenVideo/, 'primeiro sem fechar a câmera; se o aparelho não girar, reabre');
+});
+
+test('microfone externo reconhecido sozinho: com fio/USB/receptor/Bluetooth vão para a mesa; o do celular é o áudio ambiente', () => {
+  const start = cam.indexOf('const PHONE_MIC'), end = cam.indexOf('const micName');
+  const micKind = new Function(cam.slice(start, end) + ';return micKind;')();
+  const kind = (label, deviceId = 'x') => micKind({ label, deviceId });
+  for (const l of ['USB Audio Device', 'USB-C Wireless Mic Receiver (2e8a:00c0)', 'Headset Microphone', 'Fone de ouvido com microfone', 'Wired headset', 'RODE Wireless GO II RX', 'DJI Mic 2', 'Hollyland Lark M1', 'BOYA BY-M1', 'Lightning Microphone']) assert.equal(kind(l), 'wired', l);
+  for (const l of ['AirPods Pro', 'Bluetooth headset', 'Galaxy Buds2 Hands-Free']) assert.equal(kind(l), 'bluetooth', l);
+  for (const l of ['iPhone Microphone', 'Microfone do iPhone', 'Built-in Microphone', 'Speakerphone', 'Bottom microphone', 'Back Microphone', '']) assert.equal(kind(l), 'phone', l);
+  assert.equal(kind('USB Audio Device', 'default'), 'phone', 'a entrada "padrão" do sistema não conta como externa');
+  assert.match(cam, /addEventListener\?\.\('devicechange'[\s\S]*?pickMic\(\)/, 'plugar ou tirar o microfone escolhe de novo, com a câmera no ar');
+  assert.match(cam, /fresh\.addEventListener\('ended'[\s\S]*?pickMic\(\)/, 'microfone arrancado: volta ao do celular na hora');
+  assert.match(cam, /send\(\{ type: 'mic', source:/, 'a mesa sabe qual microfone está no ar');
+  const hub = read('../camera-hub.cjs'); assert.match(hub, /m\.type==='mic'\)send\(desk,\{type:'mic',slot,source:m\.source==='external'\?'external':'phone'/, 'o serviço repassa e limpa o aviso');
 });

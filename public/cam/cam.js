@@ -136,9 +136,32 @@ talk.onkeydown = e => { if ([' ', 'Enter'].includes(e.key)) { e.preventDefault()
 talk.onkeyup = () => ptt(false);
 window.addEventListener('blur', () => ptt(false));
 
-q('#hear').onclick = () => q('#returnAudio').play()
-  .then(() => say('Retorno do DTV liberado. Use fones.', 'ok'))
-  .catch(() => say('O retorno estará disponível quando o intercom conectar.', 'info'));
+/* ---------- retorno do DTV: sempre ligado ----------
+ * Toda Andrômeda Cam recebe o DTV sem botão para liberar: o som do retorno começa sozinho quando o intercom conecta.
+ * O navegador já deixa tocar porque a página está usando câmera e microfone (e o toque em ATIVAR conta como gesto).
+ * Se mesmo assim o aparelho segurar o som, o primeiro toque em qualquer lugar da tela libera, sem aviso nem botão.
+ * O único controle do intercom no celular é chamar o DTV (SEGURE P/ FALAR). Quando o DTV fala, aparece "DTV FALANDO". */
+function playReturn() {
+  const a = q('#returnAudio'); if (!a.srcObject || !a.play) return;
+  a.muted = false; a.play().then(() => { cam.returnBlocked = false; }, () => { cam.returnBlocked = true; });
+}
+document.addEventListener('pointerdown', () => { if (cam.returnBlocked) playReturn(); if (cam.ac?.state === 'suspended') cam.ac.resume().catch(() => {}); }, true);
+// Voz do DTV chegando: medida no próprio retorno (a mesa só abre o microfone do DTV enquanto ele fala).
+const dtv = { lastVoice: 0, on: false };
+function watchDtv(stream) {
+  try { if (!cam.ac) return; cam.dtvMeter = cam.ac.createAnalyser(); cam.dtvMeter.fftSize = 1024; cam.ac.createMediaStreamSource(stream).connect(cam.dtvMeter); } catch { cam.dtvMeter = null; }
+}
+function showDtv(on) {
+  if (dtv.on === on) return; dtv.on = on;
+  root.dataset.dtv = on ? 'on' : 'off'; const el = q('#dtvTalking'); if (el) el.hidden = !on;
+}
+setInterval(() => {
+  const m = cam.dtvMeter; if (!m || !cam.running) { showDtv(false); return; }
+  const a = new Float32Array(m.fftSize); m.getFloatTimeDomainData(a);
+  const rms = Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length), now = Date.now();
+  if (rms > 0.008) dtv.lastVoice = now; // acima de cerca de −42 dBFS: voz, não ruído de linha
+  showDtv(now - dtv.lastVoice < 900);
+}, 120);
 
 /* ---------- lentes e dispositivos ---------- */
 
@@ -191,7 +214,7 @@ async function enumerate() {
   for (const [selector, kind] of [['#lens', 'videoinput'], ['#input', 'audioinput']]) {
     const select = q(selector), old = select.value;
     select.replaceChildren();
-    if (kind === 'audioinput') select.add(new Option('Padrão do sistema', ''));
+    if (kind === 'audioinput') select.add(new Option('Automático · microfone externo quando conectado', ''));
     devices.filter(d => d.kind === kind).forEach((d, i) => select.add(new Option(d.label || (kind === 'videoinput' ? 'Câmera ' : 'Microfone ') + (i + 1), d.deviceId)));
     if ([...select.options].some(o => o.value === old)) select.value = old;
   }
@@ -199,20 +222,74 @@ async function enumerate() {
   if (actual) q('#lens').value = actual || current;
   renderLenses();
 }
-navigator.mediaDevices?.addEventListener?.('devicechange', () => { if (cam.stream) enumerate().catch(() => {}); });
+let micTimer = null;
+navigator.mediaDevices?.addEventListener?.('devicechange', () => {
+  if (!cam.stream) return;
+  enumerate().catch(() => {});
+  // Microfone plugado ou tirado: espera o sistema terminar de listar e escolhe de novo (externo, se houver).
+  clearTimeout(micTimer); micTimer = setTimeout(() => pickMic().catch(() => {}), 700);
+});
+
+/* ---------- microfone externo: reconhecido sozinho ----------
+ * Com fio (P2/fone com microfone), USB-C, Lightning, receptor de microfone sem fio (DJI, Rode, Hollyland, Boya…) ou Bluetooth:
+ * ao conectar, o Andrômeda Cam passa a enviar esse microfone para a mesa; ao tirar, volta ao microfone do celular (áudio ambiente).
+ * Prioridade: com fio/USB antes de Bluetooth (o Bluetooth do celular grava em qualidade de telefone).
+ * Em Ajustes › Áudio dá para fixar um microfone; "Automático" volta a escolher sozinho. */
+const PHONE_MIC = /built-?in|internal|interno|integrad|iphone|ipad|speakerphone|viva-voz|bottom|top mic|front|back|rear|traseir|frontal|handset|telephone|phone mic|do telefone|do celular/i;
+const BT_MIC = /bluetooth|\bbt\b|airpods|buds|hands-?free|hfp/i;
+const EXT_MIC = /usb|type-?c|lightning|headset|head set|\bfones?\b|earphone|wired|com fio|lapela|lavalier|\blav\b|rode|shure|boya|dji|saramonic|hollyland|sennheiser|comica|synco|maono|tascam|zoom h\d|interface|line ?in|jack|extern|wireless|sem fio|mic(rophone)? \d|receiver|receptor/i;
+function micKind(d) {
+  const label = d?.label || '';
+  if (!label || ['default', 'communications'].includes(d.deviceId)) return 'phone';
+  if (BT_MIC.test(label)) return 'bluetooth';
+  if (EXT_MIC.test(label) && !(PHONE_MIC.test(label) && !/usb|headset|\bfones?\b/i.test(label))) return 'wired';
+  return 'phone';
+}
+const micName = label => String(label || '').replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').trim();
+function showMicSource() {
+  const el = q('#micSource'); if (!el) return;
+  const kind = cam.micKind || 'phone';
+  el.hidden = !cam.running; el.dataset.kind = kind;
+  el.textContent = kind === 'phone' ? 'MIC DO CELULAR' : 'MIC EXTERNO' + (cam.micLabel ? ' · ' + micName(cam.micLabel).slice(0, 28) : '');
+}
+async function pickMic(quiet = false) {
+  if (!cam.stream || !navigator.mediaDevices?.enumerateDevices) return;
+  const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  const manual = q('#input').value;
+  if (manual) { // microfone fixado em Ajustes: só confere se ainda existe
+    const d = inputs.find(x => x.deviceId === manual);
+    if (d) { cam.micKind = micKind(d); cam.micLabel = micName(d.label); showMicSource(); return; }
+    q('#input').value = '';
+  }
+  const rank = d => ({ wired: 0, bluetooth: 1 })[micKind(d)] ?? 9;
+  const ext = inputs.filter(d => rank(d) < 9).sort((a, b) => rank(a) - rank(b))[0];
+  const want = ext?.deviceId || '', track = cam.stream.getAudioTracks()[0];
+  const live = !!track && track.readyState !== 'ended';
+  if (live && want === (cam.autoMic ?? '')) return;
+  const before = cam.micKind || 'phone';
+  cam.autoMic = want; cam.micKind = ext ? micKind(ext) : 'phone'; cam.micLabel = micName(ext?.label);
+  await applyMic(true);
+  showMicSource(); send({ type: 'mic', source: cam.micKind === 'phone' ? 'phone' : 'external', label: cam.micLabel });
+  if (quiet) return;
+  if (cam.micKind !== 'phone') say('Microfone externo conectado' + (cam.micLabel ? ': ' + cam.micLabel : '') + '. É ele que vai para a mesa.' + (cam.micKind === 'bluetooth' ? ' Bluetooth tem qualidade de telefone; para o programa, prefira microfone com fio ou receptor USB.' : ''), cam.micKind === 'bluetooth' ? 'warn' : 'ok');
+  else if (before !== 'phone') say('Microfone externo desconectado. Voltou o microfone do celular (áudio ambiente).', 'warn');
+}
 
 // Áudio de programa como num equipamento de transmissão: sem cancelamento de eco, sem supressão de ruído e sem ganho
 // automático (esses filtros "bombeiam" o som, abafam música e cortam o ambiente). Com fones, não há eco a cancelar.
 // "Celular sem fones" liga o cancelamento de eco para o retorno do DTV não voltar pelo microfone.
 function audioConstraints() {
-  const noHeadphones = prefs.get('echo', '0') === '1';
-  return { deviceId: q('#input').value ? { exact: q('#input').value } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
+  const noHeadphones = prefs.get('echo', '0') === '1', id = q('#input').value || cam.autoMic || '';
+  return { deviceId: id ? { exact: id } : undefined, channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 },
     echoCancellation: noHeadphones, noiseSuppression: false, autoGainControl: false };
 }
+// A imagem acompanha o celular: em pé, sai em pé (9:16, ex. 1080×1920); deitado, sai deitada (16:9, ex. 1920×1080).
 function videoConstraints(deviceId = q('#lens').value) {
-  const [width, height] = q('#resolution').value.split('x').map(Number);
+  const [long, short] = q('#resolution').value.split('x').map(Number);
+  const upright = typeof matchMedia === 'function' && matchMedia('(orientation: portrait)').matches;
+  const width = upright ? short : long, height = upright ? long : short;
   return {
-    width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 },
+    width: { ideal: width }, height: { ideal: height }, aspectRatio: { ideal: width / height }, frameRate: { ideal: 30, max: 30 },
     ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
   };
 }
@@ -279,10 +356,10 @@ q('#lens').onchange = async () => {
 // Resolução e quadros/s valem na hora: primeiro sem fechar a câmera; se o aparelho não muda ao vivo, reabre.
 async function applyFormat() {
   if (!cam.stream) return;
-  const [width, height] = q('#resolution').value.split('x').map(Number), fps = 30;
+  const [width, height] = q('#resolution').value.split('x').map(Number), fps = 30, want = videoConstraints();
   const track = cam.stream.getVideoTracks()[0];
   const fits = () => { const st = track.getSettings(), long = Math.max(st.width || 0, st.height || 0), short = Math.min(st.width || 0, st.height || 0); return long >= width * 0.95 && short >= height * 0.95 && (st.frameRate || 0) >= fps * 0.95 && st.frameRate <= fps + 0.1; };
-  let ok = await track.applyConstraints({ width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: fps, max: fps } }).then(() => true, () => false);
+  let ok = await track.applyConstraints({ width: want.width, height: want.height, aspectRatio: want.aspectRatio, frameRate: { ideal: fps, max: fps } }).then(() => true, () => false);
   if (!ok || !fits()) ok = !!(await reopenVideo(q('#lens').value));
   else { showCapabilities(); await bitrate().catch(() => {}); }
   const now = cam.stream?.getVideoTracks()[0]?.getSettings() || {};
@@ -291,13 +368,19 @@ async function applyFormat() {
   say(matches ? 'Formato aplicado: ' + got + '.' : 'Este aparelho entregou ' + got + ' nesta lente (pedido: ' + q('#resolution').selectedOptions[0].text + ' · ' + fps + ' fps).', matches ? 'ok' : 'warn');
 }
 // Microfone novo: troca no envio e no intercom sem derrubar o vídeo.
-async function applyMic() {
+async function applyMic(auto = false) {
   if (!cam.stream) return;
+  if (!auto && !q('#input').value) { cam.autoMic = null; return pickMic(); } // voltou para "Automático": escolhe sozinho de novo
   const old = cam.stream.getAudioTracks()[0];
   let fresh;
   try { fresh = (await navigator.mediaDevices.getUserMedia({ video: false, audio: audioConstraints() })).getAudioTracks()[0]; }
-  catch (e) { say('Microfone não abriu: ' + captureMessage(e), 'error'); return; }
-  fresh.enabled = old ? old.enabled : true;
+  catch (e) {
+    if (auto && cam.autoMic) { cam.autoMic = ''; cam.micKind = 'phone'; cam.micLabel = ''; return applyMic(true); } // externo não abriu: fica no do celular
+    say('Microfone não abriu: ' + captureMessage(e), 'error'); return;
+  }
+  fresh.enabled = !cam.muted && !cam.talking;
+  // Microfone desconectado no meio da live (a faixa termina): escolhe de novo na hora, sem esperar a lista do sistema.
+  fresh.addEventListener('ended', () => { if (cam.stream?.getAudioTracks()[0] === fresh) { cam.autoMic = null; pickMic().catch(() => {}); } });
   if (old) { cam.stream.removeTrack(old); old.stop(); }
   cam.stream.addTrack(fresh);
   const media = cam.pcs.get('media')?.pc.getSenders().find(s => s.track?.kind === 'audio');
@@ -307,10 +390,24 @@ async function applyMic() {
   if (intercom) await intercom.replaceTrack(ic).catch(() => {});
   cam.intercomTrack?.stop(); cam.intercomTrack = ic;
   if (cam.ac && cam.meter) cam.ac.createMediaStreamSource(new MediaStream([fresh])).connect(cam.meter);
-  say('Microfone trocado: ' + (q('#input').selectedOptions[0]?.text || 'padrão') + '.', 'ok');
+  if (!auto) { const d = q('#input').selectedOptions[0]; cam.micKind = q('#input').value ? micKind({ label: d?.text, deviceId: q('#input').value }) : cam.micKind; showMicSource(); say('Microfone trocado: ' + (d?.text || 'automático') + '.', 'ok'); }
 }
 // A lista não tem mais 720p: um convite antigo que peça 1280×720 abre em 1080p.
 function setResolution(w, h) { const v = w + 'x' + h, sel = q('#resolution'); sel.value = [...sel.options].some(o => o.value === v) ? v : '1920x1080'; }
+// Girou o celular com a câmera ligada: a imagem gira junto (em pé ↔ deitada), sem desligar a câmera nem cair da mesa.
+const uprightQuery = typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)') : null;
+let orientTimer = null;
+async function followOrientation() {
+  const track = cam.stream?.getVideoTracks()[0]; if (!track || track.readyState !== 'live') return;
+  const upright = !!uprightQuery?.matches, isUpright = st => (st.height || 0) > (st.width || 0);
+  if (isUpright(track.getSettings()) === upright) return;
+  const c = videoConstraints();
+  const ok = await track.applyConstraints({ width: c.width, height: c.height, aspectRatio: c.aspectRatio, frameRate: c.frameRate }).then(() => true, () => false);
+  if (!ok || isUpright(track.getSettings()) !== upright) { if (!(await reopenVideo(q('#lens').value))) return; }
+  else { showCapabilities(); await bitrate().catch(() => {}); }
+  say(upright ? 'Celular em pé: imagem vertical (9:16).' : 'Celular deitado: imagem horizontal (16:9).', 'info');
+}
+uprightQuery?.addEventListener?.('change', () => { clearTimeout(orientTimer); orientTimer = setTimeout(() => followOrientation().catch(() => {}), 400); });
 q('#resolution').onchange = q('#fps').onchange = () => { if (cam.running) applyFormat().catch(e => say(e.message, 'warn')); };
 q('#input').onchange = () => { if (cam.running) applyMic().catch(e => say(e.message, 'warn')); };
 
@@ -325,6 +422,16 @@ function opusBroadcast(sdp) {
   const add = cur => { const have = Object.fromEntries(cur.split(';').filter(Boolean).map(kv => kv.split('='))); return Object.entries({ ...have, ...want }).map(([k, v]) => k + '=' + v).join(';'); };
   return line.test(sdp) ? sdp.replace(line, (_, cur) => 'a=fmtp:' + pt + ' ' + add(cur)) : sdp.replace(new RegExp('(a=rtpmap:' + pt + ' opus\\/48000\\/2[^\\r\\n]*\\r?\\n)', 'i'), '$1a=fmtp:' + pt + ' ' + add('') + '\r\n');
 }
+// Troca de rede sem cair (Wi-Fi ↔ 4G/5G): refaz só o caminho da imagem, na mesma conexão com a mesa (a mesa troca a conexão
+// velha pela nova ao receber a oferta). Bem mais rápido que derrubar e reconectar tudo.
+async function repath(reason) {
+  if (!cam.running || cam.repathing || cam.ws?.readyState !== 1) return false;
+  const media = cam.pcs.get('media')?.pc; if (media && media.connectionState === 'connected') return false;
+  cam.repathing = true;
+  try { cleanPeers(); await makePeer('media'); await makePeer('intercom'); say(reason === 'network' ? 'Rede mudou: imagem seguindo pelo sinal novo…' : 'Sinal oscilou: refazendo o caminho da imagem…', 'info'); return true; }
+  catch { return false; }
+  finally { cam.repathing = false; }
+}
 async function makePeer(lane) {
   const pc = new RTCPeerConnection({ iceServers: cam.ice }), p = { pc, queue: [] };
   cam.pcs.set(lane, p);
@@ -338,8 +445,8 @@ async function makePeer(lane) {
     cam.intercomTrack = cam.stream.getAudioTracks()[0].clone(); cam.intercomTrack.enabled = false;
     pc.addTrack(cam.intercomTrack, new MediaStream([cam.intercomTrack]));
     pc.ontrack = e => {
-      q('#returnAudio').srcObject = e.streams[0] || new MediaStream([e.track]);
-      q('#returnAudio').play().catch(() => say('Toque em “Liberar retorno do DTV” para ouvir nos fones.', 'warn'));
+      const stream = e.streams[0] || new MediaStream([e.track]);
+      q('#returnAudio').srcObject = stream; playReturn(); watchDtv(stream);
     };
   }
   pc.onconnectionstatechange = () => {
@@ -357,7 +464,9 @@ async function makePeer(lane) {
       // "disconnected" é muitas vezes passageiro (troca de antena, Wi-Fi → 5G): o WebRTC se recupera sozinho em segundos.
       // Só refaz a conexão se continuar sem caminho; "failed" refaz logo.
       clearTimeout(cam.retry);
-      cam.retry = setTimeout(() => { if (cam.running && cam.pcs.get('media')?.pc === pc && pc.connectionState !== 'connected') cam.ws?.close(); }, pc.connectionState === 'failed' ? 1000 : 6000);
+      // Primeiro refaz só o caminho da imagem (1,5 s); se ainda assim não voltar, reconecta tudo.
+      if (pc.connectionState === 'disconnected') setTimeout(() => { if (cam.running && cam.pcs.get('media')?.pc === pc && pc.connectionState !== 'connected') repath('signal'); }, 1500);
+      cam.retry = setTimeout(() => { const now = cam.pcs.get('media')?.pc; if (cam.running && (!now || now.connectionState !== 'connected')) cam.ws?.close(); }, pc.connectionState === 'failed' ? 1000 : 8000);
     }
   };
   const offer = await pc.createOffer(); if (lane === 'media') offer.sdp = opusBroadcast(offer.sdp);
@@ -366,7 +475,7 @@ async function makePeer(lane) {
 }
 
 async function message(m) {
-  if (m.type === 'ready') { q('#cameraName').textContent = m.name; cam.ice = m.iceServers; return; }
+  if (m.type === 'ready') { q('#cameraName').textContent = m.name; cam.ice = m.iceServers; send({ type: 'mic', source: (cam.micKind || 'phone') === 'phone' ? 'phone' : 'external', label: cam.micLabel || '' }); return; }
   if (m.type === 'negotiate') { cleanPeers(); cam.ice = m.iceServers; await makePeer('media'); await makePeer('intercom'); return; }
   if (m.type === 'desk-offline') { cleanPeers(); tally('offline'); say('Mesa desconectada. Aguardando o operador abrir a mesa.', 'warn'); return; }
   if (m.type === 'tally') { cam.lastTally = Date.now(); tally(m.state); return; }
@@ -513,8 +622,10 @@ async function start() {
     await enumerate(); showCapabilities(); await preferPhysicalLens();
     cam.ac = new AudioContext(); await cam.ac.resume();
     cam.meter = cam.ac.createAnalyser(); cam.ac.createMediaStreamSource(cam.stream).connect(cam.meter);
+    // Microfone externo já conectado ao abrir: é ele que vai para a mesa (os nomes só aparecem depois da permissão).
+    cam.autoMic = ''; cam.micKind = 'phone'; cam.micLabel = ''; await pickMic(true).catch(() => {}); if (cam.micKind !== 'phone') say('Microfone externo reconhecido: ' + cam.micLabel + '.', 'ok');
     cam.running = true; cam.started = Date.now(); cam.lastTally = 0; cam.lastBytes = 0; cam.lastStatsAt = 0;
-    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live'); wakeHud();
+    ptt(false); setStartLabel('PARAR'); setRun(localTest ? 'test' : 'live'); wakeHud(); showMicSource();
     if (localTest) { tally('offline'); say('Câmera e microfone reais ativos somente neste aparelho. Nenhum sinal enviado à mesa.', 'ok'); }
     else { tally('offline'); say('Câmera ativa. Conectando à mesa…', 'info'); signal(); }
     await keepAwake();
@@ -558,11 +669,12 @@ document.addEventListener('keydown', wakeHud, { capture: true });
 async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request('screen'); } catch { /* o sistema pode negar */ } }
 
 function stop() {
+  clearTimeout(stopTimer); stopTimer = null; stopArmed = 0; q('#start').dataset.confirm = '';
   cam.running = false; cam.generation++; clearTimeout(cam.retry); clearTimeout(cleanTimer); root.dataset.clean = 'off';
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
   cam.stream?.getTracks().forEach(t => t.stop()); cam.stream = null; q('#view').srcObject = null;
-  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null;
+  cam.ac?.close().catch(() => {}); cam.ac = null; cam.meter = null; cam.dtvMeter = null; showDtv(false); showMicSource();
   cam.wake?.release().catch(() => {}); cam.wake = null;
   if (document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
   setStartLabel(localTest ? 'ATIVAR TESTE' : cam.key ? 'ATIVAR CÂMERA' : 'CONECTAR');
@@ -575,7 +687,14 @@ function stop() {
   }
 }
 
-q('#start').onclick = () => cam.running ? stop() : start();
+// PARAR pede confirmação: o primeiro toque só arma (3 s); o segundo toque para. Evita derrubar a câmera sem querer no ar.
+let stopArmed = 0, stopTimer = null; // horário do 1º toque em PARAR (0 = não armado)
+function disarmStop() { clearTimeout(stopTimer); stopTimer = null; stopArmed = 0; q('#start').dataset.confirm = ''; if (cam.running) setStartLabel('PARAR'); }
+q('#start').onclick = () => {
+  if (!cam.running) return start();
+  if (!stopArmed || Date.now() - stopArmed > 3000) { stopArmed = Date.now(); q('#start').dataset.confirm = 'on'; setStartLabel('TOQUE DE NOVO'); say('Toque de novo em PARAR para desligar a câmera.', 'warn'); clearTimeout(stopTimer); stopTimer = setTimeout(disarmStop, 3000); return; }
+  disarmStop(); stop();
+};
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { ptt(false); tally('offline'); say('Mantenha o app visível e a tela ligada. O sistema pode suspender a câmera em segundo plano.', 'warn'); }
   else if (cam.running && !cam.wake) keepAwake();
@@ -583,7 +702,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', stop);
 // A rede do celular voltou ou mudou (Wi-Fi ↔ 5G): reconecta o ponto de encontro já, sem esperar a conexão velha cair.
 window.addEventListener('online', () => { if (cam.running) cam.channel?.reconnect?.(); });
-navigator.connection?.addEventListener?.('change', () => { if (cam.running && navigator.onLine) cam.channel?.reconnect?.(); });
+navigator.connection?.addEventListener?.('change', () => { if (cam.running && navigator.onLine) { cam.channel?.reconnect?.(); setTimeout(() => repath('network'), 800); } });
 window.addEventListener('offline', () => { tally('offline'); ptt(false); say('Sem rede. Aguardando reconexão.', 'warn'); cam.ws?.close(); });
 
 /* ---------- telemetria ---------- */
@@ -598,9 +717,12 @@ function showMicLevel(rms, peak = rms) {
   const toPos = db => Math.max(0, Math.min(1, (db + 60) / 60));
   const db = 20 * Math.log10(rms || 1e-6), pdb = 20 * Math.log10(peak || 1e-6), now = Date.now();
   bar.style.clipPath = 'inset(0 ' + ((1 - toPos(db)) * 100).toFixed(1) + '% 0 0)';
+  // Também em variáveis de CSS: o painel broadcast desenha o mesmo medidor na vertical (celular deitado).
+  bar.parentElement?.style?.setProperty?.('--lvl', toPos(db).toFixed(3));
   bar.dataset.level = db > -6 ? 'poor' : db > -18 ? 'fair' : 'good';
   if (pdb >= peakHold.db || now - peakHold.at > 1500) { peakHold.db = pdb; peakHold.at = now; }
   if (pdb > -0.5) peakHold.clipAt = now;
+  bar.parentElement?.style?.setProperty?.('--pk', toPos(peakHold.db).toFixed(3));
   const mark = q('#micPeak'); if (mark?.style) { mark.style.left = (toPos(peakHold.db) * 100).toFixed(1) + '%'; mark.hidden = peakHold.db <= -59; }
   const clip = q('#micClip'); if (clip) clip.dataset.on = now - peakHold.clipAt < 2000 ? 'on' : 'off';
 }
@@ -697,7 +819,7 @@ if (localTest) {
   q('#invite').disabled = true; q('#inviteApply').disabled = true; q('#bitrate').disabled = true; q('#ptt').disabled = true;
   q('#notice').textContent = 'Teste local: câmera, microfone e lentes funcionam. Tally e intercom dependem da mesa.';
   q('#localTest').textContent = 'Sair do teste local';
-  q('#hear').textContent = 'Ouvir microfone nos fones';
+  q('#hear').hidden = false; q('#hear').textContent = 'Ouvir microfone nos fones';
   q('#hear').onclick = async () => {
     if (!cam.running) { say('Ative o teste primeiro.', 'warn'); return; }
     const a = q('#returnAudio');

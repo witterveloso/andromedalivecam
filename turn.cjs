@@ -7,7 +7,11 @@
  * atrás do roteador: o caminho direto falha e a câmera "conecta" mas a imagem não chega. Um servidor TURN
  * retransmite a mídia quando o caminho direto não existe (inclusive pela porta 443, que redes restritas liberam).
  *
- * Provedores:
+ * REGRA: todos os caminhos ficam ligados ao mesmo tempo. A Rede Andrômeda desta mesa está sempre ativa, e a chave da Cloudflare
+ * e o servidor da empresa, quando configurados, somam-se a ela (nunca a substituem). O celular recebe todos e usa o primeiro que
+ * funcionar: se o roteador não abrir a porta, a imagem passa pela Cloudflare; se a Cloudflare cair, pelo roteador ou pela empresa.
+ *
+ * Provedores (todos somados):
  *  - andromeda (padrão): a Rede Andrômeda dentro da própria mesa (andromeda-turn.cjs, código nosso): STUN e TURN na porta
  *    3478 UDP/TCP, porta aberta no roteador por UPnP (upnp.cjs), credenciais temporárias geradas aqui. Sem serviço de terceiros.
  *  - custom: servidor da Rede Andrômeda da empresa (o mesmo andromeda-turn.cjs, no kit cloud/) ou outro TURN próprio.
@@ -45,24 +49,34 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     return [{ urls: hosts.map(h => 'stun:' + h) }, { urls: network.urls, username: c.username, credential: c.credential }];
   };
   const file = path.join(dataDir, 'turn.json');
-  let config = { provider: 'andromeda' };
-  try { const saved = JSON.parse(fs.readFileSync(file, 'utf8')); if (saved && ['off', 'cloudflare', 'custom', 'andromeda'].includes(saved.provider)) config = saved; } catch { /* sem configuração */ }
+  let config = { provider: 'andromeda' }, cf = null, custom = null;
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (saved && ['off', 'cloudflare', 'custom', 'andromeda'].includes(saved.provider)) config = { provider: saved.provider };
+    // Caminhos extras guardados à parte: escolher de novo a Rede Andrômeda não apaga a chave da Cloudflare (antes apagava).
+    cf = saved?.cloudflare?.keyId ? saved.cloudflare : saved?.provider === 'cloudflare' && saved.keyId ? { keyId: saved.keyId, token: saved.token } : null;
+    custom = saved?.custom?.urls ? saved.custom : saved?.provider === 'custom' && saved.urls ? { urls: saved.urls, username: saved.username, credential: saved.credential } : null;
+  } catch { /* sem configuração */ }
+  const persist = () => {
+    const legacy = config.provider === 'cloudflare' && cf ? cf : config.provider === 'custom' && custom ? custom : {};
+    fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ ...legacy, provider: config.provider, cloudflare: cf, custom, secret }), { mode: 0o600 });
+  };
   // Segredo da retransmissão desta mesa: gerado uma vez, guardado só aqui (as câmeras recebem credenciais temporárias).
   let secret = ''; try { secret = JSON.parse(fs.readFileSync(file, 'utf8')).secret || ''; } catch { /* primeiro uso */ }
-  if (!/^[0-9a-f]{64}$/.test(secret)) { secret = crypto.randomBytes(32).toString('hex'); try { fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ ...config, secret }), { mode: 0o600 }); } catch { /* só nesta sessão */ } }
+  if (!/^[0-9a-f]{64}$/.test(secret)) { secret = crypto.randomBytes(32).toString('hex'); try { fs.mkdirSync(dataDir, { recursive: true }); persist(); } catch { /* só nesta sessão */ } }
   const own = { server: null, port: 0, lan: '', lans: [], router: null, error: '' }; // Rede Andrômeda nesta mesa
   // Endereços desta mesa, o da rota padrão primeiro (cabo ou Wi-Fi, o que estiver levando à internet). Refeito a cada
   // 10 s: trocar do Wi-Fi para o cabo com o programa aberto não deixa as câmeras apontando para o endereço antigo.
   const addresses = async () => lan ? [lan()] : [...new Set([await routeAddress(), ...localAddresses()].filter(Boolean))];
   let watch = null;
-  let relay = [], expires = 0, lastError = '', refreshing = null, timer = null;
+  let cfRelay = [], cfExpires = 0, cfError = '', lastError = '', refreshing = null, timer = null;
 
   function validate(input) {
     const provider = ['off', 'cloudflare', 'custom', 'andromeda'].includes(input?.provider) ? input.provider : null;
     if (provider === 'andromeda') return { provider };
     if (!provider) throw Error('Escolha o provedor de retransmissão.');
     if (provider === 'cloudflare') {
-      const keyId = String(input.keyId || '').trim(), token = String(input.token || '').trim() || (config.provider === 'cloudflare' ? config.token : '');
+      const keyId = String(input.keyId || '').trim(), token = String(input.token || '').trim() || (cf?.token || '');
       if (!/^[A-Za-z0-9]{16,64}$/.test(keyId)) throw Error('Informe o ID da chave TURN da Cloudflare (Turn Key ID).');
       if (!/^[A-Za-z0-9._-]{20,200}$/.test(token || '')) throw Error('Informe o token da chave TURN da Cloudflare (API Token).');
       return { provider, keyId, token };
@@ -70,7 +84,7 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     if (provider === 'custom') {
       const urls = cleanUrls(String(input.urls || '').split(/[\s,]+/).filter(Boolean));
       if (!urls.some(u => /^turns?:/.test(u))) throw Error('Informe ao menos um endereço turn: ou turns:, por exemplo turn:turn.seudominio.com:3478.');
-      const username = String(input.username || '').trim(), credential = String(input.credential || '') || (config.provider === 'custom' ? config.credential : '');
+      const username = String(input.username || '').trim(), credential = String(input.credential || '') || (custom?.credential || '');
       if (!username || !credential) throw Error('Informe o usuário e a senha do servidor TURN.');
       return { provider, urls, username, credential };
     }
@@ -91,20 +105,14 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
     return servers;
   }
 
-  // force: uma troca de configuração não espera nem reaproveita a renovação em andamento da configuração anterior.
-  async function refresh(cfg = config, force = false) {
-    if (refreshing && !force) return refreshing;
+  // Renova as credenciais temporárias da Cloudflare (24 h, renovadas a cada 12 h). Falha da Cloudflare não derruba os outros caminhos.
+  async function refresh() {
+    if (refreshing) return refreshing;
     refreshing = (async () => {
-      try {
-        if (cfg.provider === 'cloudflare') { relay = await fetchCloudflare(cfg); expires = clock() + TTL * 1000; }
-        else if (cfg.provider === 'custom') { relay = [{ urls: cfg.urls, username: cfg.username, credential: cfg.credential }]; expires = Infinity; }
-        else if (cfg.provider === 'andromeda') { await startOwn(); relay = []; expires = Infinity; if (!own.server) throw Error(own.error || 'a retransmissão Andrômeda não iniciou'); }
-        else { relay = []; expires = 0; }
-        lastError = '';
-        return true;
-      } catch (e) { lastError = e.message; onEvent('warn', 'turn-falhou', 'Retransmissão TURN indisponível: ' + e.message); return false; }
+      if (!cf) { cfRelay = []; cfExpires = 0; cfError = ''; return true; }
+      try { cfRelay = await fetchCloudflare(cf); cfExpires = clock() + TTL * 1000; cfError = ''; return true; }
+      catch (e) { cfError = e.message; onEvent('warn', 'turn-falhou', 'Retransmissão Cloudflare indisponível: ' + e.message + ' (os outros caminhos continuam ligados)'); return false; }
     })();
-    // Libera depois de atribuir (sem await no caminho, a função termina antes da atribuição).
     const current = refreshing; current.finally(() => { if (refreshing === current) refreshing = null; });
     return current;
   }
@@ -168,39 +176,60 @@ function createTurn({ dataDir, fetchImpl = globalThis.fetch, clock = Date.now, o
   function stopOwn() { clearInterval(watch); watch = null; own.server?.close(); own.server = null; if (own.router?.control) closePorts({ control: own.router.control, upstream: own.router.upstream, ports: [{ port: own.port, protocol: 'UDP' }, { port: own.port, protocol: 'TCP' }] }).catch(() => {}); own.router = null; }
   function schedule() {
     clearInterval(timer); timer = null;
-    if (config.provider === 'cloudflare') { timer = setInterval(() => refresh(), REFRESH_MS); timer.unref?.(); }
+    if (cf) { timer = setInterval(() => refresh(), REFRESH_MS); timer.unref?.(); }
+  }
+  const customServers = () => custom ? [{ urls: [...new Set(custom.urls.map(u => /^turns?:([^?]+)/.exec(u)?.[1]).filter(Boolean).map(h => 'stun:' + h))] }, { urls: custom.urls, username: custom.username, credential: custom.credential }].filter(s => s.urls.length) : [];
+  // Caminhos que levam a imagem de fora (4G/5G, outro Wi-Fi) até esta mesa, agora.
+  function paths() {
+    const list = [];
+    if (own.server && own.router?.reachable) list.push(own.router.direct ? 'Rede Andrômeda (IP público da mesa)' : 'Rede Andrômeda (porta aberta no roteador)');
+    if (network) list.push('servidor da Rede Andrômeda');
+    if (custom) list.push('servidor próprio');
+    if (cf && cfRelay.length && !cfError) list.push('Cloudflare');
+    return list;
   }
 
   return {
-    // Lista enviada a cada câmera e à mesa no início da negociação.
+    // Lista enviada a cada câmera e à mesa no início da negociação: TODOS os caminhos juntos (o celular usa o que funcionar).
     servers() {
-      if (config.provider === 'cloudflare' && clock() > expires - 3600 * 1000) refresh();
-      if (config.provider === 'andromeda') return [...ownServers(), ...networkServers()];
-      // Servidor próprio (Rede Andrômeda da empresa): o mesmo endereço responde STUN.
-      const stun = config.provider === 'custom' ? [...new Set(relay.flatMap(r => r.urls).map(u => /^turns?:([^?]+)/.exec(u)?.[1]).filter(Boolean).map(h => 'stun:' + h))] : [];
-      return [...STUN, ...(stun.length ? [{ urls: stun }] : []), ...relay];
+      if (cf && clock() > cfExpires - 3600 * 1000) refresh();
+      return [...STUN, ...ownServers(), ...networkServers(), ...customServers(), ...cfRelay];
     },
     status() {
-      if (config.provider === 'andromeda') return { provider: 'andromeda', ready: !!own.server || !!network, network: network ? network.urls : null, error: own.server ? '' : (own.error || lastError), port: own.port, lan: own.lan,
-        lans: own.lans, router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, direct: !!own.router.direct, via: own.router.via || '', levels: own.router.levels || 0, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null, stats: own.server?.stats() || null };
-      return { provider: config.provider, ready: hasRelay(relay), error: lastError, expires: Number.isFinite(expires) && expires ? new Date(expires).toISOString() : null,
-        keyId: config.provider === 'cloudflare' ? config.keyId : undefined, hasToken: config.provider === 'cloudflare' ? !!config.token : undefined,
-        urls: config.provider === 'custom' ? config.urls : config.provider === 'cloudflare' ? relay.flatMap(s => s.urls).filter(u => /^turns?:/.test(u)) : [],
-        username: config.provider === 'custom' ? config.username : undefined };
+      const cfState = cf ? { configured: true, ready: cfRelay.length > 0 && !cfError, error: cfError, keyId: cf.keyId, hasToken: !!cf.token, expires: cfExpires ? new Date(cfExpires).toISOString() : null, urls: cfRelay.flatMap(s => s.urls).filter(u => /^turns?:/.test(u)) } : { configured: false };
+      const customState = custom ? { configured: true, ready: true, urls: custom.urls, username: custom.username } : { configured: false };
+      const ownState = { ready: !!own.server || !!network, network: network ? network.urls : null, error: own.server ? '' : (own.error || lastError), port: own.port, lan: own.lan, lans: own.lans,
+        router: own.router ? { ok: own.router.ok, reachable: own.router.reachable, direct: !!own.router.direct, via: own.router.via || '', levels: own.router.levels || 0, externalIP: own.router.externalIP, error: own.router.error, mapped: own.router.mapped } : null };
+      const ways = paths(), extra = { cloudflare: cfState, custom: customState, own: ownState, paths: ways, mobile: ways.length > 0 };
+      if (config.provider === 'cloudflare') return { provider: 'cloudflare', ready: cfState.ready, error: cfError, expires: cfState.expires, keyId: cf?.keyId, hasToken: !!cf?.token, urls: cfState.urls || [], ...extra };
+      if (config.provider === 'custom') return { provider: 'custom', ready: !!custom, error: '', expires: null, urls: custom?.urls || [], username: custom?.username, ...extra };
+      if (config.provider === 'off') return { provider: 'off', ready: false, error: '', ...extra };
+      return { provider: 'andromeda', ...ownState, ...extra };
     },
-    // Salva só se as credenciais funcionarem (no caso da Cloudflare), para não deixar a mesa sem retransmissão.
+    // Salva um caminho a mais (somado aos outros). A chave da Cloudflare só é guardada se funcionar. "off" tira os caminhos extras
+    // (a Rede Andrômeda desta mesa continua: é a regra).
     async save(input) {
-      const next = validate(input), previous = config;
-      config = next;
-      const ok = await refresh(next, true);
-      if (!ok && next.provider === 'cloudflare') { config = previous; await refresh(previous, true); throw Error(lastError || 'Não foi possível validar a chave TURN.'); }
-      if (next.provider !== 'andromeda') stopOwn();
-      fs.mkdirSync(dataDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ ...config, secret }), { mode: 0o600 });
-      schedule();
-      onEvent('info', 'turn-configurado', 'Retransmissão: ' + ({ off: 'desligada (só Wi-Fi / mesma rede)', cloudflare: 'Cloudflare', custom: 'servidor da Rede Andrômeda', andromeda: 'Rede Andrômeda nesta mesa' })[next.provider]);
+      // Tirar um caminho extra (o resto continua).
+      if (input?.remove === 'cloudflare' || input?.remove === 'custom') {
+        if (input.remove === 'cloudflare') { cf = null; cfRelay = []; cfExpires = 0; cfError = ''; } else custom = null;
+        if (config.provider === input.remove) config = { provider: 'andromeda' };
+        persist(); schedule(); onEvent('info', 'turn-configurado', 'Caminho removido: ' + (input.remove === 'cloudflare' ? 'Cloudflare' : 'servidor próprio'));
+        return this.status();
+      }
+      const next = validate(input);
+      if (next.provider === 'cloudflare') {
+        let servers; try { servers = await fetchCloudflare(next); } catch (e) { lastError = e.message; throw Error(e.message); }
+        cf = { keyId: next.keyId, token: next.token }; cfRelay = servers; cfExpires = clock() + TTL * 1000; cfError = '';
+      } else if (next.provider === 'custom') custom = { urls: next.urls, username: next.username, credential: next.credential };
+      else if (next.provider === 'andromeda') await startOwn();
+      else { cf = null; custom = null; cfRelay = []; cfExpires = 0; cfError = ''; }
+      config = { provider: next.provider }; lastError = '';
+      persist(); schedule();
+      onEvent('info', 'turn-configurado', 'Caminhos para 4G/5G: ' + (paths().join(' + ') || 'Rede Andrômeda nesta mesa (aguardando o roteador)'));
       return this.status();
     },
-    async start() { await refresh(); schedule(); return this.status(); },
+    // A Rede Andrômeda desta mesa liga sempre (regra), junto com a Cloudflare e o servidor da empresa, se houver.
+    async start() { await startOwn(); await refresh(); schedule(); return this.status(); },
     stop() { clearInterval(timer); timer = null; stopOwn(); },
   };
 }

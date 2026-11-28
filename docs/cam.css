@@ -105,14 +105,14 @@ body[data-tally="preview"] .frame { box-shadow: inset 0 0 0 4px var(--pvw); }
 
 .tally {
   grid-area: tally; justify-self: center;
-  display: inline-flex; align-items: center; gap: 10px;
-  min-height: 40px; padding: 8px 22px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 26px; padding: 4px 14px; border-radius: 999px;
   background: var(--glass); border: 1px solid var(--line); color: var(--muted);
-  font-size: 14px; font-weight: 800; letter-spacing: .14em; text-align: center;
+  font-size: 11px; font-weight: 800; letter-spacing: .12em; text-align: center;
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   transition: background .25s, color .25s, border-color .25s;
 }
-.tally::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .6; }
+.tally::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .6; }
 .tally[data-state="program"] { background: var(--pgm); border-color: #ff9aa1; color: #fff; animation: on-air 1.6s ease-out infinite; }
 .tally[data-state="program"]::before { opacity: 1; }
 .tally[data-state="preview"] { background: var(--pvw); border-color: #8ff0b9; color: #04130a; }
@@ -304,7 +304,7 @@ body[data-mode="test"] .group.invite { display: none; }
 
   .top { grid-template: "ident tally actions" auto / minmax(0, 1fr) auto minmax(0, 1fr); padding-bottom: 14px; padding-right: 12px; }
   .top-actions { justify-self: end; }
-  .tally { min-height: 36px; padding: 6px 20px; }
+  .tally { min-height: 24px; padding: 4px 12px; }
 
   .bottom { display: contents; }
   .hud { grid-area: hud; position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 12px calc(12px + var(--safe-b)) max(14px, var(--safe-l)); background: linear-gradient(transparent, rgba(4, 5, 8, .7)); }
@@ -481,8 +481,9 @@ body[data-tally="standby"] .top::before { background: var(--standby); }
 body[data-tally="program"] .frame { box-shadow: inset 0 0 0 7px var(--pgm), inset 0 0 80px var(--pgm-glow); }
 
 /* Rótulo de tally: placa retangular, legível de longe. */
-.tally { border-radius: 10px; min-height: 38px; padding: 6px 18px; font: 800 15px/1 var(--sans); letter-spacing: .18em; background: var(--hud-bg); border-color: var(--hud-line); }
-.tally::before { width: 10px; height: 10px; }
+/* Tarja de PREVIEW / NO AR menor: informa sem tapar a imagem. */
+.tally { border-radius: 8px; min-height: 24px; padding: 4px 12px; font: 800 11px/1 var(--sans); letter-spacing: .14em; background: var(--hud-bg); border-color: var(--hud-line); }
+.tally::before { width: 7px; height: 7px; }
 .tally[data-state="program"] { background: var(--pgm); border-color: rgba(255, 255, 255, .55); color: #fff; animation: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 0 28px var(--pgm-glow); }
 .tally[data-state="preview"] { background: var(--pvw); color: #04140b; }
 .tally[data-state="standby"] { background: rgba(255, 176, 32, .18); border-color: var(--standby); color: #ffd38a; }
@@ -577,3 +578,151 @@ body[data-clean="on"] .chip-btn { display: none; }
   .hud { background: none; padding-top: 6px; padding-bottom: calc(8px + var(--safe-b)); }
   .hud .telemetry { flex: 0 1 100%; }
 }
+
+/* PARAR armado: o primeiro toque pede confirmação (o segundo para). */
+.start[data-confirm="on"] { animation: confirm-stop .6s ease-in-out infinite alternate; }
+.start[data-confirm="on"] span { font-size: 9px; letter-spacing: 0; }
+@keyframes confirm-stop { from { box-shadow: 0 0 0 0 rgba(255, 59, 71, .0); } to { box-shadow: 0 0 0 8px rgba(255, 59, 71, .45); } }
+@media (prefers-reduced-motion: reduce) { .start[data-confirm="on"] { animation: none; box-shadow: 0 0 0 6px rgba(255, 59, 71, .45); } }
+
+/* ============================================================
+   Painel broadcast (0.35.1): o visor como monitor de câmera de transmissão, em pé e deitado.
+   - Cada informação numa placa escura e sólida, com cantos retos e filete fino (sem vidro desfocado por cima da imagem).
+   - Topo: tally (NO AR / PREVIEW / ESPERA), nome da câmera e botões, numa linha só.
+   - Ajustes (lente, formato, zoom, WB, exposição, estabilização, foco) como painel de instrumentos:
+     deitado, um trilho vertical à esquerda que abre o ajuste ao lado; em pé, uma faixa logo abaixo do topo.
+   - Deitado: trilho de controle à direita com timecode, medidor de áudio vertical em toda a altura, MIC, disco do AR e intercom.
+   - Dados de transmissão numa faixa única com divisórias; enlace com barras de sinal e bateria com ícone.
+   ============================================================ */
+:root { --tile: rgba(6, 7, 10, .84); --tile-solid: #050608; --tile-line: rgba(255, 255, 255, .13); --tile-r: 6px; }
+
+/* Topo: tally, identificação e botões como placas. */
+.top { gap: 8px; align-items: center; }
+.tally { grid-area: tally; justify-self: start; border-radius: 4px; min-height: 30px; padding: 5px 12px; font: 800 11px/1.15 var(--sans); letter-spacing: .14em; white-space: normal; }
+.tally { text-shadow: none; }
+.tally[data-state="offline"] { background: var(--tile); border-color: var(--tile-line); color: var(--muted); }
+.ident { justify-self: start; max-width: 100%; padding: 5px 10px 6px; border-radius: var(--tile-r); background: var(--tile); border: 1px solid var(--tile-line); text-shadow: none; }
+.brand { font-size: 9px; letter-spacing: .26em; }
+#cameraName { font-size: 14px; }
+.top-actions { gap: 6px; }
+.top .icon { width: 40px; height: 40px; border-radius: var(--tile-r); background: var(--tile); border-color: var(--tile-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.top .icon[aria-pressed="true"] { background: var(--amber); border-color: transparent; }
+body[data-run="idle"] .ident, body[data-run="starting"] .ident { background: none; border-color: transparent; padding-inline: 0; }
+
+/* Painel de instrumentos: placas ligadas por divisórias, rótulo pequeno em cima e valor em fonte de número. */
+.params-row { width: fit-content; max-width: 100%; gap: 0; background: var(--tile); border: 1px solid var(--tile-line); border-radius: var(--tile-r); }
+.param { border: 0; border-radius: 0; min-height: 44px; padding: 5px 11px; }
+.param + .param { border-left: 1px solid var(--tile-line); }
+.param-label { font-size: 9px; letter-spacing: .14em; }
+.param-value { font-size: 15px; }
+.param-value, .param-label { text-shadow: none; }
+.param[aria-expanded="true"] { background: rgba(0, 163, 255, .2); box-shadow: inset 0 -3px 0 var(--amber); }
+
+/* Gaveta de ajuste: mesma placa do painel. */
+.drawer { border-radius: var(--tile-r); background: rgba(5, 6, 9, .9); border-color: var(--tile-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.drawer-close { border-radius: var(--tile-r); }
+@keyframes drawer-in { from { opacity: 0; transform: translateX(-10px); } }
+
+/* Faixa de dados de transmissão: uma barra só, com divisórias (os filetes de borda somem no recorte da faixa). */
+.telemetry { gap: 0; width: fit-content; max-width: 100%; overflow: hidden; background: var(--tile); border: 1px solid var(--tile-line); border-radius: var(--tile-r); }
+.telemetry span { border: 0; border-radius: 0; background: none; padding: 6px 9px; box-shadow: -1px 0 0 var(--tile-line), 0 -1px 0 var(--tile-line); font-size: 10.5px; }
+.telemetry .optics-badge { color: #ffd60a; }
+/* Enlace: barras de sinal (3 = bom, 2 = instável, 1 = fraco). */
+#link::before { content: ""; display: inline-block; width: 13px; height: 10px; margin-right: 6px; vertical-align: -1px; --b2: currentColor; --b3: currentColor;
+  background: linear-gradient(currentColor, currentColor) 0 100% / 3px 40% no-repeat, linear-gradient(var(--b2), var(--b2)) 5px 100% / 3px 70% no-repeat, linear-gradient(var(--b3), var(--b3)) 10px 100% / 3px 100% no-repeat; }
+#link[data-level="fair"]::before { --b3: rgba(255, 255, 255, .22); }
+#link[data-level="poor"]::before { --b2: rgba(255, 255, 255, .22); --b3: rgba(255, 255, 255, .22); }
+/* Bateria e rede com ícone desenhado em CSS (sem imagens externas). */
+#battery::before { content: ""; display: inline-block; width: 14px; height: 8px; margin-right: 6px; vertical-align: 0; border: 1.5px solid currentColor; border-radius: 2px; box-shadow: 2px 0 0 -0.5px currentColor; }
+#network::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: var(--ok); }
+
+/* Aviso de conexão: placa sólida. */
+.status { border-radius: var(--tile-r); background: var(--tile); border-color: var(--tile-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.chip-btn { border-radius: var(--tile-r); }
+
+/* Controles: placas retas; o disco do AR continua redondo, como o botão REC de uma câmera. */
+.pad { border-radius: 10px; background: var(--tile); border-color: var(--tile-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+#elapsed { border-radius: 4px; background: var(--tile-solid); border-color: var(--tile-line); white-space: nowrap; }
+body[data-tally="program"] #elapsed::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: var(--pgm); animation: rec-dot 1s steps(1) infinite; }
+@keyframes rec-dot { 50% { opacity: .25; } }
+.clip { border-radius: 3px; }
+
+/* ---------- celular em pé (vertical) ---------- */
+@media (orientation: portrait) {
+  .top { grid-template: "tally ident actions" auto "params params params" auto / auto minmax(0, 1fr) auto; padding-bottom: 8px; }
+  .tally { max-width: 42vw; }
+  /* Ajustes em grade de 4 colunas: todos à vista, sem rolar para o lado. */
+  .params-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; overflow: hidden; }
+  .param { min-width: 0; box-shadow: -1px 0 0 var(--tile-line), 0 -1px 0 var(--tile-line); }
+  .param + .param { border-left: 0; }
+  .param-value { font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+  .param[aria-expanded="true"] { box-shadow: inset 0 -3px 0 var(--amber), -1px 0 0 var(--tile-line), 0 -1px 0 var(--tile-line); }
+  .ident { min-width: 0; }
+  .ident > * { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dock { padding-top: 10px; }
+  .meter-row { gap: 8px; }
+  /* O medidor ocupa o que sobra da linha: o timecode com a luz de REC nunca sai da tela. */
+  .vu { flex: 1 1 0; width: auto; min-width: 0; }
+}
+
+/* ---------- celular deitado (horizontal) ---------- */
+@media (orientation: landscape) {
+  body { --rail: calc(124px + var(--safe-r)); --params-w: 98px; --params-l: max(10px, var(--safe-l)); }
+  .top { grid-template: "tally ident . actions" auto / auto minmax(0, max-content) minmax(0, 1fr) auto; padding: calc(8px + var(--safe-t)) 12px 6px var(--params-l); }
+  .ident { grid-area: ident; }
+  .ident > * { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Ajustes num trilho vertical à esquerda; o ajuste aberto aparece ao lado, sem cobrir o trilho. */
+  .params { position: fixed; grid-area: auto; z-index: 6; left: var(--params-l); top: calc(60px + var(--safe-t)); bottom: calc(10px + var(--safe-b)); display: flex; align-items: center; pointer-events: none; }
+  .params-row { pointer-events: auto; flex-direction: column; width: var(--params-w); max-height: 100%; overflow-x: hidden; overflow-y: auto; }
+  .param { width: 100%; min-height: 40px; padding: 5px 9px; }
+  .param + .param { border-left: 0; border-top: 1px solid var(--tile-line); }
+  .param-value { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+  .param[aria-expanded="true"] { box-shadow: inset 3px 0 0 var(--amber); }
+  body[data-run="live"] .hud, body[data-run="test"] .hud { padding-left: calc(var(--params-l) + var(--params-w) + 10px); }
+  .drawer { left: calc(var(--params-l) + var(--params-w) + 8px); top: calc(60px + var(--safe-t)); bottom: auto; transform: none;
+    width: min(420px, calc(100% - var(--rail) - var(--params-w) - 40px)); max-height: calc(100dvh - 76px - var(--safe-t) - var(--safe-b)); animation: drawer-in .18s ease-out; }
+
+  /* Trilho de controle: timecode no alto, medidor de áudio vertical em toda a altura, e os botões. */
+  .dock { grid-template: "tc tc" auto "vu act" minmax(0, 1fr) "clip act" auto / 12px auto; align-content: stretch; align-items: center; justify-items: center; gap: 8px 10px;
+    padding: calc(10px + var(--safe-t)) max(12px, var(--safe-r)) calc(10px + var(--safe-b)) 12px; background: var(--tile-solid); border-left-color: var(--tile-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .meter-row { display: contents; }
+  #elapsed { grid-area: tc; justify-self: stretch; text-align: center; font-size: 12px; padding: 5px 4px; }
+  .vu { grid-area: vu; align-self: stretch; width: 10px; height: auto; min-height: 60px;
+    background: repeating-linear-gradient(to top, rgba(255, 255, 255, .10) 0 calc(100% / 30 - 1px), rgba(0, 0, 0, .9) 0 calc(100% / 30)); }
+  .vu i { clip-path: inset(calc((1 - var(--lvl, 0)) * 100%) 0 0 0) !important; transition: clip-path .06s linear;
+    background: linear-gradient(to top, #19d36b 0 70%, #ffd23f 70% 90%, #ff1f3d 90% 100%) !important;
+    -webkit-mask: repeating-linear-gradient(to top, #000 0 calc(100% / 30 - 1px), transparent 0 calc(100% / 30)); mask: repeating-linear-gradient(to top, #000 0 calc(100% / 30 - 1px), transparent 0 calc(100% / 30)); }
+  .vu b { left: -3px !important; right: -3px; top: auto; bottom: calc(var(--pk, 0) * 100%); width: auto; height: 2px; margin: 0 0 -1px; }
+  /* CLIP vira uma luz (acende vermelha quando o pico encosta em 0 dBFS). */
+  #micClip { grid-area: clip; width: 12px; height: 12px; padding: 0; font-size: 0; border-radius: 3px; }
+  .actions { grid-area: act; gap: 10px; }
+  .pad { width: 72px; min-height: 60px; }
+  .start { width: 76px; height: 76px; }
+}
+@media (orientation: landscape) and (max-height: 480px) {
+  .pad { min-height: 54px; padding-block: 5px; }
+  .start { width: 70px; height: 70px; }
+  .param { min-height: 36px; padding-block: 4px; }
+}
+/* Tela de boas-vindas no mesmo desenho de placas. */
+.steps li, .btn { border-radius: var(--tile-r); }
+
+/* DTV falando (0.35.1): aviso discreto quando a voz do diretor chega no retorno. Não recebe toque e não cobre o centro da imagem. */
+.dtv-talking { position: fixed; z-index: 7; left: 50%; top: calc(62px + var(--safe-t)); transform: translateX(-50%); margin: 0; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px 5px 8px; border-radius: 4px;
+  background: rgba(20, 8, 40, .86); border: 1px solid rgba(139, 0, 255, .75); color: #e3ccff; font: 800 10.5px/1 var(--sans); letter-spacing: .14em; }
+.dtv-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; }
+.dtv-bars i { width: 3px; height: 100%; border-radius: 1px; background: #b57bff; animation: dtv-bar .7s ease-in-out infinite alternate; }
+.dtv-bars i:nth-child(2) { animation-delay: -.25s; }
+.dtv-bars i:nth-child(3) { animation-delay: -.5s; }
+@keyframes dtv-bar { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+.dtv-bars i { transform-origin: bottom; }
+@media (orientation: portrait) { .dtv-talking { top: calc(210px + var(--safe-t)); } }
+@media (orientation: landscape) { .dtv-talking { left: calc((100% - var(--rail, 0px)) / 2); } }
+
+/* Microfone em uso (0.35.1): primeiro dado da faixa; externo em destaque. */
+#micSource::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px; border-radius: 50%; background: var(--faint); }
+#micSource[data-kind="wired"], #micSource[data-kind="bluetooth"] { color: #9bdcff; }
+#micSource[data-kind="wired"]::before { background: var(--amber); }
+#micSource[data-kind="bluetooth"]::before { background: var(--warn); }

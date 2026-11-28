@@ -41,8 +41,27 @@ const until = async (fn, ms, what) => { const end = Date.now() + ms; while (Date
     await cam.close(); cam = await join();
     await until(async () => (await desk.evaluate(() => !!cams[0].conn)) && !!(await frames()), 40000, 'câmera de volta pelo mesmo link');
     assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a reconexão');
+    // Troca de rede sem cair (Wi-Fi ↔ 5G): o caminho da imagem cai; o celular refaz só ele, na MESMA conexão com a mesa.
+    await desk.evaluate(() => { camDesk.peers.get('0:media').pc._antiga = true; });
+    const repathed = await cam.evaluate(async () => { cam.ws._mesma = true; cam.pcs.get('media').pc.close(); return await repath('network'); });
+    assert.equal(repathed, true, 'o celular refez o caminho da imagem');
+    await until(() => desk.evaluate(() => { const p = camDesk.peers.get('0:media'); return !!p && !p.pc._antiga && p.pc.connectionState === 'connected'; }), 30000, 'imagem de volta pelo caminho novo');
+    assert(await cam.evaluate(() => cam.ws._mesma === true), 'sem reconectar à mesa (mesma conexão)');
+    assert(await desk.evaluate(() => liveTx.phase === 'sending'), 'a live seguiu no ar durante a troca de rede');
+    // A mesa sabe qual microfone a câmera está usando (aqui, o do aparelho: o navegador de teste não tem microfone externo).
+    await until(() => desk.evaluate(() => camDesk.cameras.get(0)?.mic?.source === 'phone' && /MIC DO CELULAR/.test($('#cameraPresence').textContent)), 15000, 'microfone da câmera informado à mesa');
+    assert.equal(await cam.evaluate(() => q('#micSource').textContent), 'MIC DO CELULAR');
+    // Retorno do DTV sempre ligado: sem botão para liberar; quando o DTV fala, o celular mostra "DTV FALANDO" e apaga quando ele para.
+    assert(await cam.evaluate(() => q('#hear').hidden), 'sem botão de liberar o retorno');
+    await desk.click('#dtvEnable'); await until(() => desk.evaluate(() => !$('#dtvTalk').disabled), 15000, 'intercom do DTV habilitado');
+    await until(() => cam.evaluate(() => { const a = q('#returnAudio'); return !!a.srcObject && !a.paused; }), 15000, 'retorno do DTV tocando sozinho no celular');
+    assert(await cam.evaluate(() => q('#dtvTalking').hidden), 'sem aviso enquanto o DTV não fala');
+    await desk.evaluate(() => setDtvTalk(true));
+    await until(() => cam.evaluate(() => !q('#dtvTalking').hidden && document.body.dataset.dtv === 'on'), 15000, 'aviso DTV FALANDO no celular');
+    await desk.evaluate(() => setDtvTalk(false));
+    await until(() => cam.evaluate(() => q('#dtvTalking').hidden), 15000, 'aviso some quando o DTV para de falar');
     await desk.evaluate(() => stopTransport()); await until(() => desk.evaluate(() => liveTx.phase === 'idle'), 20000, 'live encerrada');
     assert.deepEqual(errors.filter(e => !/play\(\)|AbortError/.test(e)), []);
-    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, live seguiu no ar');
+    console.log('PASS: com a live no ar: convite gerado, câmera conectou (' + first + '), voltou pelo mesmo link, trocou de rede sem cair, retorno do DTV sempre ligado com aviso DTV FALANDO, live seguiu no ar');
   } finally { await browser.close(); server.kill(); pages.close(); rede.close(); }
 })().catch(e => { console.error(e); process.exit(1); });
