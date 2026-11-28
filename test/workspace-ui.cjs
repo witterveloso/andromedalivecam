@@ -90,6 +90,8 @@ console.log('PASS: GC credits playlist (on cue → on air → next on cue) and t
  assert.equal(vm.runInContext('fx.draft.layers[0].style',ctx),'plantao');assert.equal(q('#gcTag').value,'URGENTE');assert.equal(q('#gcAccent').value,'#e10600');
  const neon=[...q('.gc-models-grid').querySelectorAll('.gc-model')].find(b=>/Neon/.test(b.textContent));neon.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));
  assert.equal(vm.runInContext('fx.live.layers[0].style',ctx),'neon','double click applies the model to the program');assert.match(q('#fxStatus').textContent,/Neon.*aplicado ao programa/);
+ q('#fxInspect').checked=true;const ins=vm.runInContext('(()=>{const d=fx.draft.layers[layerIndex()],keep=[d.title,d.subtitle];d.title="";d.subtitle="";const l=inspectionSettings().layers[layerIndex()],r=l.on+"|"+l.title;[d.title,d.subtitle]=keep;return r})()',ctx);assert.equal(ins,'true|Nome da Pessoa','preview shows the model with sample text while the GC is empty');
+ assert(!/Nome da Pessoa/.test(vm.runInContext('fx.live.layers.map(l=>l.title).join()',ctx)),'the sample text never goes on air');
  q('.gc-models-save input').value='Meu plantão';q('.gc-models-save button').click();assert.equal(w.document.querySelectorAll('.gc-models-grid')[1].querySelectorAll('.gc-model').length,1,'my model saved');
  const P=vm.runInContext('window.andromedaPonto',ctx),panel=P.panel();w.document.body.append(panel);const sel=panel.querySelector('.ponto-row .ponto-minus select');
  assert(sel&&[...sel.options].some(o=>o.value==='mic')&&sel.options.length>=3,'mix-minus channel list');sel.value='1';sel.dispatchEvent(new w.Event('change'));
