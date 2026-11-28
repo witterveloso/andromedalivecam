@@ -7,6 +7,13 @@
 - **Botão GC nos Comandos:**
   - **Um clique** põe no ar o crédito que está no ponto. Outro clique tira do ar, e o próximo da lista já fica no ponto para o clique seguinte.
   - **Dois cliques** abrem as configurações do GC (página GC e efeitos). Ali ficam os modelos, as cores e a **lista de créditos (sequência)**: adicionar, ordenar e escolher o que fica no ponto.
+- **4G/5G: todos os caminhos ligados juntos (regra).** A câmera no 4G/5G precisa de um caminho pela internet até a mesa. Antes, a mesa usava um caminho de cada vez: ou a Rede Andrômeda (porta aberta no roteador) ou a Cloudflare. Escolher de novo a Rede Andrômeda apagava a chave da Cloudflare, e se o roteador não abrisse a porta, o celular ficava "EM ESPERA" sem imagem.
+  - Agora a Rede Andrômeda desta mesa fica sempre ligada.
+  - A Cloudflare e o servidor da empresa, quando configurados, somam caminhos a ela, e o celular usa o primeiro que funcionar.
+  - A tela "Rede móvel (4G/5G)" mostra os caminhos ligados (por exemplo "Rede Andrômeda + Cloudflare") e permite remover cada extra.
+  - Com a chave da Cloudflare salva uma vez, a câmera chega no 4G/5G mesmo com o roteador fechado.
+- **Andrômeda Cam: PARAR com confirmação.** O primeiro toque em PARAR só arma: o botão mostra "TOQUE DE NOVO". O segundo toque, em até 3 s, desliga a câmera. Sem o segundo toque, volta a PARAR. Assim um toque sem querer não derruba a câmera no ar.
+- **Andrômeda Cam: tarja menor.** A tarja de PREVIEW / NO AR / EM ESPERA ficou menor e tapa menos a imagem.
 - **Teste de autorrecuperação no Windows:** o teste agora espera a gravação terminar de ser juntada antes de limpar a pasta.
 
 

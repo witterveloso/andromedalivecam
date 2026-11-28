@@ -558,6 +558,7 @@ document.addEventListener('keydown', wakeHud, { capture: true });
 async function keepAwake() { try { cam.wake = await navigator.wakeLock?.request('screen'); } catch { /* o sistema pode negar */ } }
 
 function stop() {
+  clearTimeout(stopArmed); stopArmed = null; q('#start').dataset.confirm = '';
   cam.running = false; cam.generation++; clearTimeout(cam.retry); clearTimeout(cleanTimer); root.dataset.clean = 'off';
   cam.ws?.close(); cleanPeers();
   window.AndromedaOptics?.reset();
@@ -575,7 +576,14 @@ function stop() {
   }
 }
 
-q('#start').onclick = () => cam.running ? stop() : start();
+// PARAR pede confirmação: o primeiro toque só arma (3 s); o segundo toque para. Evita derrubar a câmera sem querer no ar.
+let stopArmed = null;
+function disarmStop() { clearTimeout(stopArmed); stopArmed = null; q('#start').dataset.confirm = ''; if (cam.running) setStartLabel('PARAR'); }
+q('#start').onclick = () => {
+  if (!cam.running) { start(); return; }
+  if (!stopArmed) { q('#start').dataset.confirm = 'on'; setStartLabel('TOQUE DE NOVO'); say('Toque de novo em PARAR para desligar a câmera.', 'warn'); stopArmed = setTimeout(disarmStop, 3000); return; }
+  disarmStop(); stop();
+};
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { ptt(false); tally('offline'); say('Mantenha o app visível e a tela ligada. O sistema pode suspender a câmera em segundo plano.', 'warn'); }
   else if (cam.running && !cam.wake) keepAwake();

@@ -70,3 +70,33 @@ test('4G/5G relay: the desk API shows the state and only accepts changes with th
     assert.equal(status.turn.provider, 'custom'); assert(!JSON.stringify(status).includes('"p"'), 'no TURN password in the camera status');
   } finally { bridge.shutdown(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('REGRA 4G/5G: todos os caminhos juntos — Rede Andrômeda da mesa sempre ligada, Cloudflare somada (nunca no lugar), e voltar à Rede Andrômeda não apaga a chave', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'andromeda-turn-regra-')), calls = [];
+  const opts = { dataDir: dir, fetchImpl: fakeFetch(calls), port: 34781, lan: () => '192.168.1.10', openPorts: async () => ({ ok: false, reachable: false, error: 'roteador sem UPnP', mapped: [] }), closePorts: async () => {} };
+  let turn = createTurn(opts);
+  try {
+    await turn.start();
+    const st0 = turn.status(); assert.equal(st0.provider, 'andromeda'); assert(st0.ready, 'Rede Andrômeda ligada');
+    await new Promise(r => setTimeout(r, 50));
+    assert.equal(turn.status().mobile, false, 'roteador sem UPnP e sem outro caminho: o 4G/5G ainda não tem caminho');
+    await turn.save({ provider: 'cloudflare', keyId: KEY, token: TOKEN });
+    let urls = turn.servers().flatMap(s => s.urls);
+    assert(urls.some(u => u.startsWith('turn:192.168.1.10:34781')), 'a Rede Andrômeda da mesa continua na lista');
+    assert(urls.some(u => /turn\.cloudflare\.com/.test(u)), 'a Cloudflare somada');
+    assert(turn.status().mobile && turn.status().paths.includes('Cloudflare'), '4G/5G pronto pela Cloudflare mesmo com o roteador fechado');
+    // Voltar a escolher a Rede Andrômeda: a Cloudflare continua (antes era apagada e o 5G parava).
+    await turn.save({ provider: 'andromeda' });
+    urls = turn.servers().flatMap(s => s.urls);
+    assert(urls.some(u => /turn\.cloudflare\.com/.test(u)) && urls.some(u => u.startsWith('turn:192.168.1.10')), 'os dois caminhos continuam');
+    assert(!JSON.stringify(turn.status()).includes(TOKEN), 'o token nunca vai ao navegador');
+    // Reabrir a mesa: os dois caminhos voltam sozinhos.
+    turn.stop(); turn = createTurn(opts); await turn.start();
+    urls = turn.servers().flatMap(s => s.urls);
+    assert(urls.some(u => /turn\.cloudflare\.com/.test(u)) && urls.some(u => u.startsWith('turn:192.168.1.10')), 'reabriu com os dois caminhos');
+    // "off" tira só os extras: a Rede Andrômeda da mesa fica (regra).
+    await turn.save({ provider: 'off' });
+    urls = turn.servers().flatMap(s => s.urls);
+    assert(!urls.some(u => /cloudflare/.test(u)) && urls.some(u => u.startsWith('turn:192.168.1.10')));
+  } finally { turn.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
